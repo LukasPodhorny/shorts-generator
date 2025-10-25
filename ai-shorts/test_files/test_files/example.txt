@@ -1,0 +1,157 @@
+; THIS ARCHIVE REDISTRIBUTION IS NOT ALLOWED, USE THE FOLLOWING LINK INSTEAD
+; http://www.dev-c.com/rdr2/scripthookrdr2/
+
+
+							SCRIPT HOOK RDR 2	
+
+v1.0.1491.17
+	
+Note:
+Script hook uses address autosearch, which means it will work with game
+versions which are not mentioned here until the game update with changes
+to the script system.
+	
+Description:
+Script hook is the library that allows to use RDR 2 script native
+functions in custom *.asi plugins.
+
+You are allowed to use this software only if you agree to the terms
+written below:
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE
+
+Multiplayer:
+Script hook closes the game when player goes Online, this is done because
+the game reports installed mods list to R* while being in Online mode.
+
+Installation:
+1. Copy ScriptHookRDR2.dll to the game's main folder, i.e. where RDR2.exe
+   is located.
+2. In order to load asi plugins you need to have asi loader installed,
+   you can use the latest version that comes with this distrib (dinput8.dll).
+3. This distrib also includes a sample asi plugin - native trainer,
+   if you need a trainer then copy NativeTrainer.asi as well.
+
+Changelog:
+v1.0.1491.17
+- added support of the latest patch
+v1.0.1436.31
+- added support of the latest patch
+v1.0.1436.25
+- added support of the latest patch
+v1.0.1311.12
+- added support of the latest patch
+v1.0.1232.17
+- added support of the latest patch
+v1.0.1232.13
+- added support of the latest patch
+v1.0.1207.73
+- added support of the latest patch
+- added ability to access entity pools
+   
+Supported game versions:
+1.0.1207.58/80,
+1.0.1232.13/17,
+1.0.1311.12,
+1.0.1436.25/31,
+1.0.1491.16/17
+
+   
+							NATIVE TRAINER
+			
+Description:			
+The trainer comes with ScriptHookRDR2 distrib and shows an example of what
+can be done using scripts. 
+
+Controls:
+F5										activate
+NUM2/8				(CTRL+UP/DOWN)		navigate thru the menus and lists										
+NUM5				(CTRL+ENTER) 		select
+NUM0/BACKSPACE/F5 						back
+NUM9/3				(PAGEUP/DOWN)		use vehicle boost when active 
+NUM+				(INSERT)			use transport guns
+
+In order num keys to work numlock must be on.
+
+ - player
+	 - transport
+		 - invincible horse
+		 - unlim horse stamina
+		 - vehicle boost
+	 - skins
+	     - animals
+		 - peds
+     - teleport
+		 - map marker
+		 - various locations		 
+	 - wanted
+		 - clear bounty
+		 - clear wanted
+		 - never wanted
+     - fix player
+     - add cash
+	 - fast heal
+     - invincible
+	 - unlim stamina
+	 - unlim ability
+     - everyone ignored
+     - noiseless
+     - super jump
+ - animal spawner
+	 - random
+	 - horses
+	 - dogs
+	 - fish
+	 - other animals
+ - ped spawner
+	 - random
+	 - cutscene
+	 - other peds
+ - cannon spawner
+	 - wrap in spawned
+	 - set properly
+	 - all cannons
+ - vehicle spawner
+	 - wrap in spawned
+	 - set properly
+	 - boats
+	 - trains
+	 - wagons
+	 - just wagons
+	 - misc
+ - weapon
+     - get all weapon
+     - powerfull guns
+     - powerfull melee
+     - no reload
+     - drop current
+ - time
+     - hour forward
+	 - hour backward
+     - clock paused
+     - clock real
+	 - sync with system
+ - weather
+	 - freeze current
+     - fast wind
+     - select weather
+ - misc
+     - reveal map
+	 - add honor
+     - hide hud
+	 - horse turrets
+	 - horse cannons
+	 - vehicle turrets
+	 - vehicle cannons
+
+Usefull links:
+http://dev-c.com
+http://gtaforums.com/topic/939232-scripthookrdr2/
+
+							(C) Alexander Blade
+								09 Feb 2023
