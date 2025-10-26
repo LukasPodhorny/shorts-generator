@@ -39,7 +39,7 @@ def extract_txt(path):
         return f.read()
 
 
-def extract_text(path):
+def extract_text(path: str):
     ext = os.path.splitext(path)[1].lower()
 
     handlers = {

@@ -66,7 +66,12 @@ class ScriptGenerator:
             },
         ]
 
-    def generate_script(self, files=None, user_input=None):
+    def generate_script(
+        self, files: list[str] | None = None, user_input: str | None = None
+    ):
+        if files == None and user_input == None:
+            raise ValueError("Either 'files' or 'user_input' must be provided.")
+
         content = ""
         if user_input:
             content += "User input:\n\n" + user_input
@@ -94,6 +99,6 @@ class ScriptGenerator:
 
 
 if __name__ == "__main__":
-    script_generator = ScriptGenerator(AVATARS["biden"])
+    script_generator = ScriptGenerator(AVATARS["biden"], builtin_reader=False)
     script = script_generator.generate_script(["test_files/Photosynthesis.pdf"])
     print(script.output_text)
