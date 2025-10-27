@@ -1,41 +1,57 @@
-import os
 from avatar import Avatar
 from avatars import AVATARS
-from runpod_caller import EndpointCaller
+from lipsync_providers import FLOATLipsync, Wav2LipLipsync
 
 
-class LipsyncGenerator(EndpointCaller):
-    def __init__(self, avatar: Avatar, timeout=360):
-        super().__init__(endpoint_id=os.getenv("FLOAT_ENDPOINT_ID"), timeout=timeout)
+class BaseLipsync:
+    def generate_lipsync(self, audio_url: str) -> str:
+        raise NotImplementedError("Subclasses must implement generate_lipsync()")
+
+
+class LipsyncGenerator:
+    """
+    Parameters:
+        avatar: Avatar
+            The avatar whose voice configuration will be used.
+        timeout: int, optional
+            Used by FLOAT, Wav2lip backend only.
+        endpoint_id: str, optional
+            Used by FLOAT, Wav2lip backend only.
+        api_key: str, optional
+            Used by FLOAT, Wav2lip backend only.
+    """
+
+    def __init__(self, avatar: Avatar, **kwargs):
         self.avatar = avatar
+        provider = self.avatar.lipsync_provider.lower()
 
-    def _prepare_input(self, audio_url, emotion, seed, a_cfg_scale, e_cfg_scale):
-        data = {
-            "input": {
-                "face_url": self.avatar.face_url,
-                "audio_url": audio_url,
-                "emotion": emotion,
-                "seed": seed,
-                "a_cfg_scale": a_cfg_scale,
-                "e_cfg_scale": e_cfg_scale,
-            }
-        }
-        return data
+        if provider == "float":
+            self.tts = FLOATLipsync(avatar=self.avatar, **kwargs)
+        elif provider == "wav2lip":
+            self.tts = Wav2LipLipsync(avatar=self.avatar, **kwargs)
+        else:
+            raise ValueError(f"Unknown Lipsync provider '{provider}'")
 
-    def generate_lipsync(
-        self,
-        audio_url: str,
-        emotion: str = "neutral",
-        seed: int = 15,
-        a_cfg_scale: int = 2,
-        e_cfg_scale: int = 1,
-    ):
-        return self.run_sync(
-            self._prepare_input(audio_url, emotion, seed, a_cfg_scale, e_cfg_scale)
-        )["output_url"]
+    def generate_lipsync(self, audio_url: str, **kwargs) -> str:
+        """
+        Parameters:
+            audio_url: str
+                Link with audio file
+            emotion: str
+                Used by FLOAT backend only.
+            seed: int
+                Used by FLOAT backend only.
+            a_cfg_scale: int
+                Used by FLOAT backend only.
+            e_cfg_scale: int
+                Used by FLOAT backend only.
+        """
+        return self.tts.generate_lipsync(audio_url=audio_url, **kwargs)
 
 
 if __name__ == "__main__":
-    lipsyncGen = LipsyncGenerator(AVATARS["biden"])
-    result = lipsyncGen.generate_lipsync("https://files.catbox.moe/r234pd.wav")
+    # long audio sample: https://files.catbox.moe/wbgzc8.wav
+    result = LipsyncGenerator(AVATARS["biden"]).generate_lipsync(
+        "https://files.catbox.moe/r234pd.wav"
+    )
     print(result)

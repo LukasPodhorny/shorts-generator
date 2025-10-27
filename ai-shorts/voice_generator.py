@@ -1,34 +1,44 @@
-import os
-from avatar import Avatar
+from avatar import Voice
 from avatars import AVATARS
-from runpod_caller import EndpointCaller
+from tts_providers import F5TTS, LemonFoxTTS
 
 
-class VoiceGenerator(EndpointCaller):
-    # timeout probably not working, and it's probably in milliseconds, not seconds
-    def __init__(self, avatar: Avatar, timeout=180):
-        super().__init__(endpoint_id=os.getenv("F5TTS_ENDPOINT_ID"), timeout=timeout)
-        self.avatar = avatar
+class VoiceGenerator:
+    """
+    Parameters:
+        voice: Voice
+            The voice configuration that will be used.
+        api_key: str, optional
+            Used by F5TTS, LemonFoxTTS backend only.
+        endpoint_id: str, optional
+            Used by F5TTS backend only.
+        timeout: int, optional
+            Used by F5TTS backend only.
+    """
 
-    def _prepare_input(self, gen_text):
-        data = {
-            "input": {
-                "audio_url": self.avatar.voice_sample_url,
-                "gen_text": gen_text,
-            }
-        }
-        if self.avatar.voice_sample_transcript:
-            data["input"]["ref_text"] = self.avatar.voice_sample_transcript
+    def __init__(self, voice: Voice, **kwargs):
+        self.voice = voice
+        provider = self.voice.provider.lower()
 
-        return data
+        if provider == "f5tts":
+            self.tts = F5TTS(voice=self.voice, **kwargs)
+        elif provider == "lemonfox":
+            self.tts = LemonFoxTTS(voice=self.voice, **kwargs)
+        else:
+            raise ValueError(f"Unknown TTS provider '{provider}'")
 
-    def generate_voice(self, gen_text: str):
-        return self.run_sync(self._prepare_input(gen_text))["output_url"]
+    def generate_voice(self, text: str, **kwargs) -> str:
+        """
+        Parameters:
+            text: str
+                Text that will be converted to speech
+        """
+        return self.tts.generate_voice(text, **kwargs)
 
 
 if __name__ == "__main__":
-    voiceGen = VoiceGenerator(AVATARS["biden"])
-    result = voiceGen.generate_voice(
-        "This is test, my name is Donald Trump and I love mcroyals. Take it or leave it, but we will return cocaine to coca-cola"
+    result = VoiceGenerator(AVATARS["biden"].voice).generate_voice(
+        "My fellow Americans, this is a test message."
     )
+
     print(result)

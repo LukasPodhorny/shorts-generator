@@ -4,10 +4,7 @@ import runpod
 
 class EndpointCaller:
     def __init__(self, endpoint_id: str, timeout: int, api_key: str | None = None):
-        if api_key:
-            runpod.api_key = api_key
-        else:
-            runpod.api_key = os.getenv("RUNPOD_API_KEY")
+        runpod.api_key = api_key or os.getenv("RUNPOD_API_KEY")
 
         self.endpoint = runpod.Endpoint(endpoint_id)
         self.timeout = timeout
