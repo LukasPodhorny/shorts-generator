@@ -6,7 +6,11 @@ from avatars import AVATARS
 
 class ScriptGenerator:
     def __init__(
-        self, avatar: Avatar, model="gpt-5", builtin_reader=True, max_output_tokens=1800
+        self,
+        avatar: Avatar,
+        model: str = "gpt-5",
+        builtin_reader: bool = True,
+        max_output_tokens: int = 1800,
     ):
         self.avatar = avatar
         self.model = model

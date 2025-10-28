@@ -2,9 +2,13 @@ import os
 from avatar import Avatar
 from avatars import AVATARS
 from runpod_caller import EndpointCaller
+from r2_handler import CloudflareR2
 
 
 class BaseLipsync:
+    OUTPUT_DIR = os.getenv("LIPSYNC_OUTPUT_DIR") or "output/lipsync"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     def generate_lipsync(self, audio_url: str) -> str:
         raise NotImplementedError("Subclasses must implement generate_lipsync()")
 
@@ -42,9 +46,15 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         a_cfg_scale: int = 2,
         e_cfg_scale: int = 1,
     ):
-        return self.run_sync(
+
+        result_url = self.run_sync(
             self._prepare_input(audio_url, emotion, seed, a_cfg_scale, e_cfg_scale)
         )["output_url"]
+
+        filepath = CloudflareR2.download_presigned_file(
+            result_url, BaseLipsync.OUTPUT_DIR
+        )
+        return filepath
 
 
 class Wav2LipLipsync(EndpointCaller, BaseLipsync):
@@ -77,4 +87,8 @@ class Wav2LipLipsync(EndpointCaller, BaseLipsync):
         self,
         audio_url: str,
     ):
-        return self.run_sync(self._prepare_input(audio_url))["output_url"]
+        result_url = self.run_sync(self._prepare_input(audio_url))["output_url"]
+        filepath = CloudflareR2.download_presigned_file(
+            result_url, BaseLipsync.OUTPUT_DIR
+        )
+        return filepath

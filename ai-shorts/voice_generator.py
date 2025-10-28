@@ -40,5 +40,4 @@ if __name__ == "__main__":
     result = VoiceGenerator(AVATARS["biden"].voice).generate_voice(
         "My fellow Americans, this is a test message."
     )
-
     print(result)

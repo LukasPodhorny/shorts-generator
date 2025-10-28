@@ -2,10 +2,13 @@ import os
 import requests
 from runpod_caller import EndpointCaller
 from avatar import Voice
-import uuid
+from r2_handler import CloudflareR2
 
 
 class BaseTTS:
+    OUTPUT_DIR = os.getenv("TTS_OUTPUT_DIR") or "output/tts"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     def generate_voice(self, text: str) -> str:
         raise NotImplementedError("Subclasses must implement generate_voice()")
 
@@ -34,8 +37,9 @@ class F5TTS(EndpointCaller, BaseTTS):
         return data
 
     def generate_voice(self, text: str) -> str:
-        result = self.run_sync(self._prepare_input(text))
-        return result["output_url"]
+        result_url = self.run_sync(self._prepare_input(text))["output_url"]
+        filepath = CloudflareR2.download_presigned_file(result_url, BaseTTS.OUTPUT_DIR)
+        return filepath
 
 
 class LemonFoxTTS(BaseTTS):
@@ -63,7 +67,7 @@ class LemonFoxTTS(BaseTTS):
         )
 
         if response.status_code == 200:
-            filepath = f"output/{uuid.uuid4().hex}.mp3"
+            filepath = CloudflareR2.get_random_filepath(BaseTTS.OUTPUT_DIR, ".mp3")
             with open(filepath, "wb") as f:
                 f.write(response.content)
 
