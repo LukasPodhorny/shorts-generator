@@ -1,0 +1,31 @@
+TTS_PROVIDERS: dict[str, type] = {}
+
+
+def register_tts(provider_name: str):
+    def decorator(cls):
+        TTS_PROVIDERS[provider_name.lower()] = cls
+        return cls
+
+    return decorator
+
+
+LIPSYNC_PROVIDERS: dict[str, type] = {}
+
+
+def register_lipsync(provider_name: str):
+    def decorator(cls):
+        LIPSYNC_PROVIDERS[provider_name.lower()] = cls
+        return cls
+
+    return decorator
+
+
+EDIT_TEMPLATES: dict[str, type] = {}
+
+
+def register_edit_template(template_name: str):
+    def decorator(cls):
+        EDIT_TEMPLATES[template_name.lower()] = cls
+        return cls
+
+    return decorator

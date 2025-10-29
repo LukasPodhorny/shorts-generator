@@ -3,6 +3,7 @@ import requests
 from runpod_caller import EndpointCaller
 from avatar import Voice
 from r2_handler import CloudflareR2
+from registry import register_tts
 
 
 class BaseTTS:
@@ -13,7 +14,9 @@ class BaseTTS:
         raise NotImplementedError("Subclasses must implement generate_voice()")
 
 
+@register_tts("f5tts")
 class F5TTS(EndpointCaller, BaseTTS):
+
     def __init__(
         self,
         voice: Voice,
@@ -42,7 +45,9 @@ class F5TTS(EndpointCaller, BaseTTS):
         return filepath
 
 
+@register_tts("lemonfox")
 class LemonFoxTTS(BaseTTS):
+
     def __init__(self, voice: Voice, api_key: str | None = None):
         self.voice = voice
         self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")

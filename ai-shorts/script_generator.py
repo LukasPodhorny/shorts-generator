@@ -1,7 +1,7 @@
 from openai import OpenAI
 from file_reader import extract_text
 from avatar import Avatar
-from avatars import AVATARS
+from avatars_config import AVATARS
 
 
 class ScriptGenerator:

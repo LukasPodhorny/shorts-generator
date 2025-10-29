@@ -1,6 +1,7 @@
 from avatar import Avatar
-from avatars import AVATARS
+from avatars_config import AVATARS
 from lipsync_providers import FLOATLipsync, Wav2LipLipsync
+from registry import LIPSYNC_PROVIDERS
 
 
 class BaseLipsync:
@@ -25,12 +26,11 @@ class LipsyncGenerator:
         self.avatar = avatar
         provider = self.avatar.lipsync_provider.lower()
 
-        if provider == "float":
-            self.tts = FLOATLipsync(avatar=self.avatar, **kwargs)
-        elif provider == "wav2lip":
-            self.tts = Wav2LipLipsync(avatar=self.avatar, **kwargs)
-        else:
+        cls = LIPSYNC_PROVIDERS.get(provider)
+        if not cls:
             raise ValueError(f"Unknown Lipsync provider '{provider}'")
+
+        self.tts = cls(avatar=self.avatar, **kwargs)
 
     def generate_lipsync(self, audio_url: str, **kwargs) -> str:
         """
