@@ -1,8 +1,8 @@
 import os
 from avatar import Avatar
-from avatars import AVATARS
 from runpod_caller import EndpointCaller
 from r2_handler import CloudflareR2
+from registry import register_tts
 
 
 class BaseLipsync:
@@ -13,7 +13,9 @@ class BaseLipsync:
         raise NotImplementedError("Subclasses must implement generate_lipsync()")
 
 
+@register_tts("float")
 class FLOATLipsync(EndpointCaller, BaseLipsync):
+
     def __init__(
         self,
         avatar: Avatar,
@@ -57,7 +59,9 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         return filepath
 
 
+@register_tts("wav2lip")
 class Wav2LipLipsync(EndpointCaller, BaseLipsync):
+
     def __init__(
         self,
         avatar: Avatar,

@@ -1,6 +1,6 @@
 from avatar import Voice
-from avatars import AVATARS
-from tts_providers import F5TTS, LemonFoxTTS
+from avatars_config import AVATARS
+from registry import TTS_PROVIDERS
 
 
 class VoiceGenerator:
@@ -20,12 +20,11 @@ class VoiceGenerator:
         self.voice = voice
         provider = self.voice.provider.lower()
 
-        if provider == "f5tts":
-            self.tts = F5TTS(voice=self.voice, **kwargs)
-        elif provider == "lemonfox":
-            self.tts = LemonFoxTTS(voice=self.voice, **kwargs)
-        else:
+        cls = TTS_PROVIDERS.get(provider)
+        if not cls:
             raise ValueError(f"Unknown TTS provider '{provider}'")
+
+        self.tts = cls(voice=self.voice, **kwargs)
 
     def generate_voice(self, text: str, **kwargs) -> str:
         """
