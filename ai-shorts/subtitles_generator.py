@@ -15,5 +15,5 @@ def generate_subtitles(audio_file):
 
 
 if __name__ == "__main__":
-    subtitles = generate_subtitles("test_files/biden-voice-veryshort.mp3")
+    subtitles = generate_subtitles("test_files/goggins-10.wav")
     print(subtitles)

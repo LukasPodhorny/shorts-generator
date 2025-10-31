@@ -218,3 +218,4 @@ __marimo__/
 ai-shorts/test_files/*
 !ai-shorts/test_files/Photosynthesis.pdf
 output/
+assets/
