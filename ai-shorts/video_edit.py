@@ -11,7 +11,7 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 import os
 from r2_handler import CloudflareR2
 from openai.types.audio import TranscriptionVerbose
-from sub_test import TEST_SUBTITLES
+from sub_test import TEST_SUBTITLES, TEST_SUBTITLES_FORCED_ALIGNMENT
 
 
 @dataclass
@@ -171,7 +171,7 @@ class GameplayTemplate(EditTemplate):
 if __name__ == "__main__":
     assets = TemplateAssets(
         lipsync_video="output/lipsync/b7ab285994464d9dbfc62d485427f2f1.mp4",
-        subtitles=TEST_SUBTITLES,
+        subtitles=TEST_SUBTITLES_FORCED_ALIGNMENT,
     )
     config = TemplateConfig(
         bg_video="assets/bg_video/gameplay_20.mp4",
