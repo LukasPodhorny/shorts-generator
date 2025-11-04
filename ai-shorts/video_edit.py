@@ -23,7 +23,8 @@ class TemplateAssets:
 
 
 @dataclass
-class SubtitleStyle:
+class SubtitleConfig:
+    provider: str = "elevenlabs"
     font: str | None = None
     font_size: int = 150
     color: str = "white"
@@ -48,7 +49,7 @@ class SubtitleStyle:
 class TemplateConfig:
     bg_video: str | None = None
     music: str | None = None
-    subtitle_style: SubtitleStyle | None = None
+    subtitle_style: SubtitleConfig | None = None
     # add more like stroke width etc...
 
 
@@ -68,22 +69,22 @@ class EditTemplate:
     def generate_subtitles(
         self,
         subtitles: TranscriptionVerbose,
-        subtitle_style: SubtitleStyle,
+        subtitle_config: SubtitleConfig,
         screen_width=1080,
         screen_height=1920,
     ) -> SubtitlesClip:
 
         subtitle_words = subtitles.words
-        size = subtitle_style.size
-        offset_x = subtitle_style.offset_x
-        offset_y = subtitle_style.offset_y
+        size = subtitle_config.size
+        offset_x = subtitle_config.offset_x
+        offset_y = subtitle_config.offset_y
 
         # workaround for keeping the y position same:
         # tall character (|), so the text height stays always the same
         # white spaces -> so it overflows and is not seen
         padding = " " * 30
         generator = lambda txt: TextClip(
-            text=f"|{padding}{txt}{padding}|", **subtitle_style.textclip_kwargs()
+            text=f"|{padding}{txt}{padding}|", **subtitle_config.textclip_kwargs()
         )
 
         subs = []
@@ -176,7 +177,7 @@ if __name__ == "__main__":
     config = TemplateConfig(
         bg_video="assets/bg_video/gameplay_20.mp4",
         music="assets/music/music_20.mp3",
-        subtitle_style=SubtitleStyle(font="assets/fonts/NotoSans-Bold.ttf"),
+        subtitle_style=SubtitleConfig(font="assets/fonts/NotoSans-Bold.ttf"),
     )
     template = GameplayTemplate(assets, config)
     template.compose()

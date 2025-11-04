@@ -29,3 +29,14 @@ def register_edit_template(template_name: str):
         return cls
 
     return decorator
+
+
+SUBTITLE_PROVIDERS: dict[str, type] = {}
+
+
+def register_subtitle_template(template_name: str):
+    def decorator(cls):
+        SUBTITLE_PROVIDERS[template_name.lower()] = cls
+        return cls
+
+    return decorator
