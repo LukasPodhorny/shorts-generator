@@ -32,6 +32,8 @@ class SubtitleGenerator:
                 Text that will be converted to speech
             transcription_text: str
                 Transcription text required by elevenlabs forced alignment
+            use_lemonfox: bool
+                only used by WhisperSubtitles backend
         """
         return self.subtitle.generate_subtitles(audio_file, **kwargs)
 

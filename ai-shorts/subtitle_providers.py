@@ -14,8 +14,14 @@ class BaseSubtitles:
 @register_subtitle_template("whisper")
 class WhisperSubtitles(BaseSubtitles):
 
-    def __init__(self, api_key: str | None = None):
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, use_lemonfox: bool = True, api_key: str | None = None):
+        self.api_key = None
+        if use_lemonfox:
+            self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
+
+        self.client = OpenAI(
+            api_key=self.api_key, base_url="https://api.lemonfox.ai/v1"
+        )
 
     def generate_subtitles(self, audio_file: str):
 
