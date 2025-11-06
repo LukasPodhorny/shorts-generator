@@ -23,7 +23,7 @@ class TemplateAssets:
 
 
 @dataclass
-class SubtitleConfig:
+class SubtitleStyle:
     provider: str = "elevenlabs"
     font: str | None = None
     font_size: int = 150
@@ -49,7 +49,7 @@ class SubtitleConfig:
 class TemplateConfig:
     bg_video: str | None = None
     music: str | None = None
-    subtitle_style: SubtitleConfig | None = None
+    subtitle_style: SubtitleStyle | None = None
     # add more like stroke width etc...
 
 
@@ -69,22 +69,22 @@ class EditTemplate:
     def generate_subtitles(
         self,
         subtitles: TranscriptionVerbose,
-        subtitle_config: SubtitleConfig,
+        subtitle_style: SubtitleStyle,
         screen_width=1080,
         screen_height=1920,
     ) -> SubtitlesClip:
 
         subtitle_words = subtitles.words
-        size = subtitle_config.size
-        offset_x = subtitle_config.offset_x
-        offset_y = subtitle_config.offset_y
+        size = subtitle_style.size
+        offset_x = subtitle_style.offset_x
+        offset_y = subtitle_style.offset_y
 
         # workaround for keeping the y position same:
         # tall character (|), so the text height stays always the same
         # white spaces -> so it overflows and is not seen
         padding = " " * 30
         generator = lambda txt: TextClip(
-            text=f"|{padding}{txt}{padding}|", **subtitle_config.textclip_kwargs()
+            text=f"|{padding}{txt}{padding}|", **subtitle_style.textclip_kwargs()
         )
 
         subs = []
@@ -106,24 +106,18 @@ class EditTemplate:
 @register_edit_template("gameplay")
 class GameplayTemplate(EditTemplate):
     # later maybe image timeline or something...
-    required_assets = ["voiceover", "lipsync_video", "subtitles"]
+    required_assets = ["lipsync_video", "subtitles"]
 
-    def __init__(
-        self, template_assets: TemplateAssets, template_config: TemplateConfig
-    ):
-        # self.voiceover = template_assets.voiceover
-        self.lipsync_video = template_assets.lipsync_video
-        self.subtitles = template_assets.subtitles
-
+    def __init__(self, template_config: TemplateConfig):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
 
-    def compose(self):
+    def compose(self, template_assets: TemplateAssets):
 
         # === Load media ===
         gameplay = VideoFileClip(self.bg_video).resized(width=1080)
-        lipsync = VideoFileClip(self.lipsync_video).resized(width=1080)
+        lipsync = VideoFileClip(template_assets.lipsync_video).resized(width=1080)
         music = AudioFileClip(self.music)
 
         # === Crop to vertical format (if needed) ===
@@ -140,7 +134,7 @@ class GameplayTemplate(EditTemplate):
 
         # === Add subtitles ===
         subtitles = self.generate_subtitles(
-            subtitles=self.subtitles,
+            subtitles=template_assets.subtitles,
             subtitle_style=self.subtitle_style,
         )
 
@@ -177,7 +171,7 @@ if __name__ == "__main__":
     config = TemplateConfig(
         bg_video="assets/bg_video/gameplay_20.mp4",
         music="assets/music/music_20.mp3",
-        subtitle_style=SubtitleConfig(font="assets/fonts/NotoSans-Bold.ttf"),
+        subtitle_style=SubtitleStyle(font="assets/fonts/NotoSans-Bold.ttf"),
     )
     template = GameplayTemplate(assets, config)
     template.compose()

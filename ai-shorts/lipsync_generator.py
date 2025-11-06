@@ -4,11 +4,6 @@ from lipsync_providers import FLOATLipsync, Wav2LipLipsync
 from registry import LIPSYNC_PROVIDERS
 
 
-class BaseLipsync:
-    def generate_lipsync(self, audio_url: str) -> str:
-        raise NotImplementedError("Subclasses must implement generate_lipsync()")
-
-
 class LipsyncGenerator:
     """
     Parameters:
