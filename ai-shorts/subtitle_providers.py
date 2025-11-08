@@ -1,9 +1,10 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 import os
 from io import BytesIO
 from elevenlabs.client import ElevenLabs
 from registry import register_subtitle_template
+import asyncio
 
 
 class BaseSubtitles:
@@ -19,14 +20,14 @@ class WhisperSubtitles(BaseSubtitles):
         if use_lemonfox:
             self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=self.api_key, base_url="https://api.lemonfox.ai/v1"
         )
 
-    def generate_subtitles(self, audio_file: str):
+    async def generate_subtitles(self, audio_file: str):
 
         with open(audio_file, "rb") as audio:
-            transcription = self.client.audio.transcriptions.create(
+            transcription = await self.client.audio.transcriptions.create(
                 file=audio,
                 model="whisper-1",
                 response_format="verbose_json",
@@ -52,11 +53,12 @@ class ElevenLabsSubtitles(BaseSubtitles):
 
         self.elevenlabs = ElevenLabs(api_key=self.api_key)
 
-    def generate_subtitles(self, audio_file: str, transcription_text: str):
+    async def generate_subtitles(self, audio_file: str, transcription_text: str):
         with open(audio_file, "rb") as f:
             audio_data = BytesIO(f.read())
 
-        transcription = self.elevenlabs.forced_alignment.create(
+        transcription = await asyncio.to_thread(
+            self.elevenlabs.forced_alignment.create,
             file=audio_data,
             text=transcription_text,
         )

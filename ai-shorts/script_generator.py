@@ -80,14 +80,17 @@ class ScriptGenerator:
         if user_input:
             content += "User input:\n\n" + user_input
 
-        if self.builtin_reader:
-            for i in range(0, len(files)):
-                content += f"\n\nFile {i+1}:\n\n" + extract_text(files[i])
+        if files and len(files) > 0:
+            if self.builtin_reader:
+                for i in range(0, len(files)):
+                    content += f"\n\nFile {i+1}:\n\n" + extract_text(files[i])
 
-            input_data = self._prepare_builtin_input(content)
+                input_data = self._prepare_builtin_input(content)
+            else:
+                uploaded_files = self._upload_files(files)
+                input_data = self._prepare_api_input(content, uploaded_files)
         else:
-            uploaded_files = self._upload_files(files)
-            input_data = self._prepare_api_input(content, uploaded_files)
+            input_data = self._prepare_builtin_input(content)
 
         try:
             response = self.client.responses.create(
@@ -99,7 +102,7 @@ class ScriptGenerator:
             if not self.builtin_reader:
                 self._delete_files(uploaded_files)
 
-        return response
+        return response.output_text
 
 
 if __name__ == "__main__":

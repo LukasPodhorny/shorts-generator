@@ -1,6 +1,9 @@
 from avatar import Voice
 from avatars_config import AVATARS
+from tts_providers import *
 from registry import TTS_PROVIDERS
+import inspect
+import asyncio
 
 
 class VoiceGenerator:
@@ -16,27 +19,39 @@ class VoiceGenerator:
             Used by F5TTS backend only.
     """
 
-    def __init__(self, voice: Voice, **kwargs):
+    def __init__(self, voice: Voice, return_url: bool = False, **kwargs):
         self.voice = voice
+        self.retrun_url = return_url
         provider = self.voice.provider.lower()
 
         cls = TTS_PROVIDERS.get(provider)
         if not cls:
             raise ValueError(f"Unknown TTS provider '{provider}'")
 
-        self.tts = cls(voice=self.voice, **kwargs)
+        self.tts = cls(voice=self.voice, return_url=self.retrun_url, **kwargs)
 
-    def generate_voice(self, text: str, **kwargs) -> str:
+    async def generate_voice(self, text: str, **kwargs) -> str:
         """
         Parameters:
             text: str
                 Text that will be converted to speech
         """
-        return self.tts.generate_voice(text, **kwargs)
+        func = self.tts.generate_voice
+
+        if inspect.iscoroutinefunction(func):
+            return await func(text, **kwargs)
+        else:
+            print("Running sync TTS in thread...")
+            return asyncio.to_thread(func, text, **kwargs)
+
+
+async def main():
+    voice_gen = VoiceGenerator(AVATARS["biden"].voice)
+    result = await voice_gen.generate_voice(
+        "My fellow Americans, this is a test message."
+    )
+    print("Result path:", result)
 
 
 if __name__ == "__main__":
-    result = VoiceGenerator(AVATARS["biden"].voice).generate_voice(
-        "My fellow Americans, this is a test message."
-    )
-    print(result)
+    asyncio.run(main())

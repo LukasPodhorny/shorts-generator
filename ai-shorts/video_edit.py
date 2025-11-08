@@ -12,6 +12,7 @@ import os
 from r2_handler import CloudflareR2
 from openai.types.audio import TranscriptionVerbose
 from sub_test import TEST_SUBTITLES, TEST_SUBTITLES_FORCED_ALIGNMENT
+from asset_type import AssetType
 
 
 @dataclass
@@ -106,7 +107,12 @@ class EditTemplate:
 @register_edit_template("gameplay")
 class GameplayTemplate(EditTemplate):
     # later maybe image timeline or something...
-    required_assets = ["lipsync_video", "subtitles"]
+    required_assets = [
+        AssetType.SCRIPT,
+        AssetType.VOICE,
+        AssetType.LIPSYNC,
+        AssetType.SUBTITLES,
+    ]
 
     def __init__(self, template_config: TemplateConfig):
         self.bg_video = template_config.bg_video
@@ -116,9 +122,13 @@ class GameplayTemplate(EditTemplate):
     def compose(self, template_assets: TemplateAssets):
 
         # === Load media ===
-        gameplay = VideoFileClip(self.bg_video).resized(width=1080)
         lipsync = VideoFileClip(template_assets.lipsync_video).resized(width=1080)
-        music = AudioFileClip(self.music)
+        gameplay = (
+            VideoFileClip(self.bg_video)
+            .resized(width=1080)
+            .with_duration(lipsync.duration)
+        )
+        music = AudioFileClip(self.music).with_duration(lipsync.duration)
 
         # === Crop to vertical format (if needed) ===
         gameplay = gameplay.cropped(
@@ -147,7 +157,9 @@ class GameplayTemplate(EditTemplate):
             ],
             size=(1080, 1920),
         )
-        mixed_audio = CompositeAudioClip([lipsync.audio, music.with_volume_scaled(0.4)])
+        mixed_audio = CompositeAudioClip(
+            [lipsync.audio.with_volume_scaled(4), music.with_volume_scaled(0.4)]
+        )
         final = final.with_audio(mixed_audio)
 
         # === Export ===

@@ -2,7 +2,7 @@ import os
 from avatar import Avatar
 from runpod_caller import EndpointCaller
 from r2_handler import CloudflareR2
-from registry import register_tts
+from registry import register_lipsync
 
 
 class BaseLipsync:
@@ -13,7 +13,7 @@ class BaseLipsync:
         raise NotImplementedError("Subclasses must implement generate_lipsync()")
 
 
-@register_tts("float")
+@register_lipsync("float")
 class FLOATLipsync(EndpointCaller, BaseLipsync):
 
     def __init__(
@@ -40,7 +40,7 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         }
         return data
 
-    def generate_lipsync(
+    async def generate_lipsync(
         self,
         audio_url: str,
         emotion: str = "neutral",
@@ -49,9 +49,11 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         e_cfg_scale: int = 1,
     ):
 
-        result_url = self.run_sync(
+        result = await self.run_async(
             self._prepare_input(audio_url, emotion, seed, a_cfg_scale, e_cfg_scale)
-        )["output_url"]
+        )
+
+        result_url = result["output_url"]
 
         filepath = CloudflareR2.download_presigned_file(
             result_url, BaseLipsync.OUTPUT_DIR
@@ -59,7 +61,7 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         return filepath
 
 
-@register_tts("wav2lip")
+@register_lipsync("wav2lip")
 class Wav2LipLipsync(EndpointCaller, BaseLipsync):
 
     def __init__(
@@ -87,11 +89,12 @@ class Wav2LipLipsync(EndpointCaller, BaseLipsync):
 
         return data
 
-    def generate_lipsync(
+    async def generate_lipsync(
         self,
         audio_url: str,
     ):
-        result_url = self.run_sync(self._prepare_input(audio_url))["output_url"]
+        result = await self.run_async(self._prepare_input(audio_url))
+        result_url = result["output_url"]
         filepath = CloudflareR2.download_presigned_file(
             result_url, BaseLipsync.OUTPUT_DIR
         )

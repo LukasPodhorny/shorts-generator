@@ -4,13 +4,19 @@ from runpod_caller import EndpointCaller
 from avatar import Voice
 from r2_handler import CloudflareR2
 from registry import register_tts
+import aiohttp
+import asyncio
 
 
 class BaseTTS:
     OUTPUT_DIR = os.getenv("TTS_OUTPUT_DIR") or "output/tts"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    def generate_voice(self, text: str) -> str:
+    def generate_voice(
+        self,
+        text: str,
+        return_url: bool = True,
+    ) -> str:
         raise NotImplementedError("Subclasses must implement generate_voice()")
 
 
@@ -20,6 +26,7 @@ class F5TTS(EndpointCaller, BaseTTS):
     def __init__(
         self,
         voice: Voice,
+        return_url: bool = False,
         timeout=180,
         endpoint_id: str | None = None,
         api_key: str | None = None,
@@ -27,6 +34,7 @@ class F5TTS(EndpointCaller, BaseTTS):
         self.endpoint_id = endpoint_id or os.getenv("F5TTS_ENDPOINT_ID")
         super().__init__(endpoint_id=self.endpoint_id, timeout=timeout, api_key=api_key)
         self.voice = voice
+        self.return_url = return_url
 
     def _prepare_input(self, text: str):
         data = {
@@ -39,20 +47,33 @@ class F5TTS(EndpointCaller, BaseTTS):
             data["input"]["ref_text"] = self.voice.sample_transcript
         return data
 
-    def generate_voice(self, text: str) -> str:
-        result_url = self.run_sync(self._prepare_input(text))["output_url"]
+    async def generate_voice(self, text: str) -> str:
+        result = await self.run_async(self._prepare_input(text))
+        result_url = result["output_url"]
+
         filepath = CloudflareR2.download_presigned_file(result_url, BaseTTS.OUTPUT_DIR)
-        return filepath
+
+        if self.return_url:
+            return filepath, result_url
+        else:
+            return filepath
 
 
 @register_tts("lemonfox")
 class LemonFoxTTS(BaseTTS):
 
-    def __init__(self, voice: Voice, api_key: str | None = None):
+    def __init__(
+        self,
+        voice: Voice,
+        return_url: bool = False,
+        api_key: str | None = None,
+    ):
         self.voice = voice
         self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
+        self.return_url = return_url
+        self.r2 = CloudflareR2()
 
-    def generate_voice(self, text: str) -> str:
+    async def generate_voice(self, text: str) -> str:
 
         url = "https://api.lemonfox.ai/v1/audio/speech"
         headers = {
@@ -65,17 +86,24 @@ class LemonFoxTTS(BaseTTS):
             "response_format": "mp3",
         }
 
-        response = requests.post(
-            url,
-            headers=headers,
-            json=data,
-        )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    audio_bytes = await response.read()
 
-        if response.status_code == 200:
-            filepath = CloudflareR2.get_random_filepath(BaseTTS.OUTPUT_DIR, ".mp3")
-            with open(filepath, "wb") as f:
-                f.write(response.content)
+                    filepath = CloudflareR2.get_random_filepath(
+                        BaseTTS.OUTPUT_DIR, ".mp3"
+                    )
+                    with open(filepath, "wb") as f:
+                        f.write(audio_bytes)
 
-            return filepath
-        else:
-            raise RuntimeError(f"Error {response.status_code}: {response.text}")
+                    if self.return_url:
+                        result_url = self.r2.upload_file(
+                            filepath, "lemonfox/" + os.path.basename(filepath)
+                        )
+                        return filepath, result_url
+                    else:
+                        return filepath
+                else:
+                    text = await response.text()
+                    raise RuntimeError(f"Error {response.status}: {text}")
