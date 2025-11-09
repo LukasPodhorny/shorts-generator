@@ -102,7 +102,7 @@ class EditTemplate:
         # workaround for keeping the y position same:
         # tall character (|), so the text height stays always the same
         # white spaces -> so it overflows and is not seen
-        padding = " " * 30
+        padding = " " * 60
         generator = lambda txt: TextClip(
             text=f"|{padding}{txt}{padding}|", **subtitle_style.textclip_kwargs()
         )
