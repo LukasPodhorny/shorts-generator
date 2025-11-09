@@ -1,7 +1,7 @@
-from avatar import Avatar
-from avatars_config import AVATARS
-from lipsync_providers import *
-from registry import LIPSYNC_PROVIDERS
+from aishorts.modules.avatar import Avatar
+from aishorts.tests.avatars_config import AVATARS
+from aishorts.modules.lipsync.lipsync_providers import *
+from aishorts.utils.registry import LIPSYNC_PROVIDERS
 import inspect
 import asyncio
 

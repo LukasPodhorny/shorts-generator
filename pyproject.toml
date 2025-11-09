@@ -1,0 +1,29 @@
+[project]
+name = "aishorts"
+version = "0.1.0"
+description = "PDF-to-brainrot AI short generator"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "aiohttp==3.13.1",
+    "boto3==1.40.61",
+    "elevenlabs==2.22.0",
+    "moviepy==2.2.1",
+    "openai==2.7.1",
+    "pypdf==6.2.0",
+    "python-docx==1.2.0",
+    "python-pptx==1.0.2",
+    "requests==2.32.5",
+    "runpod==1.7.13",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+ai-shorts = "cli.main:main"

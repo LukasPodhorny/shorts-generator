@@ -1,11 +1,9 @@
 import os
-import requests
-from runpod_caller import EndpointCaller
-from avatar import Voice
-from r2_handler import CloudflareR2
-from registry import register_tts
+from aishorts.utils.runpod_caller import EndpointCaller
+from aishorts.modules.avatar import Voice
+from aishorts.utils.r2_handler import CloudflareR2
+from aishorts.utils.registry import register_tts
 import aiohttp
-import asyncio
 
 
 class BaseTTS:

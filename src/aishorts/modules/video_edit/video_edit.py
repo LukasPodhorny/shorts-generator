@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from registry import register_edit_template
+from aishorts.utils.registry import register_edit_template
 from moviepy import (
     VideoFileClip,
     AudioFileClip,
@@ -9,10 +9,10 @@ from moviepy import (
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
 import os
-from r2_handler import CloudflareR2
+from aishorts.utils.r2_handler import CloudflareR2
 from openai.types.audio import TranscriptionVerbose
-from sub_test import TEST_SUBTITLES, TEST_SUBTITLES_FORCED_ALIGNMENT
-from asset_type import AssetType
+from aishorts.tests.sub_test import TEST_SUBTITLES, TEST_SUBTITLES_FORCED_ALIGNMENT
+from aishorts.modules.video_edit.asset_type import AssetType
 
 
 @dataclass
@@ -45,6 +45,13 @@ class SubtitleStyle:
             "size": self.size,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict):
+        # Convert size from list to tuple if loaded from JSON
+        if "size" in data and isinstance(data["size"], list):
+            data["size"] = tuple(data["size"])
+        return cls(**data)
+
 
 @dataclass
 class TemplateConfig:
@@ -53,11 +60,23 @@ class TemplateConfig:
     subtitle_style: SubtitleStyle | None = None
     # add more like stroke width etc...
 
+    @classmethod
+    def from_dict(cls, data: dict):
+        subtitle_style = data.get("subtitle_style")
+        if isinstance(subtitle_style, dict):
+            data["subtitle_style"] = SubtitleStyle.from_dict(subtitle_style)
+        return cls(**data)
+
 
 @dataclass
 class VideoTemplate:
     edit_template: str
     template_config: TemplateConfig
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        data["template_config"] = TemplateConfig.from_dict(data["template_config"])
+        return cls(**data)
 
 
 class EditTemplate:
@@ -123,11 +142,7 @@ class GameplayTemplate(EditTemplate):
 
         # === Load media ===
         lipsync = VideoFileClip(template_assets.lipsync_video).resized(width=1080)
-        gameplay = (
-            VideoFileClip(self.bg_video)
-            .resized(width=1080)
-            .with_duration(lipsync.duration)
-        )
+        gameplay = VideoFileClip(self.bg_video).with_duration(lipsync.duration)
         music = AudioFileClip(self.music).with_duration(lipsync.duration)
 
         # === Crop to vertical format (if needed) ===
@@ -158,7 +173,7 @@ class GameplayTemplate(EditTemplate):
             size=(1080, 1920),
         )
         mixed_audio = CompositeAudioClip(
-            [lipsync.audio.with_volume_scaled(4), music.with_volume_scaled(0.4)]
+            [lipsync.audio.with_volume_scaled(5), music.with_volume_scaled(0.2)]
         )
         final = final.with_audio(mixed_audio)
 
@@ -177,13 +192,13 @@ class GameplayTemplate(EditTemplate):
 # Example usage
 if __name__ == "__main__":
     assets = TemplateAssets(
-        lipsync_video="output/lipsync/b7ab285994464d9dbfc62d485427f2f1.mp4",
+        lipsync_video="/home/lukaspodhorny/projects/shorts-generator/output/lipsync/609dbff94b4249e5bcb5b69150dfc981.mp4",
         subtitles=TEST_SUBTITLES_FORCED_ALIGNMENT,
     )
     config = TemplateConfig(
-        bg_video="assets/bg_video/gameplay_20.mp4",
-        music="assets/music/music_20.mp3",
+        bg_video="assets/bg_video/gameplay.mp4",
+        music="assets/music/music.mp3",
         subtitle_style=SubtitleStyle(font="assets/fonts/NotoSans-Bold.ttf"),
     )
-    template = GameplayTemplate(assets, config)
-    template.compose()
+    template = GameplayTemplate(config)
+    template.compose(assets)

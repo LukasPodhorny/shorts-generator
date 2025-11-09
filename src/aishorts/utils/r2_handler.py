@@ -4,8 +4,6 @@ from urllib.parse import urlparse
 import uuid
 import requests
 
-# source: chat-gpt 5
-
 
 class CloudflareR2:
     def __init__(self):

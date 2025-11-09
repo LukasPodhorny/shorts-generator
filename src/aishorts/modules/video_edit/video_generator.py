@@ -1,7 +1,11 @@
-from registry import EDIT_TEMPLATES
-from video_edit import TemplateAssets, TemplateConfig, VideoTemplate
-from sub_test import TEST_SUBTITLES_FORCED_ALIGNMENT
-from video_edit import SubtitleStyle
+from aishorts.utils.registry import EDIT_TEMPLATES
+from aishorts.modules.video_edit.video_edit import (
+    TemplateAssets,
+    TemplateConfig,
+    VideoTemplate,
+)
+from aishorts.tests.sub_test import TEST_SUBTITLES_FORCED_ALIGNMENT
+from aishorts.modules.video_edit.video_edit import SubtitleStyle
 
 
 class VideoGenerator:

@@ -3,7 +3,7 @@ from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 import os
 from io import BytesIO
 from elevenlabs.client import ElevenLabs
-from registry import register_subtitle_template
+from aishorts.utils.registry import register_subtitle_template
 import asyncio
 
 
@@ -42,8 +42,8 @@ class ElevenLabsSubtitles(BaseSubtitles):
     def __init__(
         self,
         display_silence: bool = False,
-        min_silence_duration: float = 0.8,
-        remove_chars=".,",
+        min_silence_duration: float = 0.5,
+        remove_chars=".,—",
         api_key: str | None = None,
     ):
         self.display_silence = display_silence

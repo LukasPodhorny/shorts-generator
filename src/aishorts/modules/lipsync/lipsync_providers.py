@@ -1,8 +1,8 @@
 import os
-from avatar import Avatar
-from runpod_caller import EndpointCaller
-from r2_handler import CloudflareR2
-from registry import register_lipsync
+from aishorts.modules.avatar import Avatar
+from aishorts.utils.runpod_caller import EndpointCaller
+from aishorts.utils.r2_handler import CloudflareR2
+from aishorts.utils.registry import register_lipsync
 
 
 class BaseLipsync:
@@ -48,7 +48,6 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         a_cfg_scale: int = 2,
         e_cfg_scale: int = 1,
     ):
-
         result = await self.run_async(
             self._prepare_input(audio_url, emotion, seed, a_cfg_scale, e_cfg_scale)
         )

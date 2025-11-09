@@ -1,0 +1,13 @@
+{
+    "basic_gameplay": {
+        "edit_template": "gameplay",
+        "template_config": {
+            "bg_video": "assets/bg_video/gameplay.mp4",
+            "music": "assets/music/music.mp3",
+            "subtitle_style": {
+                "font": "assets/fonts/NotoSans-Bold.ttf",
+                "font_size": 135
+            }
+        }
+    }
+}

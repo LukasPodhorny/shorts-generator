@@ -1,17 +1,17 @@
 import asyncio
-from script_generator import ScriptGenerator
-from voice_generator import VoiceGenerator
-from lipsync_generator import LipsyncGenerator
+from aishorts.modules.script.script_generator import ScriptGenerator
+from aishorts.modules.tts.voice_generator import VoiceGenerator
+from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
 from dataclasses import dataclass, field
-from subtitle_generator import SubtitleGenerator
-from video_edit import VideoTemplate
-from video_generator import VideoGenerator
-from avatar import Avatar
-from registry import EDIT_TEMPLATES
-from asset_type import AssetType
-from video_edit import TemplateAssets
-from templates_config import TEMPLATES
-from avatars_config import AVATARS
+from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
+from aishorts.modules.video_edit.video_edit import VideoTemplate, TemplateAssets
+from aishorts.modules.video_edit.video_generator import VideoGenerator
+from aishorts.modules.avatar import Avatar
+from aishorts.utils.registry import EDIT_TEMPLATES
+from aishorts.modules.video_edit.asset_type import AssetType
+from aishorts.tests.templates_config import TEMPLATES
+from aishorts.tests.avatars_config import AVATARS
+from aishorts.utils.paths import resolve_path
 
 
 @dataclass
@@ -36,12 +36,13 @@ class ShortsConfig:
 
 
 class ShortsGenerator:
-    def __init__(self, avatar: Avatar, shorts_config: ShortsConfig):
+    def __init__(self, shorts_config: ShortsConfig):
+        self.avatar = shorts_config.avatar
         self.script_gen = ScriptGenerator(
-            avatar=avatar, **shorts_config.script_config.__dict__
+            avatar=self.avatar, **shorts_config.script_config.__dict__
         )
-        self.voice_gen = VoiceGenerator(voice=avatar.voice, return_url=True)
-        self.lipsync_gen = LipsyncGenerator(avatar=avatar)
+        self.voice_gen = VoiceGenerator(voice=self.avatar.voice, return_url=True)
+        self.lipsync_gen = LipsyncGenerator(avatar=self.avatar)
         self.subtitle_gen = SubtitleGenerator(
             shorts_config.subtitle_config.provider,
             **shorts_config.subtitle_config.provider_config,
@@ -49,13 +50,21 @@ class ShortsGenerator:
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
 
         self.video_template = shorts_config.video_template
+        self.template_config = self.video_template.template_config
+        self.template_config.bg_video = resolve_path(self.template_config.bg_video)
+        self.template_config.music = resolve_path(self.template_config.music)
+        self.template_config.subtitle_style.font = resolve_path(
+            self.template_config.subtitle_style.font
+        )
 
-    async def generate_short(
+    async def generate_short_async(
         self,
-        video_template: VideoTemplate,
         files: list[str] | None = None,
         user_input: str | None = None,
     ):
+        for file in files:
+            file = resolve_path(file)
+
         required_assets = EDIT_TEMPLATES.get(
             self.video_template.edit_template.lower()
         ).required_assets
@@ -71,8 +80,6 @@ class ShortsGenerator:
             template_assets.voiceover, result_url = await self.voice_gen.generate_voice(
                 script
             )
-        template_assets.voiceover = "output/tts/274d8df3035b4180a1e6840b1a4e697d.wav"
-        result_url = "https://files.catbox.moe/0ascjc.wav"
 
         print("Generating lipsync video and subtitles...")
         tasks = []
@@ -86,7 +93,7 @@ class ShortsGenerator:
                 )
             )
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks)
 
         # Map results back
         idx = 0
@@ -97,8 +104,20 @@ class ShortsGenerator:
             template_assets.subtitles = results[idx]
 
         print("Generating final video...")
-        video_generator = VideoGenerator(video_template=video_template)
+        video_generator = VideoGenerator(video_template=self.video_template)
         return video_generator.compose(template_assets=template_assets)
+
+    def generate_short(
+        self,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+    ):
+        asyncio.run(
+            self.generate_short_async(
+                files=files,
+                user_input=user_input,
+            ),
+        )
 
 
 async def main():

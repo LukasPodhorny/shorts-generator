@@ -1,7 +1,7 @@
-from avatar import Voice
-from avatars_config import AVATARS
-from tts_providers import *
-from registry import TTS_PROVIDERS
+from aishorts.modules.avatar import Voice
+from aishorts.tests.avatars_config import AVATARS
+from aishorts.modules.tts.tts_providers import *
+from aishorts.utils.registry import TTS_PROVIDERS
 import inspect
 import asyncio
 
