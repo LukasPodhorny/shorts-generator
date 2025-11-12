@@ -43,15 +43,3 @@ class VoiceGenerator:
         else:
             print("Running sync TTS in thread...")
             return asyncio.to_thread(func, text, **kwargs)
-
-
-async def main():
-    voice_gen = VoiceGenerator(AVATARS["biden"].voice)
-    result = await voice_gen.generate_voice(
-        "My fellow Americans, this is a test message."
-    )
-    print("Result path:", result)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

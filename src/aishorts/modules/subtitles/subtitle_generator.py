@@ -20,7 +20,7 @@ class SubtitleGenerator:
         self.provider = provider.lower()
 
         cls = SUBTITLE_PROVIDERS.get(self.provider)
-        
+
         if not cls:
             raise ValueError(f"Unknown Subtitle provider '{provider}'")
 
@@ -43,16 +43,3 @@ class SubtitleGenerator:
         else:
             print("Running sync TTS in thread...")
             return asyncio.to_thread(func, audio_file, **kwargs)
-
-
-async def main():
-    elevenlabs_subtitles = SubtitleGenerator(provider="elevenlabs")
-    transcription = "You get to face a lot of shit, young man. You got a long journey ahead of you, cuz you're gonna find out, that while your dad did a lot of shit to you, you're gonna have to make it on your own."
-    subtitles = await elevenlabs_subtitles.generate_subtitles(
-        audio_file="test_files/goggins-10.wav", transcription_text=transcription
-    )
-    print(subtitles)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

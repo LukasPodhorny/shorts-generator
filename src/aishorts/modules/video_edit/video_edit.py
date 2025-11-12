@@ -188,17 +188,4 @@ class GameplayTemplate(EditTemplate):
             threads=4,
         )
 
-
-# Example usage
-if __name__ == "__main__":
-    assets = TemplateAssets(
-        lipsync_video="/home/lukaspodhorny/projects/shorts-generator/output/lipsync/609dbff94b4249e5bcb5b69150dfc981.mp4",
-        subtitles=TEST_SUBTITLES_FORCED_ALIGNMENT,
-    )
-    config = TemplateConfig(
-        bg_video="assets/bg_video/gameplay.mp4",
-        music="assets/music/music.mp3",
-        subtitle_style=SubtitleStyle(font="assets/fonts/NotoSans-Bold.ttf"),
-    )
-    template = GameplayTemplate(config)
-    template.compose(assets)
+        return output_path

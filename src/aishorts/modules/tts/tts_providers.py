@@ -105,3 +105,53 @@ class LemonFoxTTS(BaseTTS):
                 else:
                     text = await response.text()
                     raise RuntimeError(f"Error {response.status}: {text}")
+
+
+@register_tts("lemonfox")
+class LemonFoxTTS(BaseTTS):
+
+    def __init__(
+        self,
+        voice: Voice,
+        return_url: bool = False,
+        api_key: str | None = None,
+    ):
+        self.voice = voice
+        self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
+        self.return_url = return_url
+        self.r2 = CloudflareR2()
+
+    async def generate_voice(self, text: str) -> str:
+
+        url = "https://api.lemonfox.ai/v1/audio/speech"
+        headers = {
+            "Authorization": self.api_key,
+            "Content-Type": "application/json",
+        }
+        data = {
+            "input": text,
+            "voice": self.voice.voice_id,
+            "response_format": "mp3",
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    audio_bytes = await response.read()
+
+                    filepath = CloudflareR2.get_random_filepath(
+                        BaseTTS.OUTPUT_DIR, ".mp3"
+                    )
+                    with open(filepath, "wb") as f:
+                        f.write(audio_bytes)
+
+                    if self.return_url:
+                        result_url = self.r2.upload_file(
+                            filepath, "lemonfox/" + os.path.basename(filepath)
+                        )
+                        return filepath, result_url
+                    else:
+                        return filepath
+                else:
+                    text = await response.text()
+                    raise RuntimeError(f"Error {response.status}: {text}")

@@ -11,7 +11,6 @@ from aishorts.utils.registry import EDIT_TEMPLATES
 from aishorts.modules.video_edit.asset_type import AssetType
 from aishorts.tests.templates_config import TEMPLATES
 from aishorts.tests.avatars_config import AVATARS
-from aishorts.utils.paths import resolve_path
 
 
 @dataclass
@@ -50,12 +49,6 @@ class ShortsGenerator:
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
 
         self.video_template = shorts_config.video_template
-        self.template_config = self.video_template.template_config
-        self.template_config.bg_video = resolve_path(self.template_config.bg_video)
-        self.template_config.music = resolve_path(self.template_config.music)
-        self.template_config.subtitle_style.font = resolve_path(
-            self.template_config.subtitle_style.font
-        )
 
     async def generate_short_async(
         self,
@@ -104,8 +97,7 @@ class ShortsGenerator:
             template_assets.subtitles = results[idx]
 
         print("Generating final video...")
-        video_generator = VideoGenerator(video_template=self.video_template)
-        return video_generator.compose(template_assets=template_assets)
+        return self.video_gen.compose(template_assets=template_assets)
 
     def generate_short(
         self,

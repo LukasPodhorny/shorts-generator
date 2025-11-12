@@ -103,9 +103,3 @@ class ScriptGenerator:
                 self._delete_files(uploaded_files)
 
         return response.output_text
-
-
-if __name__ == "__main__":
-    script_generator = ScriptGenerator(AVATARS["biden"], builtin_reader=False)
-    script = script_generator.generate_script(["test_files/Photosynthesis.pdf"])
-    print(script.output_text)

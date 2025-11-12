@@ -214,9 +214,8 @@ __marimo__/
 ;
 # Streamlit
 .streamlit/secrets.toml
-
 ai-shorts/test_files/*
-!ai-shorts/test_files/Photosynthesis.pdf
 output/
 assets/
 tests/
+pytest.ini

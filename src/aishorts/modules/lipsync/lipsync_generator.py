@@ -50,13 +50,3 @@ class LipsyncGenerator:
         else:
             print("Running sync Lipsync in thread...")
             return asyncio.to_thread(func, audio_url=audio_url, **kwargs)
-
-
-async def main():
-    lipsync_gen = LipsyncGenerator(AVATARS["biden"])
-    result = await lipsync_gen.generate_lipsync("https://files.catbox.moe/r234pd.wav")
-    print("Result path:", result)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
