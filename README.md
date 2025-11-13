@@ -1,24 +1,24 @@
 # 📚 PDF-to-Reel
 
-PDF-to-Reel (knihovna **aishorts**) je modulární AI pipeline, která převádí PDF, DOCX, PPTX nebo text na krátká vertikální videa ve stylu TikTok/Instagram Reels. Projekt generuje skript pomocí GPT-5, vytváří hlas přes TTS, provádí lipsync, vykresluje titulky a skládá výsledné video s hudbou a gameplay backgroundem.
+PDF-to-Reel (library **aishorts**) is a modular AI pipeline that converts PDF, DOCX, PPTX, or plain text into short vertical videos in the style of TikTok/Instagram Reels. The system generates a script using GPT-5, produces voice using TTS, performs lipsync, creates subtitles, and assembles the final video with music and gameplay background.
 
 ---
 
 ## ✨ Features
-- 📄 Extrakce textu z PDF/DOCX/PPTX  
-- 🤖 Scénáře generované GPT-5  
+- 📄 Text extraction from PDF/DOCX/PPTX  
+- 🤖 Script generation using GPT-5  
 - 🔊 TTS (F5-TTS, LemonFox, ElevenLabs)  
 - 👄 Lipsync (FLOAT / Wav2Lip)  
-- 📝 Titulky (Whisper / ElevenLabs alignment)  
-- 🎬 Video rendering (MoviePy)  
-- 👤 Avataři a šablony videí  
-- 🧩 Modulární architektura   
+- 📝 Subtitles (Whisper / ElevenLabs alignment)  
+- 🎬 Video rendering with MoviePy  
+- 👤 Avatars and video templates  
+- 🧩 Modular and extensible architecture  
 
 ---
 
 # 📦 Installation
 
-## 1) Clone repository
+## 1) Clone the repository
 ```bash
 git clone https://github.com/LukasPodhorny/shorts-generator
 cd shorts-generator
@@ -26,7 +26,7 @@ cd shorts-generator
 
 ## 2) Create virtual environment
 ```bash
-conda create -n shorts-generator python==3.14.0
+conda create -n shorts-generator python=3.14.0
 conda activate shorts-generator
 ```
 
@@ -49,7 +49,7 @@ Or:
 pip install -r requirements.txt
 ```
 
-## 4) Install project locally
+## 4) Install the project locally
 ```bash
 pip install -e .
 ```
@@ -62,12 +62,12 @@ export RUNPOD_API_KEY="your_key"
 export ELEVENLABS_API_KEY="your_key"
 export LEMONFOX_API_KEY="your_key"
 
-# RunPod Endpoint ID's
+# RunPod Endpoint IDs
 export F5TTS_ENDPOINT_ID="your_key"
 export FLOAT_ENDPOINT_ID="your_key"
 export WAV2LIP_ENDPOINT_ID="your_key"
 
-# CloudFlare R2 Storage
+# Cloudflare R2 Storage
 export R2_ACCESS_KEY="your_key"
 export R2_SECRET_KEY="your_key"
 export R2_BUCKET_NAME="your_key"
@@ -88,7 +88,7 @@ python cli/main.py \
 ```
 
 ### Output
-Výstupy najdeš v:
+Generated files will appear in:
 
 ```
 output/
