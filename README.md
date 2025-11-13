@@ -32,20 +32,6 @@ conda activate shorts-generator
 
 ## 3) Install dependencies
 ```bash
-pip install aiohttp==3.13.1 \
-            boto3==1.40.61 \
-            elevenlabs==2.22.0 \
-            moviepy==2.2.1 \
-            openai==2.7.1 \
-            pypdf==6.2.0 \
-            python_docx==1.2.0 \
-            python_pptx==1.0.2 \
-            Requests==2.32.5 \
-            runpod==1.7.13
-```
-
-Or:
-```bash
 pip install -r requirements.txt
 ```
 
