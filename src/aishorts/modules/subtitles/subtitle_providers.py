@@ -15,7 +15,11 @@ class BaseSubtitles:
 @register_subtitle_template("whisper")
 class WhisperSubtitles(BaseSubtitles):
 
-    def __init__(self, use_lemonfox: bool = True, api_key: str | None = None):
+    def __init__(
+        self,
+        use_lemonfox: bool = True,
+        api_key: str | None = None,
+    ):
         self.api_key = None
         if use_lemonfox:
             self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")

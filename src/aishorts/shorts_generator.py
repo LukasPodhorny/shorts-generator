@@ -9,8 +9,6 @@ from aishorts.modules.video_edit.video_generator import VideoGenerator
 from aishorts.modules.avatar import Avatar
 from aishorts.utils.registry import EDIT_TEMPLATES
 from aishorts.modules.video_edit.asset_type import AssetType
-from aishorts.tests.templates_config import TEMPLATES
-from aishorts.tests.avatars_config import AVATARS
 
 
 @dataclass
@@ -35,16 +33,25 @@ class ShortsConfig:
 
 
 class ShortsGenerator:
-    def __init__(self, shorts_config: ShortsConfig):
+    def __init__(
+        self,
+        shorts_config: ShortsConfig,
+        tts_api_key: str | None,
+        lipsync_api_key: str | None,
+        subtitles_api_key: str | None,
+    ):
         self.avatar = shorts_config.avatar
         self.script_gen = ScriptGenerator(
             avatar=self.avatar, **shorts_config.script_config.__dict__
         )
-        self.voice_gen = VoiceGenerator(voice=self.avatar.voice, return_url=True)
-        self.lipsync_gen = LipsyncGenerator(avatar=self.avatar)
+        self.voice_gen = VoiceGenerator(
+            voice=self.avatar.voice, return_url=True, api_key=tts_api_key
+        )
+        self.lipsync_gen = LipsyncGenerator(avatar=self.avatar, api_key=lipsync_api_key)
         self.subtitle_gen = SubtitleGenerator(
             shorts_config.subtitle_config.provider,
             **shorts_config.subtitle_config.provider_config,
+            api_key=subtitles_api_key,
         )
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
 
@@ -55,9 +62,6 @@ class ShortsGenerator:
         files: list[str] | None = None,
         user_input: str | None = None,
     ):
-        for file in files:
-            file = resolve_path(file)
-
         required_assets = EDIT_TEMPLATES.get(
             self.video_template.edit_template.lower()
         ).required_assets
@@ -112,6 +116,7 @@ class ShortsGenerator:
         )
 
 
+"""
 async def main():
     avatar = AVATARS["biden"]
     video_template = TEMPLATES["gameplay_0"]
@@ -129,3 +134,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+"""
