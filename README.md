@@ -2,9 +2,7 @@
 
 PDF-to-Reel is application that converts PDF, DOCX, PPTX, or plain text into short vertical videos in the style of TikTok/Instagram Reels. The system generates a script using OpenAI API, produces voice using TTS, performs lipsync, creates subtitles, and assembles the final video with music and gameplay background.
 
-| Result 1 | Result 2 |
-|---------------|---------|
-| <video src="https://files.catbox.moe/i6xmkb.mp4"> </video> | <video src="https://github.com/user-attachments/assets/c6e142b3-519b-4cda-b26d-e088414b478d"> </video> |
+https://github.com/user-attachments/assets/ea777806-23dc-4195-b9e3-8a3efe98392f
 
 ---
 
