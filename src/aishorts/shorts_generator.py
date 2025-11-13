@@ -114,24 +114,3 @@ class ShortsGenerator:
                 user_input=user_input,
             ),
         )
-
-
-"""
-async def main():
-    avatar = AVATARS["biden"]
-    video_template = TEMPLATES["gameplay_0"]
-    config = ShortsConfig(avatar=avatar, video_template=video_template)
-
-    generator = ShortsGenerator(avatar, config)
-
-    output_path = await generator.generate_short(
-        video_template=video_template,
-        user_input="Why cats are better than dogs.",
-    )
-
-    print(output_path)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-"""
