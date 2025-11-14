@@ -35,11 +35,6 @@ conda create -n shorts-generator python=3.14.0
 conda activate shorts-generator
 ```
 
-## 3) Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
 ## 4) Install the project locally
 ```bash
 pip install -e .
