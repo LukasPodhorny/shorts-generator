@@ -1,7 +1,6 @@
 from openai import OpenAI
 from aishorts.modules.script.file_reader import extract_text
 from aishorts.modules.avatar import Avatar
-from aishorts.tests.avatars_config import AVATARS
 
 
 class ScriptGenerator:
@@ -9,7 +8,7 @@ class ScriptGenerator:
         self,
         avatar: Avatar,
         model: str = "gpt-5",
-        builtin_reader: bool = True,
+        builtin_reader: bool = False,
         max_output_tokens: int = 1800,
     ):
         self.avatar = avatar

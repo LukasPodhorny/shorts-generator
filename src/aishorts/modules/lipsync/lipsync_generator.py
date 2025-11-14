@@ -1,5 +1,4 @@
 from aishorts.modules.avatar import Avatar
-from aishorts.tests.avatars_config import AVATARS
 from aishorts.modules.lipsync.lipsync_providers import *
 from aishorts.utils.registry import LIPSYNC_PROVIDERS
 import inspect

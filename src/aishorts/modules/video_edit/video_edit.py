@@ -11,7 +11,6 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 import os
 from aishorts.utils.r2_handler import CloudflareR2
 from openai.types.audio import TranscriptionVerbose
-from aishorts.tests.sub_test import TEST_SUBTITLES, TEST_SUBTITLES_FORCED_ALIGNMENT
 from aishorts.modules.video_edit.asset_type import AssetType
 
 
