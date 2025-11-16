@@ -1,6 +1,6 @@
 # 📚 PDF-to-Reel
 
-PDF-to-Reel is application that converts PDF, DOCX, PPTX, or plain text into short vertical videos in the style of TikTok/Instagram Reels. The system generates a script using OpenAI API, produces voice using TTS, performs lipsync, creates subtitles, and assembles the final video with music and gameplay background.
+PDF-to-Reel is application that converts PDF, DOCX, PPTX, or plain text into short vertical videos in the style of TikTok/Instagram Reels. The system generates a script using LLM, produces voice using TTS, performs lipsync, creates subtitles, and assembles the final video with music and gameplay background.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/ea777806-23dc-4195-b9e3-8a3efe98392f" width="320" controls></video>
@@ -11,11 +11,11 @@ PDF-to-Reel is application that converts PDF, DOCX, PPTX, or plain text into sho
 
 ## ✨ Features
 - 📄 Text extraction from PDF/DOCX/PPTX  
-- 🤖 Script generation using GPT-5  
-- 🔊 TTS (F5-TTS, LemonFox, ElevenLabs)  
-- 👄 Lipsync (FLOAT / Wav2Lip)  
-- 📝 Subtitles (Whisper / ElevenLabs forced alignment)  
-- 🎬 Video rendering with MoviePy  
+- 🤖 Script generation (GPT-5)
+- 🔊 TTS (F5-TTS, LemonFox)  
+- 👄 Lipsync (FLOAT, Wav2Lip)  
+- 📝 .ASS Subtitles (ElevenLabs forced alignment, Whisper)  
+- 🎬 Video rendering with FFMPEG
 - 👤 Avatars and video templates  
 - 🧩 Modular and extensible architecture  
 

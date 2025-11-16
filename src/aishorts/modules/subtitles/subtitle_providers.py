@@ -3,7 +3,7 @@ from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 import os
 from io import BytesIO
 from elevenlabs.client import ElevenLabs
-from aishorts.utils.registry import register_subtitle_template
+from aishorts.utils.registry import register_subtitle
 import asyncio
 
 
@@ -12,7 +12,7 @@ class BaseSubtitles:
         raise NotImplementedError("You must implement generate_subtitles function.")
 
 
-@register_subtitle_template("whisper")
+@register_subtitle("whisper")
 class WhisperSubtitles(BaseSubtitles):
 
     def __init__(
@@ -40,7 +40,7 @@ class WhisperSubtitles(BaseSubtitles):
         return transcription
 
 
-@register_subtitle_template("elevenlabs")
+@register_subtitle("elevenlabs")
 class ElevenLabsSubtitles(BaseSubtitles):
 
     def __init__(

@@ -1,104 +1,43 @@
-from openai import OpenAI
-from aishorts.modules.script.file_reader import extract_text
 from aishorts.modules.avatar import Avatar
+from aishorts.modules.script.llm_providers import *
+from aishorts.utils.registry import LLM_PROVIDERS
+import inspect
+import asyncio
 
 
 class ScriptGenerator:
-    def __init__(
-        self,
-        avatar: Avatar,
-        model: str = "gpt-5",
-        builtin_reader: bool = False,
-        max_output_tokens: int = 1800,
-    ):
+    """
+    Parameters:
+        avatar: Avatar
+            The avatar configuration that will be used.
+        api_key: str, optional
+            Used by ChatGPT backend only.
+        model: str, optional
+            Used by ChatGPT backend only.
+        max_output_tokens: int, optional
+            Used by ChatGPT backend only.
+    """
+
+    def __init__(self, avatar: Avatar, provider: str = "chatgpt", **kwargs):
         self.avatar = avatar
-        self.model = model
-        self.builtin_reader = builtin_reader
-        self.max_output_tokens = max_output_tokens
+        self.provider = provider.lower()
 
-        self.client = OpenAI()
+        cls = LLM_PROVIDERS.get(self.provider)
+        if not cls:
+            raise ValueError(f"Unknown LLM provider '{self.provider}'")
 
-    def _upload_files(self, files):
-        uploaded_files = []
+        self.llm = cls(avatar=avatar, **kwargs)
 
-        for file in files:
-            with open(file, "rb") as f:
-                uploaded_file = self.client.files.create(file=f, purpose="user_data")
+    async def generate_script(
+        self,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> str:
+        func = self.llm.generate_script
 
-            uploaded_files.append(uploaded_file)
-
-        return uploaded_files
-
-    def _delete_files(self, files):
-        for file in files:
-            self.client.files.delete(file.id)
-
-    def _prepare_builtin_input(self, content):
-        return [
-            {
-                "role": "developer",
-                "content": self.avatar.instructions,
-            },
-            {
-                "role": "user",
-                "content": content,
-            },
-        ]
-
-    def _prepare_api_input(self, content, uploaded_files):
-        return [
-            {
-                "role": "developer",
-                "content": self.avatar.instructions,
-            },
-            {
-                "role": "user",
-                "content": [
-                    *[
-                        {
-                            "type": "input_file",
-                            "file_id": f.id,
-                        }
-                        for f in uploaded_files
-                    ],
-                    {
-                        "type": "input_text",
-                        "text": content,
-                    },
-                ],
-            },
-        ]
-
-    def generate_script(
-        self, files: list[str] | None = None, user_input: str | None = None
-    ):
-        if files == None and user_input == None:
-            raise ValueError("Either 'files' or 'user_input' must be provided.")
-
-        content = ""
-        if user_input:
-            content += "User input:\n\n" + user_input
-
-        if files and len(files) > 0:
-            if self.builtin_reader:
-                for i in range(0, len(files)):
-                    content += f"\n\nFile {i+1}:\n\n" + extract_text(files[i])
-
-                input_data = self._prepare_builtin_input(content)
-            else:
-                uploaded_files = self._upload_files(files)
-                input_data = self._prepare_api_input(content, uploaded_files)
+        if inspect.iscoroutinefunction(func):
+            return await func(files, user_input, **kwargs)
         else:
-            input_data = self._prepare_builtin_input(content)
-
-        try:
-            response = self.client.responses.create(
-                model=self.model,
-                input=input_data,
-                max_output_tokens=self.max_output_tokens,
-            )
-        finally:
-            if not self.builtin_reader:
-                self._delete_files(uploaded_files)
-
-        return response.output_text
+            print("Running sync TTS in thread...")
+            return asyncio.to_thread(func, files, user_input, **kwargs)

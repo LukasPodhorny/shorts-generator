@@ -34,9 +34,20 @@ def register_edit_template(template_name: str):
 SUBTITLE_PROVIDERS: dict[str, type] = {}
 
 
-def register_subtitle_template(template_name: str):
+def register_subtitle(template_name: str):
     def decorator(cls):
         SUBTITLE_PROVIDERS[template_name.lower()] = cls
+        return cls
+
+    return decorator
+
+
+LLM_PROVIDERS: dict[str, type] = {}
+
+
+def register_llm(provider_name: str):
+    def decorator(cls):
+        LLM_PROVIDERS[provider_name.lower()] = cls
         return cls
 
     return decorator

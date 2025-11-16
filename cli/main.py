@@ -39,8 +39,8 @@ def main():
     parser.add_argument("--files", type=str, nargs="+", required=False)
     parser.add_argument("--avatar", type=str, required=True)
     parser.add_argument("--template", type=str, required=True)
+    parser.add_argument("--llm_provider", default="chatgpt", type=str)
     parser.add_argument("--model", default="gpt-5", type=str)
-    parser.add_argument("--builtin_reader", default=False, type=bool)
     parser.add_argument("--subtitle_provider", default="elevenlabs", type=str)
 
     args = parser.parse_args()
@@ -55,7 +55,7 @@ def main():
         avatar=avatar,
         video_template=video_template,
         script_config=ScriptConfig(
-            model=args.model, builtin_reader=args.builtin_reader
+            provider=args.llm_provider, provider_config={"model": args.model}
         ),
         subtitle_config=SubtitleConfig(provider=args.subtitle_provider),
     )

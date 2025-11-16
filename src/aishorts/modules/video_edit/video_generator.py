@@ -3,7 +3,7 @@ from aishorts.modules.video_edit.video_edit import (
     TemplateAssets,
     VideoTemplate,
 )
-from aishorts.modules.video_edit.video_edit import SubtitleStyle
+from aishorts.modules.video_edit.video_edit_templates import *
 
 
 class VideoGenerator:
@@ -14,7 +14,7 @@ class VideoGenerator:
 
         cls = EDIT_TEMPLATES.get(provider)
         if not cls:
-            raise ValueError(f"Unknown Lipsync provider '{provider}'")
+            raise ValueError(f"Unknown video template class '{provider}'")
 
         self.edit = cls(self.template_config, **kwargs)
 

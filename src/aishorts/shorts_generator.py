@@ -1,21 +1,22 @@
 import asyncio
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.tts.voice_generator import VoiceGenerator
+from aishorts.modules.tts.tts_providers import TTSResult
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
 from dataclasses import dataclass, field
 from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
 from aishorts.modules.video_edit.video_edit import VideoTemplate, TemplateAssets
 from aishorts.modules.video_edit.video_generator import VideoGenerator
 from aishorts.modules.avatar import Avatar
+from aishorts.modules.video_edit.video_edit_templates import *
 from aishorts.utils.registry import EDIT_TEMPLATES
 from aishorts.modules.video_edit.asset_type import AssetType
 
 
 @dataclass
 class ScriptConfig:
-    model: str = "gpt-5"
-    builtin_reader: bool = True
-    max_output_tokens: int = 1800
+    provider: str | None = "chatgpt"
+    provider_config: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -36,23 +37,29 @@ class ShortsGenerator:
     def __init__(
         self,
         shorts_config: ShortsConfig,
-        tts_api_key: str | None,
-        lipsync_api_key: str | None,
-        subtitles_api_key: str | None,
+        tts_api_key: str | None = None,
+        lipsync_api_key: str | None = None,
+        subtitles_api_key: str | None = None,
+        llm_api_key: str | None = None,
     ):
         self.avatar = shorts_config.avatar
         self.script_gen = ScriptGenerator(
-            avatar=self.avatar, **shorts_config.script_config.__dict__
+            avatar=self.avatar,
+            provider=shorts_config.script_config.provider,
+            api_key=llm_api_key,
+            **shorts_config.script_config.provider_config,
         )
-        self.voice_gen = VoiceGenerator(
-            voice=self.avatar.voice, return_url=True, api_key=tts_api_key
-        )
+
+        self.voice_gen = VoiceGenerator(voice=self.avatar.voice, api_key=tts_api_key)
+
         self.lipsync_gen = LipsyncGenerator(avatar=self.avatar, api_key=lipsync_api_key)
+
         self.subtitle_gen = SubtitleGenerator(
             shorts_config.subtitle_config.provider,
             **shorts_config.subtitle_config.provider_config,
             api_key=subtitles_api_key,
         )
+
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
 
         self.video_template = shorts_config.video_template
@@ -70,18 +77,19 @@ class ShortsGenerator:
 
         print("Generating script...")
         if AssetType.SCRIPT in required_assets:
-            script = self.script_gen.generate_script(files=files, user_input=user_input)
+            script = await self.script_gen.generate_script(
+                files=files, user_input=user_input
+            )
 
         print("Generating voiceover...")
         if AssetType.VOICE in required_assets:
-            template_assets.voiceover, result_url = await self.voice_gen.generate_voice(
-                script
-            )
+            tts_result = await self.voice_gen.generate_voice(script)
+            template_assets.voiceover = tts_result.filepath
 
         print("Generating lipsync video and subtitles...")
         tasks = []
         if AssetType.LIPSYNC in required_assets:
-            tasks.append(self.lipsync_gen.generate_lipsync(result_url))
+            tasks.append(self.lipsync_gen.generate_lipsync(tts_result.url))
 
         if AssetType.SUBTITLES in required_assets:
             tasks.append(

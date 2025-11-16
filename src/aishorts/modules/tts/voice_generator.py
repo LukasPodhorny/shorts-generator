@@ -18,16 +18,15 @@ class VoiceGenerator:
             Used by F5TTS backend only.
     """
 
-    def __init__(self, voice: Voice, return_url: bool = False, **kwargs):
+    def __init__(self, voice: Voice, **kwargs):
         self.voice = voice
-        self.retrun_url = return_url
         provider = self.voice.provider.lower()
 
         cls = TTS_PROVIDERS.get(provider)
         if not cls:
             raise ValueError(f"Unknown TTS provider '{provider}'")
 
-        self.tts = cls(voice=self.voice, return_url=self.retrun_url, **kwargs)
+        self.tts = cls(voice=self.voice, **kwargs)
 
     async def generate_voice(self, text: str, **kwargs) -> str:
         """
