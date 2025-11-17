@@ -1,7 +1,6 @@
 import asyncio
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.tts.voice_generator import VoiceGenerator
-from aishorts.modules.tts.tts_providers import TTSResult
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
 from dataclasses import dataclass, field
 from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
