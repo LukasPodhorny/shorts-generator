@@ -28,6 +28,7 @@ class SubtitleStyle:
     offset_y: int = 100
     max_chars_per_line: int = 1  # Maximum characters per line
     break_characters: str = ".!?;:"  # Characters that force a line break
+    remove_chars: str = ".,;"
     karaoke_enabled: bool = False
 
     @classmethod
@@ -180,7 +181,9 @@ class EditTemplate:
                             # This word is not active - use primary color (default)
                             text_parts.append(f"{{\\c{style.color}}}{w.word}{{\\c}}")
 
-                    text = " ".join(text_parts)
+                    text = " ".join(text_parts).translate(
+                        {ord(x): "" for x in style.remove_chars}
+                    )
                     events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
         else:
             # Normal mode: all words same color, grouped display
@@ -190,7 +193,9 @@ class EditTemplate:
                 end = fmt(word_group[-1].end)
 
                 # Simple text without color changes
-                text = " ".join([w.word for w in word_group])
+                text = " ".join([w.word for w in word_group]).translate(
+                    {ord(x): "" for x in style.remove_chars}
+                )
                 events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
 
         return "\n".join(events)

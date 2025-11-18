@@ -47,7 +47,7 @@ class ElevenLabsSubtitles(BaseSubtitles):
         self,
         display_silence: bool = False,
         min_silence_duration: float = 0.5,
-        remove_chars=".,—",
+        remove_chars="—",
         api_key: str | None = None,
     ):
         self.display_silence = display_silence
