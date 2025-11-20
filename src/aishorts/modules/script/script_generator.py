@@ -18,15 +18,24 @@ class ScriptGenerator:
             Used by ChatGPT backend only.
     """
 
-    def __init__(self, avatar: Avatar, provider: str = "chatgpt", **kwargs):
+    def __init__(
+        self,
+        base_instructions: str,
+        avatar: Avatar,
+        provider: str = "chatgpt",
+        **kwargs,
+    ):
         self.avatar = avatar
         self.provider = provider.lower()
+        self.instructions = (
+            base_instructions + "\n\n" + "Your avatar:\n" + avatar.instructions
+        )
 
         cls = LLM_PROVIDERS.get(self.provider)
         if not cls:
             raise ValueError(f"Unknown LLM provider '{self.provider}'")
 
-        self.llm = cls(avatar=avatar, **kwargs)
+        self.llm = cls(instructions=self.instructions, avatar=avatar, **kwargs)
 
     async def generate_script(
         self,

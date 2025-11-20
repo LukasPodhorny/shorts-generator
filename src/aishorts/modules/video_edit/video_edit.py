@@ -14,7 +14,7 @@ class TemplateAssets:
 
 @dataclass
 class SubtitleStyle:
-    font: str = "Arial"
+    font: str = "Poppins"
     font_size: int = 250
     color: str = "&H00FFFFFF"
     secondary_color: str = "&H00EDDC40"
@@ -59,6 +59,7 @@ class VideoTemplate:
 
     @classmethod
     def from_dict(cls, data: dict):
+        data["edit_template"] = data["edit_template"]
         data["template_config"] = TemplateConfig.from_dict(data["template_config"])
         return cls(**data)
 

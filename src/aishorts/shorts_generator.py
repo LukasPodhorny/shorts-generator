@@ -14,8 +14,17 @@ from aishorts.modules.video_edit.asset_type import AssetType
 
 @dataclass
 class ScriptConfig:
+    """
+    Changing base_instructions can cause erros if not done properly.
+    """
+
+    base_instructions: str
     provider: str | None = "chatgpt"
     provider_config: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return cls(**data)
 
 
 @dataclass
@@ -43,6 +52,7 @@ class ShortsGenerator:
     ):
         self.avatar = shorts_config.avatar
         self.script_gen = ScriptGenerator(
+            base_instructions=shorts_config.script_config.base_instructions,
             avatar=self.avatar,
             provider=shorts_config.script_config.provider,
             api_key=llm_api_key,

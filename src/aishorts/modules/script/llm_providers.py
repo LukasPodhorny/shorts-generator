@@ -16,11 +16,13 @@ class BaseLLM:
 class ChatGPT(BaseLLM):
     def __init__(
         self,
+        instructions: str,
         avatar,
         model: str = "gpt-5",
         max_output_tokens: int = 1800,
         api_key: str | None = None,
     ):
+        self.instructions = instructions
         self.avatar = avatar
         self.model = model
         self.max_output_tokens = max_output_tokens
@@ -53,7 +55,7 @@ class ChatGPT(BaseLLM):
 
     def _build_messages(self, user_input: str, uploaded_files: list):
         """Build message payload for OpenAI API"""
-        messages = [{"role": "developer", "content": self.avatar.instructions}]
+        messages = [{"role": "developer", "content": self.instructions}]
 
         # Build user message content
         content_parts = []

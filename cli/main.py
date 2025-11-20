@@ -33,6 +33,14 @@ def load_video_templates(
     return {name: VideoTemplate.from_dict(cfg) for name, cfg in data.items()}
 
 
+def load_video_script(
+    path="cli/configs/script_config.json",
+) -> ScriptConfig:
+    with open(path, "r") as f:
+        data = json.load(f)
+    return ScriptConfig.from_dict(data)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=False)

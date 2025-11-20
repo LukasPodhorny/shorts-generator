@@ -5,8 +5,10 @@
             "bg_video": "assets/bg_video/gameplay.mp4",
             "music": "assets/music/music.mp3",
             "subtitle_style": {
-                "font": "assets/fonts/NotoSans-Bold.ttf",
-                "font_size": 135
+                "font_size": 135,
+                "karaoke_enabled": true,
+                "max_chars_per_line": 20,
+                "remove_chars": ""
             }
         }
     }
