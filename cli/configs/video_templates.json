@@ -3,7 +3,6 @@
         "edit_template": "gameplay_ffmpeg",
         "template_config": {
             "bg_video": "assets/bg_video/gameplay.mp4",
-            "music": "assets/music/music.mp3",
             "subtitle_style": {
                 "font_size": 135,
                 "karaoke_enabled": true,

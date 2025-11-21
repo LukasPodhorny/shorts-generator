@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from openai import AsyncOpenAI
 from aishorts.utils.registry import register_llm
+from aishorts.modules.script.script import Script
+import json
 
 
 class BaseLLM:
@@ -90,7 +92,7 @@ class ChatGPT(BaseLLM):
         self,
         files: list[str] | None = None,
         user_input: str | None = None,
-    ) -> str:
+    ) -> Script:
         if not files and not user_input:
             raise ValueError("Either 'files' or 'user_input' must be provided")
 
@@ -105,4 +107,6 @@ class ChatGPT(BaseLLM):
                 max_output_tokens=self.max_output_tokens,
             )
 
-            return response.output_text
+            result_script = Script.model_validate(json.loads(response.output_text))
+
+            return result_script
