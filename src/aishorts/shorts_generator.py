@@ -10,21 +10,22 @@ from aishorts.modules.avatar import Avatar
 from aishorts.modules.video_edit.video_edit_templates import *
 from aishorts.utils.registry import EDIT_TEMPLATES
 from aishorts.modules.video_edit.asset_type import AssetType
+from importlib.resources import read_text
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class ScriptConfig:
+class ScriptConfig(BaseModel):
     """
-    Changing base_instructions can cause erros if not done properly.
+    Changing base_instructions can cause errors if not done properly.
     """
 
-    base_instructions: str
+    base_instructions: str | None = Field(
+        default_factory=lambda: read_text(
+            "aishorts.resources", "base_instructions_default.txt"
+        )
+    )
     provider: str | None = "chatgpt"
-    provider_config: dict = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: dict):
-        return cls(**data)
+    provider_config: dict = Field(default_factory=dict)
 
 
 @dataclass

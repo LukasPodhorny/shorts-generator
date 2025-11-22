@@ -3,6 +3,7 @@ from openai import AsyncOpenAI
 from aishorts.utils.registry import register_llm
 from aishorts.modules.script.script import Script
 import json
+from aishorts.modules.avatar import Avatar
 
 
 class BaseLLM:
@@ -19,13 +20,11 @@ class ChatGPT(BaseLLM):
     def __init__(
         self,
         instructions: str,
-        avatar,
         model: str = "gpt-5",
         max_output_tokens: int = 1800,
         api_key: str | None = None,
     ):
         self.instructions = instructions
-        self.avatar = avatar
         self.model = model
         self.max_output_tokens = max_output_tokens
         # Use AsyncOpenAI for proper async support
@@ -105,8 +104,10 @@ class ChatGPT(BaseLLM):
                 model=self.model,
                 input=messages,
                 max_output_tokens=self.max_output_tokens,
+                reasoning={"effort": "low"},
             )
 
-            result_script = Script.model_validate(json.loads(response.output_text))
+            data = json.loads(response.output_text)
+            result_script = Script.model_validate(data)
 
             return result_script

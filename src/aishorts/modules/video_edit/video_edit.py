@@ -3,6 +3,7 @@ import os
 from openai.types.audio import TranscriptionVerbose
 import subprocess
 import tempfile
+from pydantic import BaseModel
 
 
 @dataclass
@@ -12,8 +13,7 @@ class TemplateAssets:
     voiceover: str | None = None
 
 
-@dataclass
-class SubtitleStyle:
+class SubtitleStyle(BaseModel):
     font: str = "Poppins"
     font_size: int = 250
     color: str = "&H00FFFFFF"
@@ -26,42 +26,19 @@ class SubtitleStyle:
     shadow_offset: int = 5
     alignment: int = 5
     offset_y: int = 100
-    max_chars_per_line: int = 1  # Maximum characters per line
-    break_characters: str = ".!?;:"  # Characters that force a line break
+    max_chars_per_line: int = 1
+    break_characters: str = ".!?;:"
     remove_chars: str = ".,;"
     karaoke_enabled: bool = False
 
-    @classmethod
-    def from_dict(cls, data: dict):
-        if "size" in data and isinstance(data["size"], list):
-            data["size"] = tuple(data["size"])
-        return cls(**data)
-
-
-@dataclass
-class TemplateConfig:
+class TemplateConfig(BaseModel):
     bg_video: str | None = None
     music: str | None = None
     subtitle_style: SubtitleStyle | None = None
 
-    @classmethod
-    def from_dict(cls, data: dict):
-        subtitle_style = data.get("subtitle_style")
-        if isinstance(subtitle_style, dict):
-            data["subtitle_style"] = SubtitleStyle.from_dict(subtitle_style)
-        return cls(**data)
-
-
-@dataclass
-class VideoTemplate:
+class VideoTemplate(BaseModel):
     edit_template: str
     template_config: TemplateConfig
-
-    @classmethod
-    def from_dict(cls, data: dict):
-        data["edit_template"] = data["edit_template"]
-        data["template_config"] = TemplateConfig.from_dict(data["template_config"])
-        return cls(**data)
 
 
 class EditTemplate:

@@ -16,29 +16,7 @@ from aishorts import (
     SubtitleConfig,
 )
 import argparse
-import json
-
-
-def load_avatars(path="cli/configs/avatars.json") -> dict[str, Avatar]:
-    with open(path, "r") as f:
-        data = json.load(f)
-    return {name: Avatar.from_dict(a) for name, a in data.items()}
-
-
-def load_video_templates(
-    path="cli/configs/video_templates.json",
-) -> dict[str, VideoTemplate]:
-    with open(path, "r") as f:
-        data = json.load(f)
-    return {name: VideoTemplate.from_dict(cfg) for name, cfg in data.items()}
-
-
-def load_video_script(
-    path="cli/configs/script_config.json",
-) -> ScriptConfig:
-    with open(path, "r") as f:
-        data = json.load(f)
-    return ScriptConfig.from_dict(data)
+from aishorts.utils.pydantic_helper import load_pydantic, load_pydantic_dict
 
 
 def main():
@@ -53,8 +31,11 @@ def main():
 
     args = parser.parse_args()
 
-    video_templates = load_video_templates()
-    avatars = load_avatars()
+    video_templates = load_pydantic_dict(
+        "cli/configs/video_templates.json", VideoTemplate
+    )
+    avatars = load_pydantic_dict("cli/configs/avatars.json", Avatar)
+    script_config = load_pydantic("cli/configs/script_config.json", ScriptConfig)
 
     video_template = video_templates[args.template]
     avatar = avatars[args.avatar]
@@ -63,7 +44,12 @@ def main():
         avatar=avatar,
         video_template=video_template,
         script_config=ScriptConfig(
-            provider=args.llm_provider, provider_config={"model": args.model}
+            base_instructions=script_config.base_instructions,
+            provider=args.llm_provider or script_config.provider,
+            provider_config={
+                "model": args.model
+                or script_config.provider_config.get("model", "gpt-5")
+            },
         ),
         subtitle_config=SubtitleConfig(provider=args.subtitle_provider),
     )
