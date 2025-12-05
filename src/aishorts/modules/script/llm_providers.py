@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from openai import AsyncOpenAI
 from aishorts.utils.registry import register_llm
-from aishorts.modules.script.script import Script
+from aishorts.modules.script.script import ReelSeries
 import json
 from aishorts.modules.avatar import Avatar
 
@@ -21,7 +21,7 @@ class ChatGPT(BaseLLM):
         self,
         instructions: str,
         model: str = "gpt-5",
-        max_output_tokens: int = 1800,
+        max_output_tokens: int = 50_000,
         api_key: str | None = None,
     ):
         self.instructions = instructions
@@ -91,7 +91,7 @@ class ChatGPT(BaseLLM):
         self,
         files: list[str] | None = None,
         user_input: str | None = None,
-    ) -> Script:
+    ) -> ReelSeries:
         if not files and not user_input:
             raise ValueError("Either 'files' or 'user_input' must be provided")
 
@@ -100,14 +100,11 @@ class ChatGPT(BaseLLM):
             messages = self._build_messages(user_input or "", uploaded_files)
 
             # Async API call - doesn't block event loop
-            response = await self.client.responses.create(
+            response = await self.client.responses.parse(
                 model=self.model,
                 input=messages,
                 max_output_tokens=self.max_output_tokens,
-                reasoning={"effort": "low"},
+                text_format=ReelSeries,
             )
 
-            data = json.loads(response.output_text)
-            result_script = Script.model_validate(data)
-
-            return result_script
+            return response.output_parsed

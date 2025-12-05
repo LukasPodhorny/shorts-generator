@@ -36,7 +36,7 @@ class SubtitleConfig:
 
 @dataclass
 class ShortsConfig:
-    avatar: Avatar
+    avatars: list[Avatar]
     video_template: VideoTemplate
     script_config: ScriptConfig = field(default_factory=ScriptConfig)
     subtitle_config: SubtitleConfig = field(default_factory=SubtitleConfig)
@@ -51,10 +51,11 @@ class ShortsGenerator:
         subtitles_api_key: str | None = None,
         llm_api_key: str | None = None,
     ):
-        self.avatar = shorts_config.avatar
+        self.avatars = shorts_config.avatars
+
         self.script_gen = ScriptGenerator(
             base_instructions=shorts_config.script_config.base_instructions,
-            avatar=self.avatar,
+            avatars=self.avatars,
             provider=shorts_config.script_config.provider,
             api_key=llm_api_key,
             **shorts_config.script_config.provider_config,
@@ -90,6 +91,7 @@ class ShortsGenerator:
             script = await self.script_gen.generate_script(
                 files=files, user_input=user_input
             )
+        
 
         print("Generating voiceover...")
         if AssetType.VOICE in required_assets:

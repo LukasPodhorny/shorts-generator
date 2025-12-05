@@ -1,0 +1,145 @@
+CONVERSATION RULES:
+
+1. The script must be a natural, interactive conversation.
+   - Characters must react to each other's statements.
+   - They should ask questions, interrupt, clarify, joke, tease, or correct each other.
+   - Treat it like a real, lively conversation rather than alternating mini-lectures.
+   - Avoid repeating the same information between speakers.
+   - Avoid robotic back-and-forth symmetry.
+   - Use transition phrases that acknowledge what the other person just said 
+     (e.g., "Wait, so you're saying...", "Hold on though...", "Right, but...", 
+     "Exactly, and that's why...", "That reminds me...").
+
+2. Keep the flow dynamic:
+   - One character may misunderstand something and another corrects it.
+   - They can disagree lightly or challenge each other.
+   - They should build on each other's ideas rather than speak in isolation.
+   - Characters can express enthusiasm, skepticism, or surprise at what the other says.
+   - Allow natural tangents and returns to the main topic.
+
+3. Active listening and reaction patterns (CRITICAL):
+   - Each speaker MUST acknowledge something from the previous speaker's dialogue 
+     before adding new information.
+   - Use interruption phrases: "Wait, hold on...", "Okay but...", "Yeah yeah, and..."
+   - Confirm what was just said: "Right, so...", "Oh I see, so then...", "Got it, but..."
+   - Express reactions: "Wait, really?", "That's wild", "Okay that makes sense", "Whoa"
+   - Challenge or question: "But what about...", "How does that work with...", 
+     "Hang on, if that's true..."
+   - Complete each other's thoughts occasionally
+   - Reference specific details the other person mentioned (not just the general topic)
+
+4. Avoid these anti-patterns (they make it feel like alternating lectures):
+   - Starting with "And then..." or "Next..." or "Now..." without referencing what 
+     was just said
+   - Introducing completely new sub-topics without connecting to previous dialogue
+   - Speaking as if the other person isn't there
+   - Using formal transitions like "Furthermore" or "Additionally"
+   - Every block being roughly the same length (vary it naturally)
+
+REEL SERIES STRUCTURE:
+
+5. Multi-reel organization:
+   - Each reel is a self-contained chapter covering one aspect of the overall topic.
+   - Reels should progress logically: foundational concepts → core mechanisms → applications/significance.
+   - Each reel must have a clear, descriptive title that indicates what it covers.
+   - Each reel should include a brief description summarizing its focus.
+   - Reels should be designed to work independently but also flow as a series.
+
+6. Reel length and pacing:
+   - Each reel should be approximately 3 minutes of spoken content (~180 seconds).
+   - This translates to approximately 5-15 dialogue blocks per reel.
+   - The number of blocks depends on how much each character says per turn:
+     * Faster back-and-forth style: 12-15 shorter blocks with quick exchanges
+     * Balanced conversation: 8-10 blocks with mixed lengths
+     * Deeper explanations: 5-7 longer blocks where characters speak more per turn
+   - Each block has 1-8 conversational sentences in a single paragraph.
+   - Vary the length of blocks naturally - some can be quick reactions (1-2 sentences), 
+     others longer explanations (5-8 sentences).
+   - Estimate duration as 150-200 seconds per reel to account for natural speech pacing.
+   - Include an estimated duration in seconds for each reel.
+
+7. Content distribution across reels:
+   - Don't repeat information between reels - each should introduce new concepts.
+   - Early reels establish foundations that later reels build upon.
+   - The final reel should tie everything together or show real-world significance.
+   - Avoid making any single reel feel incomplete or rushed.
+   - With 3 minutes per reel, you have space to explore concepts in depth.
+
+8. Continuity between reels:
+   - You may briefly reference concepts from previous reels ("Remember when we talked about...").
+   - Don't assume the viewer watched previous reels in sequence - keep each somewhat independent.
+   - The first block of each reel can set context without lengthy recaps.
+
+AVATAR BEHAVIOR:
+
+9. Avatar usage:
+   - Each block must use one of the provided avatars.
+   - Respect the avatar's speaking style and personality.
+   - Avatars must feel distinct.
+   - Let personality show through reactions, not just speech patterns.
+   - Maintain consistent avatar personalities across all reels in the series.
+   - Allow characters to have longer speaking turns when explaining complex concepts.
+
+10. Dialogue text rules:
+    - Plain conversational text only.
+    - No meta comments, disclaimers, narrator text, or system talk.
+    - No line breaks inside a block.
+    - Never mention being an AI or model.
+    - Do not use em-dashes between words.
+    - Use numbers instead of Roman numerals.
+    - Use contractions naturally (it's, that's, we're, etc.).
+
+MEDIA RULES:
+
+11. Use media to support understanding:
+    - Include 6-12 images per reel (scaled for 3-minute content).
+    - Images must appear when a concept is first introduced or explained in detail.
+    - Image keywords must be descriptive prompts for image generation.
+    - Use LaTeX for equations, formulas, or chemical reactions.
+    
+12. Media trigger timing requirements:
+    - Minimum trigger length: 15 words
+    - Recommended trigger length: 20-40 words (can be longer for extended explanations)
+    - Maximum trigger length: 60 words (for blocks with longer speaking turns)
+    - The trigger should span the portion of text where the concept is being explained.
+    - Avoid triggers that are too short (under 15 words) as they don't give enough 
+      time for the visual to be meaningful.
+    - If a dialogue block is shorter than 15 words, do NOT include media in that block.
+    - For longer blocks (5-8 sentences), you may include multiple media items with 
+      separate, non-overlapping triggers.
+    
+13. Word Index Clarification:
+    - The `start_word_index` and `end_word_index` refer ONLY to the words inside 
+      the text field of the same dialogue block.
+    - Word counting restarts at 0 for each block.
+    - Every media item must include a trigger with those indices.
+    - Count carefully to ensure the trigger spans at least 15 words.
+    - Use inclusive counting (if words 0-14 are selected, that's 15 words).
+   
+14. Media relevance:
+    - Media must be directly tied to the text being spoken during the trigger window.
+    - Don't show an image before or after the concept is actually being discussed.
+    - The trigger window should cover the key explanatory sentences, not just 
+      reaction phrases or transitions.
+   
+15. Avatar restrictions:
+    - Only use the provided avatars.
+    - Do not invent new avatars or rename existing ones.
+
+16. Image and LaTeX coexistence rule:
+    - A block may contain an image, LaTeX, both, or neither.
+    - If both image_media and latex_media appear in the same block, they must NOT overlap.
+    - Their triggers must reference different word ranges (different start and end indices).
+    - They must not be displayed at the same time.
+    - Ensure each trigger meets the minimum 15-word requirement independently.
+    - In longer blocks, you can have multiple distinct media items as long as their 
+      triggers don't overlap.
+
+17. Media distribution strategy:
+    - Don't put media in every single block - some blocks should be pure dialogue.
+    - Quick reaction blocks (1-2 sentences) typically should NOT have media.
+    - Longer explanatory blocks (4-8 sentences) are excellent candidates for media.
+    - Space out media appearances so they don't feel overwhelming.
+    - Each reel should have a balanced distribution of media throughout its 3-minute duration.
+    - With more content per reel, ensure media appears at natural intervals (roughly every 15-30 seconds).
+    - Longer speaking turns can accommodate multiple media items if they explain distinct concepts.
