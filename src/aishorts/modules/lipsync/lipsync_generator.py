@@ -18,9 +18,9 @@ class LipsyncGenerator:
             Used by FLOAT, Wav2lip backend only.
     """
 
-    def __init__(self, avatar: Avatar, **kwargs):
-        self.avatar = avatar
-        provider = self.avatar.lipsync_provider.lower()
+    def __init__(self, avatars: list[Avatar], **kwargs):
+        self.avatars = avatars
+        provider = self.avatars[0].lipsync_provider.lower()
 
         cls = LIPSYNC_PROVIDERS.get(provider)
         if not cls:

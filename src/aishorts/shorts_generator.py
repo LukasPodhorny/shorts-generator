@@ -25,6 +25,8 @@ class ScriptConfig(BaseModel):
         )
     )
     provider: str | None = "chatgpt"
+    generate_latex: bool = False
+    generate_image: bool = False
     provider_config: dict = Field(default_factory=dict)
 
 
@@ -56,6 +58,8 @@ class ShortsGenerator:
         self.script_gen = ScriptGenerator(
             base_instructions=shorts_config.script_config.base_instructions,
             avatars=self.avatars,
+            generate_latex=shorts_config.script_config.generate_latex,
+            generate_image=shorts_config.script_config.generate_image, 
             provider=shorts_config.script_config.provider,
             api_key=llm_api_key,
             **shorts_config.script_config.provider_config,
@@ -75,8 +79,9 @@ class ShortsGenerator:
 
         self.video_template = shorts_config.video_template
 
-    async def generate_short_async(
+    async def generate_shorts_async(
         self,
+        amount: int = 1,
         files: list[str] | None = None,
         user_input: str | None = None,
     ):
@@ -89,10 +94,10 @@ class ShortsGenerator:
         print("Generating script...")
         if AssetType.SCRIPT in required_assets:
             script = await self.script_gen.generate_script(
-                files=files, user_input=user_input
+                num_reels=amount, files=files, user_input=user_input
             )
         
-
+        
         print("Generating voiceover...")
         if AssetType.VOICE in required_assets:
             tts_result = await self.voice_gen.generate_voice(script)
@@ -123,13 +128,13 @@ class ShortsGenerator:
         print("Generating final video...")
         return self.video_gen.compose(template_assets=template_assets)
 
-    def generate_short(
+    def generate_shorts(
         self,
         files: list[str] | None = None,
         user_input: str | None = None,
     ):
         asyncio.run(
-            self.generate_short_async(
+            self.generate_shorts_async(
                 files=files,
                 user_input=user_input,
             ),

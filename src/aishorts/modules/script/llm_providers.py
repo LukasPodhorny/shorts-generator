@@ -19,12 +19,10 @@ class BaseLLM:
 class ChatGPT(BaseLLM):
     def __init__(
         self,
-        instructions: str,
         model: str = "gpt-5",
         max_output_tokens: int = 50_000,
         api_key: str | None = None,
     ):
-        self.instructions = instructions
         self.model = model
         self.max_output_tokens = max_output_tokens
         # Use AsyncOpenAI for proper async support
@@ -54,9 +52,9 @@ class ChatGPT(BaseLLM):
                 except Exception:
                     pass  # Ignore cleanup errors
 
-    def _build_messages(self, user_input: str, uploaded_files: list):
+    def _build_messages(self, instructions: str, user_input: str, uploaded_files: list):
         """Build message payload for OpenAI API"""
-        messages = [{"role": "developer", "content": self.instructions}]
+        messages = [{"role": "developer", "content": instructions}]
 
         # Build user message content
         content_parts = []
@@ -89,6 +87,7 @@ class ChatGPT(BaseLLM):
 
     async def generate_script(
         self,
+        instructions: str,
         files: list[str] | None = None,
         user_input: str | None = None,
     ) -> ReelSeries:
@@ -97,7 +96,7 @@ class ChatGPT(BaseLLM):
 
         # Upload files, generate response, auto-cleanup (all async!)
         async with self._temporary_files(files or []) as uploaded_files:
-            messages = self._build_messages(user_input or "", uploaded_files)
+            messages = self._build_messages(instructions, user_input or "", uploaded_files)
 
             # Async API call - doesn't block event loop
             response = await self.client.responses.parse(

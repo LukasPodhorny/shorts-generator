@@ -18,8 +18,7 @@ class ScriptGenerator:
             Used by ChatGPT backend only.
     """
 
-    def _generate_instructions(self) -> str:
-        pass
+    def _generate_instructions(self, num_reels: int) -> str:
         """
         Build the final instruction block for the LLM.
         This merges:
@@ -59,7 +58,7 @@ class ScriptGenerator:
         media_block = "\n".join(media_rules)
 
         reel_conf = ["REEL CONFIGURATION:"]
-        reel_conf.append(f"- Number of reels to generate: {self.num_reels}")
+        reel_conf.append(f"- Number of reels to generate: {num_reels}")
         reel_block = "\n".join(reel_conf)
 
         media_block = "\n".join(media_rules)
@@ -83,7 +82,6 @@ class ScriptGenerator:
         self,
         base_instructions: str,
         avatars: list[Avatar],
-        num_reels: int = 1,
         generate_latex: bool = True,
         generate_image: bool = True,
         provider: str = "chatgpt",
@@ -91,29 +89,28 @@ class ScriptGenerator:
     ):
         self.base_instructions = base_instructions
         self.avatars = avatars
-        self.num_reels = num_reels
         self.generate_latex = generate_latex
         self.generate_image = generate_image
         self.provider = provider.lower()
-
-        self.instructions = self._generate_instructions()
 
         cls = LLM_PROVIDERS.get(self.provider)
         if not cls:
             raise ValueError(f"Unknown LLM provider '{self.provider}'")
 
-        self.llm = cls(instructions=self.instructions, **kwargs)
+        self.llm = cls(**kwargs)
 
     async def generate_script(
         self,
+        num_reels: int = 1,
         files: list[str] | None = None,
         user_input: str | None = None,
         **kwargs,
     ) -> str:
+        instructions = self._generate_instructions(num_reels)
         func = self.llm.generate_script
 
         if inspect.iscoroutinefunction(func):
-            return await func(files, user_input, **kwargs)
+            return await func(instructions, files, user_input, **kwargs)
         else:
             print("Running sync TTS in thread...")
-            return asyncio.to_thread(func, files, user_input, **kwargs)
+            return asyncio.to_thread(func, instructions, files, user_input, **kwargs)

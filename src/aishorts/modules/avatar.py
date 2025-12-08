@@ -17,3 +17,5 @@ class Avatar(BaseModel):
     face_url: str | None = None
     face_video_url: str | None = None
     pads: list[str] | None = None
+    a_cfg_scale: int | None = 2
+    e_cfg_scale: int | None = 1
