@@ -26,6 +26,7 @@ class BaseTTS:
     def generate_voice(
         self,
         text: str,
+        id: int = 0,
     ) -> TTSResult:
         raise NotImplementedError("Subclasses must implement generate_voice()")
 
@@ -52,70 +53,54 @@ class F5TTS(EndpointCaller, BaseTTS):
         self.avatars = avatars
         self.download_results = download_results
 
-    def _prepare_text_input(self, text: str, id: int):
-        data = {
+    def _prepare_text_input(self, text: str, id: int) -> dict:
+        avatar = self.avatars[0]
+
+        voice_data = {
+            "voice_reference": avatar.voice.sample_url,
+        }
+
+        if avatar.voice.sample_transcript:
+            voice_data["ref_text"] = avatar.voice.sample_transcript
+
+        return {
             "input": {
-                "voices": {
-                    self.avatars[0].name: {
-                        "voice_reference": self.avatars[0].voice.sample_url,
-                    }
-                },
+                "voices": {avatar.name: voice_data},
                 "dialogues": [
                     {
-                        "voice": self.avatars[0].name,
+                        "voice": avatar.name,
                         "text": text,
                         "id": id,
                     }
                 ],
             }
         }
-        if self.voice.sample_transcript:
-            data["input"]["voices"][0]["ref_text"] = self.avatars[
-                0
-            ].voice.sample_transcript
-
-        return data
 
     def _prepare_reel_input(self, reel: Reel) -> dict:
-        voices = {}
-
-        valid_avatars = []
-
-        for avatar in self.avatars:
-            if avatar.voice.provider.lower() != "f5tts":
-                continue
-
-            voices[avatar.name] = {
+        # Build voices dict and valid_avatars set in one pass
+        voices = {
+            avatar.name: {
                 "voice_reference": avatar.voice.sample_url,
                 "ref_text": avatar.voice.sample_transcript,
             }
+            for avatar in self.avatars
+            if avatar.voice.provider.lower() == "f5tts"
+        }
 
-            valid_avatars.append(avatar.name)
+        valid_avatars = set(voices.keys())
 
-        dialogues = []
+        # Build dialogues list with enumeration
+        dialogues = [
+            {
+                "voice": block.avatar,
+                "text": block.text,
+                "id": idx,
+            }
+            for idx, block in enumerate(reel.blocks)
+            if block.type == "dialogue" and block.avatar in valid_avatars
+        ]
 
-        id = 0
-        for block in reel.blocks:
-            if block.type != "dialogue":
-                continue
-
-            if block.avatar not in valid_avatars:
-                id += 1
-                continue
-
-            dialogues.append(
-                {
-                    "voice": block.avatar,
-                    "text": block.text,
-                    "id": id,
-                }
-            )
-
-            id += 1
-
-        result = {"input": {"voices": voices, "dialogues": dialogues}}
-
-        return result
+        return {"input": {"voices": voices, "dialogues": dialogues}}
 
     async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
         result = await self.run_async(self._prepare_text_input(text, id))
@@ -172,7 +157,7 @@ class LemonFoxTTS(BaseTTS):
         self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
         self.r2 = CloudflareR2()
 
-    async def generate_voice(self, text: str) -> TTSResult:
+    async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
 
         url = "https://api.lemonfox.ai/v1/audio/speech"
         headers = {
@@ -202,7 +187,7 @@ class LemonFoxTTS(BaseTTS):
                     )
 
                     return TTSResult(
-                        filepath=filepath, url=result_url, avatar=self.avatars[0]
+                        filepath=filepath, url=result_url, avatar=self.avatars[0], id=id
                     )
                 else:
                     text = await response.text()
@@ -216,13 +201,11 @@ class LemonFoxTTS(BaseTTS):
             "Content-Type": "application/json",
         }
 
-        valid_avatars = []
-
-        for avatar in self.avatars:
-            if avatar.voice.provider.lower() != "lemonfox":
-                continue
-
-            valid_avatars.append(avatar.name)
+        valid_avatars = {
+            avatar.name
+            for avatar in self.avatars
+            if avatar.voice.provider.lower() == "lemonfox"
+        }
 
         async def generate_single_dialogue(block, id: int):
             """Generate audio for a single dialogue block"""
@@ -240,27 +223,28 @@ class LemonFoxTTS(BaseTTS):
                         filepath = CloudflareR2.get_random_filepath(
                             BaseTTS.OUTPUT_DIR, ".mp3"
                         )
+
                         with open(filepath, "wb") as f:
                             f.write(audio_bytes)
                         result_url = self.r2.upload_file(
                             filepath, "lemonfox/" + os.path.basename(filepath)
                         )
+
                         return TTSResult(
-                            filepath=filepath, url=result_url, avatar=avatar, id=id
+                            filepath=filepath,
+                            url=result_url,
+                            avatar=avatar,
+                            id=id,
                         )
                     else:
                         text = await response.text()
                         raise RuntimeError(f"Error {response.status}: {text}")
 
-        # Collect all dialogue blocks
-        dialogue_blocks = [block for block in reel.blocks if block.type == "dialogue"]
+        tasks = [
+            generate_single_dialogue(block, idx)
+            for idx, block in enumerate(reel.blocks)
+            if block.type == "dialogue" and block.avatar in valid_avatars
+        ]
 
-        # Generate all dialogues concurrently
-        tasks = []
-        for id, block in enumerate(dialogue_blocks):
-            if block.avatar in valid_avatars:
-                tasks.append(generate_single_dialogue(block, id))
-
-        results = await asyncio.gather(*tasks)
-
-        return results
+        # Execute all tasks concurrently
+        return await asyncio.gather(*tasks)

@@ -12,6 +12,7 @@ class LipsyncResult:
     filepath: str | None = None
     url: str | None = None
     avatar: Avatar | None = None
+    id: int | None = None
 
 
 class BaseLipsync:
@@ -38,56 +39,62 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         self.avatars = avatars
         self.downoad_results = download_results
 
-    def _prepare_single_input(self, audio_url, emotion, seed):
-        data = {
+    def _prepare_single_input(
+        self, audio_url: str, emotion: str, seed: int, id: int
+    ) -> dict:
+        avatar = self.avatars[0]
+
+        return {
             "input": {
                 "avatars": {
-                    self.avatars[0].name: {
-                        "avatar_image": self.avatars[0].face_url,
+                    avatar.name: {
+                        "avatar_image": avatar.face_url,
                         "seed": seed,
-                        "a_cfg_scale": self.avatars[0].a_cfg_scale,
-                        "e_cfg_scale": self.avatars[0].e_cfg_scale,
+                        "a_cfg_scale": avatar.a_cfg_scale,
+                        "e_cfg_scale": avatar.e_cfg_scale,
                     }
                 },
                 "dialogues": [
                     {
-                        "avatar": self.avatars[0].name,
+                        "avatar": avatar.name,
                         "audio_url": audio_url,
                         "emotion": emotion,
+                        "id": id,
                     }
                 ],
             }
         }
-        return data
 
-    def _prepare_list_input(self, tts_results: list[TTSResult], emotion, seed):
-        avatars = {}
-        for avatar in self.avatars:
-            avatars[avatar.name] = {
-                "avatar_image": avatar.face_url,
-                "seed": seed,
-                "a_cfg_scale": avatar.a_cfg_scale,
-                "e_cfg_scale": avatar.e_cfg_scale,
+    def _prepare_list_input(
+        self, tts_results: list[TTSResult], emotion: str, seed: int
+    ) -> dict:
+        return {
+            "input": {
+                "avatars": {
+                    avatar.name: {
+                        "avatar_image": avatar.face_url,
+                        "seed": seed,
+                        "a_cfg_scale": avatar.a_cfg_scale,
+                        "e_cfg_scale": avatar.e_cfg_scale,
+                    }
+                    for avatar in self.avatars
+                },
+                "dialogues": [
+                    {
+                        "avatar": result.avatar.name,
+                        "audio_url": result.url,
+                        "emotion": emotion,
+                        "id": result.id,
+                    }
+                    for result in tts_results
+                ],
             }
-
-        dialogues = []
-
-        for tts_result in tts_results:
-            dialogues.append(
-                {
-                    "avatar": tts_result.avatar.name,
-                    "audio_url": tts_result.url,
-                    "emotion": emotion,
-                }
-            )
-
-        result = {"input": {"avatars": avatars, "dialogues": dialogues}}
-
-        return result
+        }
 
     async def generate_lipsync(
         self,
         audio_url: str,
+        id: int = 0,
         emotion: str = "neutral",
         seed: int = 15,
     ) -> LipsyncResult:
@@ -96,6 +103,7 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
                 audio_url,
                 emotion,
                 seed,
+                id,
             )
         )
 
@@ -106,7 +114,9 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
             if self.downoad_results
             else None
         )
-        return LipsyncResult(filepath=filepath, url=result_url, avatar=self.avatars[0])
+        return LipsyncResult(
+            filepath=filepath, url=result_url, avatar=self.avatars[0], id=id
+        )
 
     async def generate_lipsyncs(
         self,
@@ -132,7 +142,10 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
 
             results.append(
                 LipsyncResult(
-                    filepath=filepath, url=video_url, avatar=tts_results[i].avatar
+                    filepath=filepath,
+                    url=video_url,
+                    avatar=tts_results[i].avatar,
+                    id=item["id"],
                 )
             )
 

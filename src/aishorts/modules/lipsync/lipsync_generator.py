@@ -19,16 +19,32 @@ class LipsyncGenerator:
     """
 
     def __init__(self, avatars: list[Avatar], **kwargs):
-        self.avatars = avatars
-        provider = self.avatars[0].lipsync_provider.lower()
 
+        self.avatars = avatars
+        provider_classes = set(
+            [
+                LIPSYNC_PROVIDERS.get(avatar.lipsync_provider.lower())
+                for avatar in self.avatars
+            ]
+        )
+
+        self.avatars = avatars
+
+        self.provider_instances = [
+            cls(avatars=avatars, **kwargs) for cls in provider_classes
+        ]
+
+        """
         cls = LIPSYNC_PROVIDERS.get(provider)
         if not cls:
             raise ValueError(f"Unknown Lipsync provider '{provider}'")
 
         self.tts = cls(avatar=self.avatar, **kwargs)
+        """
 
-    async def generate_lipsync(self, audio_url: str, **kwargs) -> str:
+    async def generate_lipsync(
+        self, audio_url: str, id: int = 0, **kwargs
+    ) -> LipsyncResult:
         """
         Parameters:
             audio_url: str
@@ -37,15 +53,36 @@ class LipsyncGenerator:
                 Used by FLOAT backend only.
             seed: int
                 Used by FLOAT backend only.
-            a_cfg_scale: int
+        """
+        func = self.provider_instances[0].generate_lipsync
+        if inspect.iscoroutinefunction(func):
+            return await func(audio_url, id, **kwargs)
+        else:
+            print("Running sync TTS in thread...")
+            return await asyncio.to_thread(func, audio_url, id, **kwargs)
+
+    async def generate_lipsyncs(
+        self, tts_results: list[TTSResult], **kwargs
+    ) -> list[LipsyncResult]:
+        """
+        Parameters:
+            audio_url: str
+                Link with audio file
+            emotion: str
                 Used by FLOAT backend only.
-            e_cfg_scale: int
+            seed: int
                 Used by FLOAT backend only.
         """
-        func = self.tts.generate_lipsync
 
-        if inspect.iscoroutinefunction(func):
-            return await func(audio_url=audio_url, **kwargs)
-        else:
-            print("Running sync Lipsync in thread...")
-            return asyncio.to_thread(func, audio_url=audio_url, **kwargs)
+        lipsync_results = []
+        for lipsync in self.provider_instances:
+            func = lipsync.generate_lipsyncs
+            if inspect.iscoroutinefunction(func):
+                result = await func(tts_results, **kwargs)
+            else:
+                print("Running sync TTS in thread...")
+                result = await asyncio.to_thread(func, tts_results, **kwargs)
+
+            lipsync_results.extend(result)
+
+        return lipsync_results

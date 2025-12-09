@@ -9,8 +9,8 @@ from aishorts.modules.avatar import Avatar
 class VoiceGenerator:
     """
     Parameters:
-        avatar: Avatar
-            The avatar configuration that will be used.
+        avatars: Avatar
+            The avatars configurations that will be used.
         download_results: bool, optional
             Whether to download the generated audio files locally.
         api_key: str, optional
@@ -36,20 +36,19 @@ class VoiceGenerator:
             cls(avatars=avatars, **kwargs) for cls in provider_classes
         ]
 
-    async def generate_voice(self, text: str, **kwargs) -> str:
+    async def generate_voice(self, text: str, id: int = 0, **kwargs) -> str:
         """
         Parameters:
             text: str
                 Text that will be converted to speech
         """
 
-        for tts in self.provider_instances:
-            func = tts.generate_voice
-            if inspect.iscoroutinefunction(func):
-                return await func(text, **kwargs)
-            else:
-                print("Running sync TTS in thread...")
-                return asyncio.to_thread(func, text, **kwargs)
+        func = self.provider_instances[0].generate_voice
+        if inspect.iscoroutinefunction(func):
+            return await func(text, id, **kwargs)
+        else:
+            print("Running sync TTS in thread...")
+            return await asyncio.to_thread(func, text, id, **kwargs)
 
     async def generate_reel_dialogues(self, reel: Reel, **kwargs) -> str:
         """
@@ -66,7 +65,7 @@ class VoiceGenerator:
                 result = await func(reel, **kwargs)
             else:
                 print("Running sync TTS in thread...")
-                result = asyncio.to_thread(func, reel, **kwargs)
+                result = await asyncio.to_thread(func, reel, **kwargs)
 
             tts_results.extend(result)
 
