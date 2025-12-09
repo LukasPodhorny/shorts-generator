@@ -52,7 +52,7 @@ class F5TTS(EndpointCaller, BaseTTS):
         self.avatars = avatars
         self.download_results = download_results
 
-    def _prepare_text_input(self, text: str):
+    def _prepare_text_input(self, text: str, id: int):
         data = {
             "input": {
                 "voices": {
@@ -64,6 +64,7 @@ class F5TTS(EndpointCaller, BaseTTS):
                     {
                         "voice": self.avatars[0].name,
                         "text": text,
+                        "id": id,
                     }
                 ],
             }
@@ -93,13 +94,13 @@ class F5TTS(EndpointCaller, BaseTTS):
 
         dialogues = []
 
-        for id, block in reel.blocks:
+        id = 0
+        for block in reel.blocks:
             if block.type != "dialogue":
                 continue
 
-            id += 1
-
             if block.avatar not in valid_avatars:
+                id += 1
                 continue
 
             dialogues.append(
@@ -110,12 +111,14 @@ class F5TTS(EndpointCaller, BaseTTS):
                 }
             )
 
+            id += 1
+
         result = {"input": {"voices": voices, "dialogues": dialogues}}
 
         return result
 
-    async def generate_voice(self, text: str) -> TTSResult:
-        result = await self.run_async(self._prepare_text_input(text))
+    async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
+        result = await self.run_async(self._prepare_text_input(text, id))
         result_url = result[0]["audio_url"]
 
         filepath = (
@@ -124,13 +127,19 @@ class F5TTS(EndpointCaller, BaseTTS):
             else None
         )
 
-        return TTSResult(filepath=filepath, url=result_url, avatar=self.avatars[0])
+        return TTSResult(
+            filepath=filepath,
+            url=result_url,
+            avatar=self.avatars[0],
+            id=result[0]["id"],
+        )
 
     async def generate_reel_dialogues(self, reel: Reel) -> list[TTSResult]:
         tts_results = []
 
         reel_input = self._prepare_reel_input(reel)
         results = await self.run_async(reel_input)
+
         for i, dialogue in enumerate(results):
             result_url = dialogue["audio_url"]
             filepath = CloudflareR2.download_presigned_file(
@@ -201,13 +210,21 @@ class LemonFoxTTS(BaseTTS):
 
     async def generate_reel_dialogues(self, reel: Reel) -> list[TTSResult]:
         url = "https://api.lemonfox.ai/v1/audio/speech"
-        print(self.api_key)
+
         headers = {
             "Authorization": self.api_key,
             "Content-Type": "application/json",
         }
 
-        async def generate_single_dialogue(block):
+        valid_avatars = []
+
+        for avatar in self.avatars:
+            if avatar.voice.provider.lower() != "lemonfox":
+                continue
+
+            valid_avatars.append(avatar.name)
+
+        async def generate_single_dialogue(block, id: int):
             """Generate audio for a single dialogue block"""
             avatar = find_by(self.avatars, name=block.avatar)
             data = {
@@ -229,7 +246,7 @@ class LemonFoxTTS(BaseTTS):
                             filepath, "lemonfox/" + os.path.basename(filepath)
                         )
                         return TTSResult(
-                            filepath=filepath, url=result_url, avatar=avatar
+                            filepath=filepath, url=result_url, avatar=avatar, id=id
                         )
                     else:
                         text = await response.text()
@@ -239,7 +256,11 @@ class LemonFoxTTS(BaseTTS):
         dialogue_blocks = [block for block in reel.blocks if block.type == "dialogue"]
 
         # Generate all dialogues concurrently
-        tasks = [generate_single_dialogue(block) for block in dialogue_blocks]
+        tasks = []
+        for id, block in enumerate(dialogue_blocks):
+            if block.avatar in valid_avatars:
+                tasks.append(generate_single_dialogue(block, id))
+
         results = await asyncio.gather(*tasks)
 
         return results

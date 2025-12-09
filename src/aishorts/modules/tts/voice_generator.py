@@ -1,4 +1,3 @@
-from aishorts.modules.avatar import Voice
 from aishorts.modules.tts.tts_providers import *
 from aishorts.utils.registry import TTS_PROVIDERS
 import inspect
@@ -26,13 +25,16 @@ class VoiceGenerator:
 
     def __init__(self, avatars: list[Avatar], **kwargs):
         self.avatars = avatars
-        provider = self.avatars[0].voice.provider.lower()
+        provider_classes = set(
+            [
+                TTS_PROVIDERS.get(avatar.voice.provider.lower())
+                for avatar in self.avatars
+            ]
+        )
 
-        cls = TTS_PROVIDERS.get(provider)
-        if not cls:
-            raise ValueError(f"Unknown TTS provider '{provider}'")
-
-        self.tts = cls(avatars=avatars, **kwargs)
+        self.provider_instances = [
+            cls(avatars=avatars, **kwargs) for cls in provider_classes
+        ]
 
     async def generate_voice(self, text: str, **kwargs) -> str:
         """
@@ -40,13 +42,14 @@ class VoiceGenerator:
             text: str
                 Text that will be converted to speech
         """
-        func = self.tts.generate_voice
 
-        if inspect.iscoroutinefunction(func):
-            return await func(text, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return asyncio.to_thread(func, text, **kwargs)
+        for tts in self.provider_instances:
+            func = tts.generate_voice
+            if inspect.iscoroutinefunction(func):
+                return await func(text, **kwargs)
+            else:
+                print("Running sync TTS in thread...")
+                return asyncio.to_thread(func, text, **kwargs)
 
     async def generate_reel_dialogues(self, reel: Reel, **kwargs) -> str:
         """
@@ -54,10 +57,17 @@ class VoiceGenerator:
             text: str
                 Text that will be converted to speech
         """
-        func = self.tts.generate_reel_dialogues
 
-        if inspect.iscoroutinefunction(func):
-            return await func(reel, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return asyncio.to_thread(func, reel, **kwargs)
+        tts_results = []
+        for tts in self.provider_instances:
+            func = tts.generate_reel_dialogues
+
+            if inspect.iscoroutinefunction(func):
+                result = await func(reel, **kwargs)
+            else:
+                print("Running sync TTS in thread...")
+                result = asyncio.to_thread(func, reel, **kwargs)
+
+            tts_results.extend(result)
+
+        return tts_results
