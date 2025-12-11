@@ -105,7 +105,7 @@ class ScriptGenerator:
         files: list[str] | None = None,
         user_input: str | None = None,
         **kwargs,
-    ) -> str:
+    ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
         func = self.llm.generate_script
 

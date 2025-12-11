@@ -59,15 +59,17 @@ class ShortsGenerator:
             base_instructions=shorts_config.script_config.base_instructions,
             avatars=self.avatars,
             generate_latex=shorts_config.script_config.generate_latex,
-            generate_image=shorts_config.script_config.generate_image, 
+            generate_image=shorts_config.script_config.generate_image,
             provider=shorts_config.script_config.provider,
             api_key=llm_api_key,
             **shorts_config.script_config.provider_config,
         )
 
-        self.voice_gen = VoiceGenerator(voice=self.avatar.voice, api_key=tts_api_key)
+        self.voice_gen = VoiceGenerator(avatars=self.avatars, api_key=tts_api_key)
 
-        self.lipsync_gen = LipsyncGenerator(avatar=self.avatar, api_key=lipsync_api_key)
+        self.lipsync_gen = LipsyncGenerator(
+            avatars=self.avatars, api_key=lipsync_api_key
+        )
 
         self.subtitle_gen = SubtitleGenerator(
             shorts_config.subtitle_config.provider,
@@ -89,24 +91,34 @@ class ShortsGenerator:
             self.video_template.edit_template.lower()
         ).required_assets
 
-        template_assets = TemplateAssets()
+        template_assets = [TemplateAssets() for _ in range(amount)]
 
-        print("Generating script...")
+        print("Generating scripts")
         if AssetType.SCRIPT in required_assets:
-            script = await self.script_gen.generate_script(
+            reel_series = await self.script_gen.generate_script(
                 num_reels=amount, files=files, user_input=user_input
             )
-        
-        
+
+            for asset, result in zip(template_assets, reel_series.reels):
+                asset.reel_script = result
+
         print("Generating voiceover...")
         if AssetType.VOICE in required_assets:
-            tts_result = await self.voice_gen.generate_voice(script)
-            template_assets.voiceover = tts_result.filepath
+            tasks = [
+                self.voice_gen.generate_reel_dialogues(reel)
+                for reel in reel_series.reels
+            ]
+            results = await asyncio.gather(*tasks)
+
+            for asset, result in zip(template_assets, results):
+                asset.voiceovers = result
 
         print("Generating lipsync video and subtitles...")
         tasks = []
         if AssetType.LIPSYNC in required_assets:
-            tasks.append(self.lipsync_gen.generate_lipsync(tts_result.url))
+            lipsync_tasks = [self.lipsync_gen.generate_lipsyncs(asset.voiceovers) for asset in template_assets]
+            
+            tasks.extend(lipsync_tasks)
 
         if AssetType.SUBTITLES in required_assets:
             tasks.append(

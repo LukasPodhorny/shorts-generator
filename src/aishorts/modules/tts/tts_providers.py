@@ -17,6 +17,7 @@ class TTSResult:
     url: str | None = None
     avatar: Avatar | None = None
     id: int | None = None
+    transcription: str | None = None
 
 
 class BaseTTS:
@@ -117,6 +118,7 @@ class F5TTS(EndpointCaller, BaseTTS):
             url=result_url,
             avatar=self.avatars[0],
             id=result[0]["id"],
+            transcription=text,
         )
 
     async def generate_reel_dialogues(self, reel: Reel) -> list[TTSResult]:
@@ -139,6 +141,7 @@ class F5TTS(EndpointCaller, BaseTTS):
                         self.avatars, name=reel_input["input"]["dialogues"][i]["voice"]
                     ),
                     id=dialogue["id"],
+                    transcription=reel_input["input"]["dialogues"][i]["text"],
                 )
             )
 
@@ -187,7 +190,7 @@ class LemonFoxTTS(BaseTTS):
                     )
 
                     return TTSResult(
-                        filepath=filepath, url=result_url, avatar=self.avatars[0], id=id
+                        filepath=filepath, url=result_url, avatar=self.avatars[0], id=id, transcription=text
                     )
                 else:
                     text = await response.text()
@@ -235,6 +238,7 @@ class LemonFoxTTS(BaseTTS):
                             url=result_url,
                             avatar=avatar,
                             id=id,
+                            transcription=block.text,
                         )
                     else:
                         text = await response.text()

@@ -5,6 +5,7 @@ from io import BytesIO
 from elevenlabs.client import ElevenLabs
 from aishorts.utils.registry import register_subtitle
 import asyncio
+from aishorts.modules.tts.tts_providers import TTSResult
 
 
 class BaseSubtitles:
@@ -28,7 +29,7 @@ class WhisperSubtitles(BaseSubtitles):
             api_key=self.api_key, base_url="https://api.lemonfox.ai/v1"
         )
 
-    async def generate_subtitles(self, audio_file: str):
+    async def generate_subtitles(self, audio_file: str) -> TranscriptionVerbose:
 
         with open(audio_file, "rb") as audio:
             transcription = await self.client.audio.transcriptions.create(
@@ -57,7 +58,9 @@ class ElevenLabsSubtitles(BaseSubtitles):
 
         self.elevenlabs = ElevenLabs(api_key=self.api_key)
 
-    async def generate_subtitles(self, audio_file: str, transcription_text: str):
+    async def generate_subtitles(
+        self, audio_file: str, transcription_text: str
+    ) -> TranscriptionVerbose:
         with open(audio_file, "rb") as f:
             audio_data = BytesIO(f.read())
 
@@ -95,3 +98,12 @@ class ElevenLabsSubtitles(BaseSubtitles):
             prev_word = transcription_word
 
         return transcription_verbose
+
+    async def generate_multiple_subtitles(
+        self, tts_results: list[TTSResult]
+    ) -> list[TranscriptionVerbose]:
+        tasks = [
+            self.generate_subtitles(tts_result.filepath, tts_result.transcription)
+            for tts_result in tts_results
+        ]
+        return await asyncio.gather(*tasks)

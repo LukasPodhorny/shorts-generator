@@ -4,13 +4,17 @@ from openai.types.audio import TranscriptionVerbose
 import subprocess
 import tempfile
 from pydantic import BaseModel
+from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
+from aishorts.modules.tts.tts_providers import TTSResult
+from aishorts.modules.script.script import Reel
 
 
 @dataclass
 class TemplateAssets:
-    lipsync_video: str | None = None
+    reel_script: Reel | None = None
+    lipsync_videos: list[LipsyncResult] | None = None
     subtitles: TranscriptionVerbose | None = None
-    voiceover: str | None = None
+    voiceovers: list[TTSResult] | None = None
 
 
 class SubtitleStyle(BaseModel):
@@ -31,10 +35,12 @@ class SubtitleStyle(BaseModel):
     remove_chars: str = ".,;"
     karaoke_enabled: bool = False
 
+
 class TemplateConfig(BaseModel):
     bg_video: str | None = None
     music: str | None = None
     subtitle_style: SubtitleStyle | None = None
+
 
 class VideoTemplate(BaseModel):
     edit_template: str

@@ -43,3 +43,11 @@ class SubtitleGenerator:
         else:
             print("Running sync TTS in thread...")
             return asyncio.to_thread(func, audio_file, **kwargs)
+
+    async def generate_multiple_subtitles(
+        self, audio_files: list[str], **kwargs
+    ) -> list[str]:
+        tasks = [
+            self.generate_subtitles(audio_file, **kwargs) for audio_file in audio_files
+        ]
+        return await asyncio.gather(*tasks)

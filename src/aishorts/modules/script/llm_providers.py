@@ -96,7 +96,9 @@ class ChatGPT(BaseLLM):
 
         # Upload files, generate response, auto-cleanup (all async!)
         async with self._temporary_files(files or []) as uploaded_files:
-            messages = self._build_messages(instructions, user_input or "", uploaded_files)
+            messages = self._build_messages(
+                instructions, user_input or "", uploaded_files
+            )
 
             # Async API call - doesn't block event loop
             response = await self.client.responses.parse(

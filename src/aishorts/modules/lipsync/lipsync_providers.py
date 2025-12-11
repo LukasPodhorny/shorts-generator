@@ -152,6 +152,7 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         return results
 
 
+# currently unavailable
 @register_lipsync("wav2lip")
 class Wav2LipLipsync(EndpointCaller, BaseLipsync):
 
