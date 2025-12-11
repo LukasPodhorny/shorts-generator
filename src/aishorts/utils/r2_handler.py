@@ -22,7 +22,7 @@ class CloudflareR2:
         self.client.upload_file(file_path, self.bucket, key)
         return self.create_presigned_url(key)
 
-    def create_presigned_url(self, key: str, expires_in=3600) -> str:
+    def create_presigned_url(self, key: str, expires_in=604800) -> str:
         """Generates a temporary download link."""
         return self.client.generate_presigned_url(
             "get_object",

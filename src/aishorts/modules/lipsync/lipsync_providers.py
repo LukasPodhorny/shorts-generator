@@ -30,7 +30,7 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         self,
         avatars: list[Avatar],
         download_results: bool = True,
-        timeout=360,
+        timeout=1000,
         endpoint_id: str | None = None,
         api_key: str | None = None,
     ):
@@ -159,7 +159,7 @@ class Wav2LipLipsync(EndpointCaller, BaseLipsync):
     def __init__(
         self,
         avatar: Avatar,
-        timeout=360,
+        timeout=1000,
         endpoint_id: str | None = None,
         api_key: str | None = None,
     ):

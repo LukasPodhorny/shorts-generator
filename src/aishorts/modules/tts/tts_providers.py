@@ -45,7 +45,7 @@ class F5TTS(EndpointCaller, BaseTTS):
         self,
         avatars: list[Avatar],
         download_results: bool = True,
-        timeout=180,
+        timeout=500,
         endpoint_id: str | None = None,
         api_key: str | None = None,
     ):
@@ -190,7 +190,11 @@ class LemonFoxTTS(BaseTTS):
                     )
 
                     return TTSResult(
-                        filepath=filepath, url=result_url, avatar=self.avatars[0], id=id, transcription=text
+                        filepath=filepath,
+                        url=result_url,
+                        avatar=self.avatars[0],
+                        id=id,
+                        transcription=text,
                     )
                 else:
                     text = await response.text()

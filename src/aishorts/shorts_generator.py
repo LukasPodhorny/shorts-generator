@@ -93,7 +93,7 @@ class ShortsGenerator:
 
         template_assets = [TemplateAssets() for _ in range(amount)]
 
-        print("Generating scripts")
+        print("\n\n Generating scripts...")
         if AssetType.SCRIPT in required_assets:
             reel_series = await self.script_gen.generate_script(
                 num_reels=amount, files=files, user_input=user_input
@@ -116,26 +116,31 @@ class ShortsGenerator:
         print("Generating lipsync video and subtitles...")
         tasks = []
         if AssetType.LIPSYNC in required_assets:
-            lipsync_tasks = [self.lipsync_gen.generate_lipsyncs(asset.voiceovers) for asset in template_assets]
-            
+            lipsync_tasks = [
+                self.lipsync_gen.generate_lipsyncs(asset.voiceovers)
+                for asset in template_assets
+            ]
             tasks.extend(lipsync_tasks)
 
         if AssetType.SUBTITLES in required_assets:
-            tasks.append(
-                self.subtitle_gen.generate_subtitles(
-                    audio_file=template_assets.voiceover, transcription_text=script
-                )
-            )
+            subtitle_tasks = [
+                self.subtitle_gen.generate_multiple_subtitles(asset.voiceovers)
+                for asset in template_assets
+            ]
+            tasks.extend(subtitle_tasks)
 
         results = await asyncio.gather(*tasks)
 
         # Map results back
         idx = 0
         if AssetType.LIPSYNC in required_assets:
-            template_assets.lipsync_video = results[idx]
+            for asset, result in zip(template_assets, results[idx]):
+                asset.lipsync_videos = result
             idx += 1
         if AssetType.SUBTITLES in required_assets:
-            template_assets.subtitles = results[idx]
+            for asset, result in zip(template_assets, results[idx]):
+                asset.subtitles = result
+            idx += 1
 
         print("Generating final video...")
         return self.video_gen.compose(template_assets=template_assets)
