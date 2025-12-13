@@ -1,8 +1,8 @@
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.lipsync.lipsync_providers import *
-from aishorts.utils.registry import LIPSYNC_PROVIDERS
 import inspect
 import asyncio
+from aishorts.modules.lipsync.lipsync_providers import LipsyncProvider
 
 
 class LipsyncGenerator:
@@ -23,7 +23,7 @@ class LipsyncGenerator:
         self.avatars = avatars
         provider_classes = set(
             [
-                LIPSYNC_PROVIDERS.get(avatar.lipsync_provider.lower())
+                LipsyncProvider.get(avatar.lipsync_provider.lower())
                 for avatar in self.avatars
             ]
         )

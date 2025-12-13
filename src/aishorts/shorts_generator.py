@@ -2,16 +2,17 @@ import asyncio
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.tts.voice_generator import VoiceGenerator
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
+from aishorts.modules.video_edit.video_generator import VideoGenerator
 from dataclasses import dataclass, field
 from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
 from aishorts.modules.video_edit.video_edit import VideoTemplate, TemplateAssets
-from aishorts.modules.video_edit.video_generator import VideoGenerator
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.video_edit.video_edit_templates import *
-from aishorts.utils.registry import EDIT_TEMPLATES
-from aishorts.modules.video_edit.asset_type import AssetType
+from aishorts.modules.video_edit.video_edit_templates import EditTemplate
+from aishorts.modules.video_edit.video_edit import AssetType
 from importlib.resources import read_text
 from pydantic import BaseModel, Field
+from aishorts.utils.r2_handler import BucketConfiguration
 
 
 class ScriptConfig(BaseModel):
@@ -25,8 +26,8 @@ class ScriptConfig(BaseModel):
         )
     )
     provider: str | None = "chatgpt"
-    generate_latex: bool = False
-    generate_image: bool = False
+    generate_latex: bool = True
+    generate_image: bool = True
     provider_config: dict = Field(default_factory=dict)
 
 
@@ -52,6 +53,7 @@ class ShortsGenerator:
         lipsync_api_key: str | None = None,
         subtitles_api_key: str | None = None,
         llm_api_key: str | None = None,
+        bucket_configuration: BucketConfiguration = BucketConfiguration(),
     ):
         self.avatars = shorts_config.avatars
 
@@ -65,7 +67,11 @@ class ShortsGenerator:
             **shorts_config.script_config.provider_config,
         )
 
-        self.voice_gen = VoiceGenerator(avatars=self.avatars, api_key=tts_api_key)
+        self.voice_gen = VoiceGenerator(
+            avatars=self.avatars,
+            api_key=tts_api_key,
+            bucket_configuration=bucket_configuration,
+        )
 
         self.lipsync_gen = LipsyncGenerator(
             avatars=self.avatars, api_key=lipsync_api_key
@@ -87,7 +93,7 @@ class ShortsGenerator:
         files: list[str] | None = None,
         user_input: str | None = None,
     ):
-        required_assets = EDIT_TEMPLATES.get(
+        required_assets = EditTemplate.get(
             self.video_template.edit_template.lower()
         ).required_assets
 

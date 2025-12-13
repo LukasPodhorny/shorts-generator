@@ -7,6 +7,56 @@ from pydantic import BaseModel
 from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
 from aishorts.modules.tts.tts_providers import TTSResult
 from aishorts.modules.script.script import Reel
+import uuid
+from aishorts.modules.provider import Provider
+from abc import abstractmethod
+from enum import Enum
+from typing import List
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List
+
+
+class AssetType(Enum):
+    SCRIPT = "script"
+    VOICE = "voice"
+    LIPSYNC = "lipsync"
+    SUBTITLES = "subtitles"
+
+
+@dataclass
+class FFmpegCommand:
+    """
+    FFmpeg command with ordered inputs.
+    The command references inputs by their index [0], [1], [2], etc.
+    """
+
+    # The actual inputs in order - these get replaced by provider
+    inputs: List[Path]
+
+    # The filter graph and other args (already have correct indices)
+    args: List[str]
+
+    # Optional: metadata about what each input is (for debugging/logging)
+    input_labels: List[str] = field(default_factory=list)
+
+    def to_command_list(self, resolved_inputs: List[str]) -> List[str]:
+        """
+        Build final FFmpeg command with resolved input paths/URLs
+
+        Args:
+            resolved_inputs: List of paths/URLs in same order as self.inputs
+        """
+        cmd = ["ffmpeg"]
+
+        # Add all inputs
+        for input_path in resolved_inputs:
+            cmd.extend(["-i", input_path])
+
+        # Add the rest of the arguments
+        cmd.extend(self.args)
+
+        return cmd
 
 
 @dataclass
@@ -47,16 +97,30 @@ class VideoTemplate(BaseModel):
     template_config: TemplateConfig
 
 
-class EditTemplate:
+class AssSubtitles:
+    def __init__(self, data: str):
+        self.data = data
+
+    def download(self):
+        subs_path = f"/tmp/{uuid.uuid4()}.ass"
+        with open(subs_path, "w", encoding="utf-8") as f:
+            f.write(self.data)
+
+        return subs_path
+
+
+class EditTemplate(Provider):
+
     OUTPUT_DIR = os.getenv("VIDEO_OUTPUT_DIR") or "output/videos"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    def compose(self):
-        raise NotImplementedError("You must implement compose function.")
+    @abstractmethod
+    def compose(self, template_assets: TemplateAssets, **kwargs) -> FFmpegCommand:
+        pass
 
     def transcription_to_ass(
         self, transcription: TranscriptionVerbose, style: SubtitleStyle
-    ) -> str:
+    ) -> AssSubtitles:
         """
         Build an ASS subtitle file with optional karaoke effect.
         Groups words based on max_chars_per_line and respects break_characters.
@@ -182,9 +246,10 @@ class EditTemplate:
                 )
                 events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
 
-        return "\n".join(events)
+        return AssSubtitles("\n".join(events))
 
-    def nvenc_available(self) -> bool:
+    @staticmethod
+    def nvenc_available() -> bool:
         """
         Check if h264_nvenc actually works (not only exists in the encoder list).
         This tries encoding a single black frame with NVENC.
@@ -211,3 +276,20 @@ class EditTemplate:
             return True
         except:
             return False
+
+    video_codec = "h264_nvenc" if nvenc_available() else "libx264"
+
+    def get_video_duration(self, video_path: str) -> float:
+        """Get video duration in seconds using ffprobe"""
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())

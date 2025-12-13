@@ -1,22 +1,32 @@
-from aishorts.utils.registry import EDIT_TEMPLATES
 from aishorts.modules.video_edit.video_edit import (
     TemplateAssets,
     VideoTemplate,
 )
-from aishorts.modules.video_edit.video_edit_templates import *
+from aishorts.modules.video_edit.video_edit_templates import EditTemplate
+from aishorts.modules.video_edit.ffmpeg_providers import FFmpegProvider
+import uuid
 
 
 class VideoGenerator:
 
-    def __init__(self, video_template: VideoTemplate, **kwargs):
+    def __init__(
+        self, video_template: VideoTemplate, provider: str = "local", **kwargs
+    ):
         self.template_config = video_template.template_config
-        provider = video_template.edit_template.lower()
+        edit_template = video_template.edit_template.lower()
 
-        cls = EDIT_TEMPLATES.get(provider)
-        if not cls:
+        edit_cls = EditTemplate.get(edit_template)
+        if not edit_cls:
             raise ValueError(f"Unknown video template class '{provider}'")
 
-        self.edit = cls(self.template_config, **kwargs)
+        self.edit = edit_cls(self.template_config, **kwargs)
+
+        render_cls = FFmpegProvider.get(provider)
+        if not render_cls:
+            raise ValueError(f"Unknown video template class '{provider}'")
+
+        self.render = render_cls(**kwargs)
 
     def compose(self, template_assets: TemplateAssets, **kwargs) -> str:
-        return self.edit.compose(template_assets=template_assets, **kwargs)
+        cmd = self.edit.compose(template_assets=template_assets, **kwargs)
+        return self.render.render(cmd, f"{uuid.uuid4()}.mp4")

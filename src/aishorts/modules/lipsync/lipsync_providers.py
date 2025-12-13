@@ -2,29 +2,33 @@ import os
 from aishorts.modules.avatar import Avatar
 from aishorts.utils.runpod_caller import EndpointCaller
 from aishorts.utils.r2_handler import CloudflareR2
-from aishorts.utils.registry import register_lipsync
 from aishorts.modules.tts.tts_providers import TTSResult
 from dataclasses import dataclass
+from aishorts.modules.provider import Provider
+from abc import abstractmethod
 
 
-@dataclass
+@dataclass(order=True)
 class LipsyncResult:
+    id: int
     filepath: str | None = None
     url: str | None = None
     avatar: Avatar | None = None
-    id: int | None = None
 
 
-class BaseLipsync:
+class LipsyncProvider(Provider):
     OUTPUT_DIR = os.getenv("LIPSYNC_OUTPUT_DIR") or "output/lipsync"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    def generate_lipsync(self, audio_url: str) -> str:
-        raise NotImplementedError("Subclasses must implement generate_lipsync()")
+    @abstractmethod
+    def generate_lipsyncs(
+        self, tts_results: list[TTSResult], **kwargs
+    ) -> list[LipsyncResult]:
+        pass
 
 
-@register_lipsync("float")
-class FLOATLipsync(EndpointCaller, BaseLipsync):
+class FLOATLipsync(EndpointCaller, LipsyncProvider):
+    provider_name = "float"
 
     def __init__(
         self,
@@ -110,7 +114,7 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         result_url = result[0]
 
         filepath = (
-            CloudflareR2.download_presigned_file(result_url, BaseLipsync.OUTPUT_DIR)
+            CloudflareR2.download_presigned_file(result_url, LipsyncProvider.OUTPUT_DIR)
             if self.downoad_results
             else None
         )
@@ -135,7 +139,9 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         for i, item in enumerate(response):
             video_url = item["video_url"]
             filepath = (
-                CloudflareR2.download_presigned_file(video_url, BaseLipsync.OUTPUT_DIR)
+                CloudflareR2.download_presigned_file(
+                    video_url, LipsyncProvider.OUTPUT_DIR
+                )
                 if self.downoad_results
                 else None
             )
@@ -152,9 +158,11 @@ class FLOATLipsync(EndpointCaller, BaseLipsync):
         return results
 
 
+"""
+
 # currently unavailable
 @register_lipsync("wav2lip")
-class Wav2LipLipsync(EndpointCaller, BaseLipsync):
+class Wav2LipLipsync(EndpointCaller, LipsyncProvider):
 
     def __init__(
         self,
@@ -191,3 +199,4 @@ class Wav2LipLipsync(EndpointCaller, BaseLipsync):
             result_url, BaseLipsync.OUTPUT_DIR
         )
         return filepath
+"""

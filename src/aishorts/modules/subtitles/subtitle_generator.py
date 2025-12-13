@@ -1,4 +1,4 @@
-from aishorts.utils.registry import SUBTITLE_PROVIDERS
+from aishorts.modules.subtitles.subtitle_providers import SubtitlesProvider
 from aishorts.modules.subtitles.subtitle_providers import *
 import inspect
 
@@ -19,7 +19,7 @@ class SubtitleGenerator:
     def __init__(self, provider: str = "elevenlabs", **kwargs):
         self.provider = provider.lower()
 
-        cls = SUBTITLE_PROVIDERS.get(self.provider)
+        cls = SubtitlesProvider.get(self.provider)
 
         if not cls:
             raise ValueError(f"Unknown Subtitle provider '{provider}'")

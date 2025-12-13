@@ -1,7 +1,6 @@
 import os
 from aishorts.utils.runpod_caller import EndpointCaller
-from aishorts.utils.r2_handler import CloudflareR2
-from aishorts.utils.registry import register_tts
+from aishorts.utils.r2_handler import CloudflareR2, BucketConfiguration
 import aiohttp
 from dataclasses import dataclass
 from aishorts.modules.script.script import Reel
@@ -9,37 +8,35 @@ from aishorts.modules.avatar import Avatar
 from aishorts.utils.pydantic_helper import find_by
 import asyncio
 from aishorts.modules.script.script import Reel
+from aishorts.modules.provider import Provider
+from abc import abstractmethod
 
 
-@dataclass
+@dataclass(order=True)
 class TTSResult:
+    id: int
     filepath: str | None = None
     url: str | None = None
     avatar: Avatar | None = None
-    id: int | None = None
     transcription: str | None = None
 
 
-class BaseTTS:
+class TTSProvider(Provider):
+
     OUTPUT_DIR = os.getenv("TTS_OUTPUT_DIR") or "output/tts"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    def generate_voice(
-        self,
-        text: str,
-        id: int = 0,
-    ) -> TTSResult:
-        raise NotImplementedError("Subclasses must implement generate_voice()")
-
+    @abstractmethod
     def generate_reel_dialogues(
         self,
         reel: Reel,
+        **kwargs,
     ) -> list[TTSResult]:
-        raise NotImplementedError("Subclasses must implement generate_reel_dialogues()")
+        pass
 
 
-@register_tts("f5tts")
-class F5TTS(EndpointCaller, BaseTTS):
+class F5TTS(EndpointCaller, TTSProvider):
+    provider_name = "f5tts"
 
     def __init__(
         self,
@@ -108,7 +105,7 @@ class F5TTS(EndpointCaller, BaseTTS):
         result_url = result[0]["audio_url"]
 
         filepath = (
-            CloudflareR2.download_presigned_file(result_url, BaseTTS.OUTPUT_DIR)
+            CloudflareR2.download_presigned_file(result_url, TTSProvider.OUTPUT_DIR)
             if self.download_results
             else None
         )
@@ -130,7 +127,7 @@ class F5TTS(EndpointCaller, BaseTTS):
         for i, dialogue in enumerate(results):
             result_url = dialogue["audio_url"]
             filepath = CloudflareR2.download_presigned_file(
-                result_url, BaseTTS.OUTPUT_DIR
+                result_url, TTSProvider.OUTPUT_DIR
             )
 
             tts_results.append(
@@ -148,17 +145,18 @@ class F5TTS(EndpointCaller, BaseTTS):
         return tts_results
 
 
-@register_tts("lemonfox")
-class LemonFoxTTS(BaseTTS):
+class LemonFoxTTS(TTSProvider):
+    provider_name = "lemonfox"
 
     def __init__(
         self,
         avatars: list[Avatar],
         api_key: str | None = None,
+        bucket_configuration: BucketConfiguration = BucketConfiguration(),
     ):
         self.avatars = avatars
         self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
-        self.r2 = CloudflareR2()
+        self.r2 = CloudflareR2(bucket_configuration)
 
     async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
 
@@ -180,7 +178,7 @@ class LemonFoxTTS(BaseTTS):
                     audio_bytes = await response.read()
 
                     filepath = CloudflareR2.get_random_filepath(
-                        BaseTTS.OUTPUT_DIR, ".mp3"
+                        TTSProvider.OUTPUT_DIR, ".mp3"
                     )
                     with open(filepath, "wb") as f:
                         f.write(audio_bytes)
@@ -220,7 +218,7 @@ class LemonFoxTTS(BaseTTS):
             data = {
                 "input": block.text,
                 "voice": avatar.voice.voice_id,
-                "response_format": "mp3",
+                "response_format": "wav",
             }
 
             async with aiohttp.ClientSession() as session:
@@ -228,7 +226,7 @@ class LemonFoxTTS(BaseTTS):
                     if response.status == 200:
                         audio_bytes = await response.read()
                         filepath = CloudflareR2.get_random_filepath(
-                            BaseTTS.OUTPUT_DIR, ".mp3"
+                            TTSProvider.OUTPUT_DIR, ".mp3"
                         )
 
                         with open(filepath, "wb") as f:
@@ -255,4 +253,5 @@ class LemonFoxTTS(BaseTTS):
         ]
 
         # Execute all tasks concurrently
-        return await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+        return results

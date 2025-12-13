@@ -1,22 +1,25 @@
 from contextlib import asynccontextmanager
 from openai import AsyncOpenAI
-from aishorts.utils.registry import register_llm
 from aishorts.modules.script.script import ReelSeries
-import json
-from aishorts.modules.avatar import Avatar
+from aishorts.modules.provider import Provider
+from abc import abstractmethod
 
 
-class BaseLLM:
+class LLMProvider(Provider):
+
+    @abstractmethod
     async def generate_script(
         self,
         files: list[str] | None = None,
         user_input: str | None = None,
+        **kwargs,
     ) -> str:
-        raise NotImplementedError("Subclasses must implement generate_script()")
+        pass
 
 
-@register_llm("chatgpt")
-class ChatGPT(BaseLLM):
+class ChatGPT(LLMProvider):
+    provider_name = "chatgpt"
+
     def __init__(
         self,
         model: str = "gpt-5",

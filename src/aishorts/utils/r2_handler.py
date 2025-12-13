@@ -3,19 +3,34 @@ import os
 from urllib.parse import urlparse
 import uuid
 import requests
+from pydantic import BaseModel
+
+
+class BucketConfiguration(BaseModel):
+    endponit_url: str | None = None
+    aws_acces_key_id: str | None = None
+    aws_secret_acces_key: str | None = None
+    bucket: str | None = None
+    output_dir: str | None = None
 
 
 class CloudflareR2:
-    def __init__(self):
+    def __init__(
+        self, bucket_configuration: BucketConfiguration = BucketConfiguration()
+    ):
         self.client = boto3.client(
             "s3",
-            endpoint_url=os.getenv("R2_ENDPOINT"),
-            aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+            endpoint_url=bucket_configuration.endponit_url or os.getenv("R2_ENDPOINT"),
+            aws_access_key_id=bucket_configuration.aws_acces_key_id
+            or os.getenv("R2_ACCESS_KEY_ID"),
+            aws_secret_access_key=bucket_configuration.aws_secret_acces_key
+            or os.getenv("R2_SECRET_ACCESS_KEY"),
             region_name="auto",
         )
-        self.bucket = os.getenv("R2_BUCKET")
-        self.output_dir = os.getenv("CLOUDFLARE_OUTPUT_DIR", "outputs")
+        self.bucket = bucket_configuration.bucket or os.getenv("R2_BUCKET")
+        self.output_dir = bucket_configuration.output_dir or os.getenv(
+            "CLOUDFLARE_OUTPUT_DIR", "outputs"
+        )
 
     def upload_file(self, file_path: str, key: str) -> str:
         """Uploads file and returns its presigned URL."""

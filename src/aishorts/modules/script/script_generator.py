@@ -1,6 +1,6 @@
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.script.llm_providers import *
-from aishorts.utils.registry import LLM_PROVIDERS
+from aishorts.modules.script.llm_providers import LLMProvider
 import inspect
 import asyncio
 
@@ -93,7 +93,7 @@ class ScriptGenerator:
         self.generate_image = generate_image
         self.provider = provider.lower()
 
-        cls = LLM_PROVIDERS.get(self.provider)
+        cls = LLMProvider.get(self.provider)
         if not cls:
             raise ValueError(f"Unknown LLM provider '{self.provider}'")
 

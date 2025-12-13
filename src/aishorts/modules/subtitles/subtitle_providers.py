@@ -3,18 +3,24 @@ from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 import os
 from io import BytesIO
 from elevenlabs.client import ElevenLabs
-from aishorts.utils.registry import register_subtitle
 import asyncio
 from aishorts.modules.tts.tts_providers import TTSResult
+from aishorts.modules.provider import Provider
+from abc import abstractmethod
 
 
-class BaseSubtitles:
-    def generate_subtitles(self, audio_file: str) -> TranscriptionVerbose:
-        raise NotImplementedError("You must implement generate_subtitles function.")
+class SubtitlesProvider(Provider):
+    @abstractmethod
+    def generate_multiple_subtitles(
+        self,
+        tts_results: list[TTSResult],
+        **kwargs,
+    ) -> list[TranscriptionVerbose]:
+        pass
 
 
-@register_subtitle("whisper")
-class WhisperSubtitles(BaseSubtitles):
+class WhisperSubtitles(SubtitlesProvider):
+    provider_name = "whisper"
 
     def __init__(
         self,
@@ -41,8 +47,8 @@ class WhisperSubtitles(BaseSubtitles):
         return transcription
 
 
-@register_subtitle("elevenlabs")
-class ElevenLabsSubtitles(BaseSubtitles):
+class ElevenLabsSubtitles(SubtitlesProvider):
+    provider_name = "elevenlabs"
 
     def __init__(
         self,
