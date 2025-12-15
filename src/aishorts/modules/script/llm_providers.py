@@ -3,6 +3,7 @@ from openai import AsyncOpenAI
 from aishorts.modules.script.script import ReelSeries
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
+import asyncio
 
 
 class LLMProvider(Provider):
@@ -48,12 +49,17 @@ class ChatGPT(LLMProvider):
             yield uploaded
 
         finally:
+            for file in uploaded:
+                asyncio.create_task(self.client.files.delete(file.id))
+
+            """
             # Cleanup files asynchronously
             for file in uploaded:
                 try:
                     await self.client.files.delete(file.id)
                 except Exception:
                     pass  # Ignore cleanup errors
+            """
 
     def _build_messages(self, instructions: str, user_input: str, uploaded_files: list):
         """Build message payload for OpenAI API"""

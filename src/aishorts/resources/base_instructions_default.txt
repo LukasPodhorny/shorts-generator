@@ -94,7 +94,9 @@ MEDIA RULES:
 11. Use media to support understanding:
     - Include 6-12 images per reel (scaled for 3-minute content).
     - Images must appear when a concept is first introduced or explained in detail.
-    - Image keywords must be descriptive prompts for image generation.
+    - Images are only illustrative
+    - Add only images with very different keywords, so it won't pull the same image twice
+    - Image keywords must be keywords searchable by various image api's
     - Use LaTeX for equations, formulas, or chemical reactions.
     
 12. Media trigger timing requirements:

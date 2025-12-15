@@ -7,6 +7,7 @@ import asyncio
 from aishorts.modules.tts.tts_providers import TTSResult
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
+from pydub import AudioSegment
 
 
 class SubtitlesProvider(Provider):
@@ -17,6 +18,13 @@ class SubtitlesProvider(Provider):
         **kwargs,
     ) -> list[TranscriptionVerbose]:
         pass
+
+
+def get_wav_length(path: str):
+    audio = AudioSegment.from_wav(path)
+    duration = len(audio) / 1000.0
+
+    return duration
 
 
 class WhisperSubtitles(SubtitlesProvider):
@@ -77,7 +85,7 @@ class ElevenLabsSubtitles(SubtitlesProvider):
         )
 
         transcription_verbose = TranscriptionVerbose(
-            duration=transcription.words[-1].end,
+            duration=get_wav_length(audio_file),
             language="english",
             text=transcription_text,
             words=[],

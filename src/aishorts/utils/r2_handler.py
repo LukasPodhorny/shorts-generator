@@ -63,7 +63,7 @@ class CloudflareR2:
         return filepath
 
     @staticmethod
-    def download_presigned_file(url: str, path: str = "") -> str:
+    def download_presigned_file(url: str, path: str = "", ext: str = None) -> str:
         """
         Downloads a file from a presigned URL into outputs/{uuid}.{ext}
         and returns the local file path.
@@ -71,7 +71,7 @@ class CloudflareR2:
 
         # Extract filename extension from the URL
         url_path = urlparse(url).path
-        ext = os.path.splitext(url_path)[1] or ".bin"
+        ext = ext or os.path.splitext(url_path)[1] or ".bin"
 
         # Create unique filename
         filepath = CloudflareR2.get_random_filepath(path, ext)

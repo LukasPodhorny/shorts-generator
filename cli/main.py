@@ -12,7 +12,6 @@ from aishorts import (
     ShortsConfig,
     Avatar,
     VideoTemplate,
-    ScriptConfig,
     SubtitleConfig,
 )
 import argparse
@@ -23,7 +22,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=False)
     parser.add_argument("--files", type=str, nargs="+", required=False)
-    parser.add_argument("--avatar", type=str, required=True)
+    parser.add_argument(
+        "--avatars",
+        type=str,
+        nargs="+",
+        required=True,
+    )
+    parser.add_argument("--amount", type=int, required=False)
     parser.add_argument("--template", type=str, required=True)
     parser.add_argument("--llm_provider", default="chatgpt", type=str)
     parser.add_argument("--model", default="gpt-5", type=str)
@@ -35,27 +40,20 @@ def main():
         "cli/configs/video_templates.json", VideoTemplate
     )
     avatars = load_pydantic_dict("cli/configs/avatars.json", Avatar)
-    script_config = load_pydantic("cli/configs/script_config.json", ScriptConfig)
 
     video_template = video_templates[args.template]
-    avatar = avatars[args.avatar]
+    selected_avatars = [avatars[name] for name in args.avatars]
 
     shorts_config = ShortsConfig(
-        avatar=avatar,
+        avatars=selected_avatars,
         video_template=video_template,
-        script_config=ScriptConfig(
-            base_instructions=script_config.base_instructions,
-            provider=args.llm_provider or script_config.provider,
-            provider_config={
-                "model": args.model
-                or script_config.provider_config.get("model", "gpt-5")
-            },
-        ),
         subtitle_config=SubtitleConfig(provider=args.subtitle_provider),
     )
 
     shorts_generator = ShortsGenerator(shorts_config=shorts_config)
-    shorts_generator.generate_short(files=args.files, user_input=args.input)
+    shorts_generator.generate_shorts(
+        amount=args.amount, files=args.files, user_input=args.input
+    )
 
 
 if __name__ == "__main__":

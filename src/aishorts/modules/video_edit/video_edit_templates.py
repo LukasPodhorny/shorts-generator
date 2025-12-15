@@ -8,7 +8,7 @@ from aishorts.modules.video_edit.video_edit import (
 
 
 class GameplayTemplate(EditTemplate):
-    provider_name = "gameplay_template"
+    provider_name = "gameplay"
     required_assets = [
         AssetType.SCRIPT,
         AssetType.VOICE,
@@ -29,9 +29,12 @@ class GameplayTemplate(EditTemplate):
             for vid in template_assets.lipsync_videos
         )
 
+        absolute_subtitles = self.convert_to_absolute_timing(template_assets.subtitles)
+        final_subtitles = self.merge_transcriptions(absolute_subtitles)
+
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
-            transcription=template_assets.subtitles,
+            transcription=final_subtitles,
             style=self.subtitle_style,
         ).download()
 
@@ -123,14 +126,16 @@ class GameplayTemplate(EditTemplate):
         return FFmpegCommand(inputs=inputs, args=args, input_labels=labels)
 
 
-class MinecraftTemplate(EditTemplate):
-    provider_name = "minecraft_template"
+class AlphaGameplayTemplate(EditTemplate):
+    provider_name = "alpha_gameplay"
 
     required_assets = [
         AssetType.SCRIPT,
         AssetType.VOICE,
         AssetType.LIPSYNC,
         AssetType.SUBTITLES,
+        AssetType.IMAGES,
+        AssetType.LATEX,
     ]
 
     def __init__(self, template_config: TemplateConfig):
@@ -145,9 +150,21 @@ class MinecraftTemplate(EditTemplate):
             for vid in template_assets.lipsync_videos
         )
 
+        absolute_subtitles = self.convert_to_absolute_timing(template_assets.subtitles)
+        final_subtitles = self.merge_transcriptions(absolute_subtitles)
+
+        # ==================== CHANGED: Extract media timings ====================
+        media_timings = self.extract_media_timings(
+            blocks=template_assets.script.blocks,
+            absolute_subtitles=absolute_subtitles,
+            images=template_assets.images,
+            latex=template_assets.latex,
+        )
+        # ========================================================================
+
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
-            transcription=template_assets.subtitles,
+            transcription=final_subtitles,
             style=self.subtitle_style,
         ).download()
 
@@ -165,7 +182,15 @@ class MinecraftTemplate(EditTemplate):
         inputs.append(self.bg_video)
         labels.append("bg_video")
 
-        # Add music if present (index = len(lipsync_videos) + 1)
+        # ==================== CHANGED: Add media files as inputs ====================
+        # Add all image and latex files to inputs
+        media_start_idx = len(inputs)
+        for i, media in enumerate(media_timings):
+            inputs.append(media.filepath)
+            labels.append(f"media_{i}")
+        # ============================================================================
+
+        # Add music if present (index = len(lipsync_videos) + 1 + num_media)
         music_idx = None
         if self.music is not None:
             music_idx = len(inputs)
@@ -181,7 +206,7 @@ class MinecraftTemplate(EditTemplate):
             filter_parts.append(
                 # Remove green screen with chromakey (more aggressive to eliminate fringe)
                 # Then despill to remove green color cast, then scale to full width 1080x1080
-                f"[{i}:v] chromakey=0x04F404:0.15:0.05, "
+                f"[{i}:v] chromakey=0x00FF00:0.15:0.05, "
                 f"despill=green:0.5, "
                 f"scale=1080:1080 [lip{i}];"
             )
@@ -210,8 +235,36 @@ class MinecraftTemplate(EditTemplate):
         # y=H-h positions at bottom with no padding: 1920-1080 = 840
         filter_parts.append("[game][lip_concat] overlay=x=(W-w)/2:y=H-h [stacked];")
 
+        # ==================== CHANGED: Add media overlays ====================
+        # Process and overlay each media (image/latex) at specific times
+        current_label = "[stacked]"
+        for i, media in enumerate(media_timings):
+            media_idx = media_start_idx + i
+            next_label = f"[overlay{i}]"
+
+            # Scale the media to fit within max dimensions (450x380) without deforming
+            # force_original_aspect_ratio=decrease ensures it fits within the box
+            # while maintaining aspect ratio
+            filter_parts.append(
+                f"[{media_idx}:v] scale=450:380:force_original_aspect_ratio=decrease [media{i}];"
+            )
+
+            # Overlay at top center with timing
+            # x=(W-w)/2 centers horizontally
+            # y=100 positions near top with some padding
+            filter_parts.append(
+                f"{current_label}[media{i}] overlay=x=(W-w)/2:y=100:"
+                f"enable='between(t,{media.start_time},{media.end_time})' {next_label};"
+            )
+
+            current_label = next_label
+
+        # If no media, current_label is still "[stacked]"
+        subtitle_input = current_label
+        # =====================================================================
+
         # Add subtitles
-        filter_parts.append(f"[stacked] ass='{subs_path}' [video];")
+        filter_parts.append(f"{subtitle_input} ass='{subs_path}' [video];")
 
         # Handle music
         if music_idx is not None:

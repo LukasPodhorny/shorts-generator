@@ -1,6 +1,6 @@
 {
     "basic_gameplay": {
-        "edit_template": "gameplay_ffmpeg",
+        "edit_template": "alpha_gameplay",
         "template_config": {
             "bg_video": "assets/bg_video/gameplay.mp4",
             "subtitle_style": {

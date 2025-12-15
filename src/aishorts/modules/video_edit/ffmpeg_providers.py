@@ -88,9 +88,7 @@ class LocalFFmpeg(FFmpegProvider):
         ffmpeg_command.extend(["-y", output_path])
 
         try:
-            result = subprocess.run(
-                ffmpeg_command, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(ffmpeg_command, check=True)
         except subprocess.CalledProcessError as e:
             # Print FFmpeg's actual error message
             print("\n" + "=" * 80)

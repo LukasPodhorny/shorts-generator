@@ -6,7 +6,7 @@ import tempfile
 from pydantic import BaseModel
 from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
 from aishorts.modules.tts.tts_providers import TTSResult
-from aishorts.modules.script.script import Reel
+from aishorts.modules.script.script import Reel, Block
 import uuid
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
@@ -15,6 +15,9 @@ from typing import List
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
+from openai.types.audio import TranscriptionVerbose, TranscriptionWord
+from aishorts.modules.image.image_providers import ImageResult
+from aishorts.modules.latex.latex_providers import LatexResult
 
 
 class AssetType(Enum):
@@ -22,6 +25,18 @@ class AssetType(Enum):
     VOICE = "voice"
     LIPSYNC = "lipsync"
     SUBTITLES = "subtitles"
+    IMAGES = "images"
+    LATEX = "latex"
+
+
+@dataclass
+class MediaTiming:
+    """Represents the absolute timing for a media element (image or latex)"""
+
+    filepath: str
+    start_time: float
+    end_time: float
+    media_type: str
 
 
 @dataclass
@@ -65,6 +80,8 @@ class TemplateAssets:
     lipsync_videos: list[LipsyncResult] | None = None
     subtitles: TranscriptionVerbose | None = None
     voiceovers: list[TTSResult] | None = None
+    images: list[ImageResult] | None = None
+    latex: list[LatexResult] | None = None
 
 
 class SubtitleStyle(BaseModel):
@@ -293,3 +310,167 @@ class EditTemplate(Provider):
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return float(result.stdout.strip())
+
+    def convert_to_absolute_timing(
+        self, subtitles: List[TranscriptionVerbose]
+    ) -> List[TranscriptionVerbose]:
+        """
+        Convert relative word timings in each TranscriptionVerbose to absolute timings
+        based on the video's total timeline.
+
+        Args:
+            subtitles: List of TranscriptionVerbose objects with relative timings
+
+        Returns:
+            List of TranscriptionVerbose objects with absolute timings
+        """
+        result = []
+        cumulative_time = 0.0
+
+        for transcription in subtitles:
+            # Create a new TranscriptionVerbose with adjusted word timings
+            adjusted_words = []
+
+            for word in transcription.words:
+                adjusted_word = TranscriptionWord(
+                    end=word.end + cumulative_time,
+                    start=word.start + cumulative_time,
+                    word=word.word,
+                )
+                adjusted_words.append(adjusted_word)
+
+            adjusted_transcription = TranscriptionVerbose(
+                duration=transcription.duration,
+                language=transcription.language,
+                text=transcription.text,
+                segments=transcription.segments,
+                usage=transcription.usage,
+                words=adjusted_words,
+            )
+
+            result.append(adjusted_transcription)
+            cumulative_time += transcription.duration
+
+        return result
+
+    def merge_transcriptions(
+        self, subtitles: List[TranscriptionVerbose]
+    ) -> TranscriptionVerbose:
+        """
+        Merge multiple TranscriptionVerbose objects into a single one.
+        Assumes timings are already in absolute format (use convert_to_absolute_timing first).
+
+        Args:
+            subtitles: List of TranscriptionVerbose objects to merge
+
+        Returns:
+            Single merged TranscriptionVerbose object
+        """
+        if not subtitles:
+            return TranscriptionVerbose(
+                duration=0.0, language="english", text="", words=[]
+            )
+
+        # Merge all texts with spaces
+        merged_text = " ".join(t.text for t in subtitles)
+
+        # Merge all words
+        merged_words = []
+        for transcription in subtitles:
+            merged_words.extend(transcription.words)
+
+        # Calculate total duration
+        total_duration = sum(t.duration for t in subtitles)
+
+        # Use language from first transcription
+        language = subtitles[0].language
+
+        return TranscriptionVerbose(
+            duration=total_duration,
+            language=language,
+            text=merged_text,
+            segments=None,
+            usage=None,
+            words=merged_words,
+        )
+
+    def extract_media_timings(
+        self,
+        blocks: list[Block],  # List of Block objects from your Reel
+        absolute_subtitles: list[TranscriptionVerbose],
+        images: list[ImageResult],  # List of ImageResult
+        latex: list[LatexResult],  # List of LatexResult
+    ) -> List[MediaTiming]:
+        """
+        Extract absolute timing information for all media elements (images and latex)
+        based on their word index triggers in each dialogue block.
+
+        Args:
+            blocks: List of Block objects containing dialogue and media triggers
+            absolute_subtitles: Subtitles with absolute timings across entire video
+            images: List of ImageResult objects
+            latex: List of LatexResult objects
+
+        Returns:
+            List of MediaTiming objects with absolute start/end times
+        """
+        media_timings = []
+        image_idx = 0
+        latex_idx = 0
+        dialogue_idx = 0
+
+        for block in blocks:
+            if block.type != "dialogue":
+                continue
+
+            # Get the corresponding transcription for this dialogue
+            if dialogue_idx >= len(absolute_subtitles):
+                break
+
+            absolute_trans = absolute_subtitles[dialogue_idx]
+
+            # Check if this block has media
+            if block.media is not None:
+                trigger = block.media.trigger
+                media_type = block.media.type
+
+                # Get start and end word indices
+                start_word_idx = trigger.start_word_index
+                end_word_idx = trigger.end_word_index
+
+                # Validate indices
+                if start_word_idx >= len(absolute_trans.words) or end_word_idx >= len(
+                    absolute_trans.words
+                ):
+                    print(
+                        f"Warning: Word indices out of range for dialogue {dialogue_idx}"
+                    )
+                    dialogue_idx += 1
+                    continue
+
+                # Get absolute timing from the words
+                start_time = absolute_trans.words[start_word_idx].start
+                end_time = absolute_trans.words[end_word_idx].end
+
+                # Get the filepath based on media type
+                filepath = None
+                if media_type == "image" and image_idx < len(images):
+                    filepath = images[image_idx].media.path
+                    image_idx += 1
+                elif media_type == "latex" and latex_idx < len(latex):
+                    filepath = latex[latex_idx].media.path
+                    latex_idx += 1
+
+                if filepath:
+                    media_timings.append(
+                        MediaTiming(
+                            filepath=filepath,
+                            start_time=start_time,
+                            end_time=end_time,
+                            media_type=media_type,
+                        )
+                    )
+
+            dialogue_idx += 1
+
+        return media_timings
