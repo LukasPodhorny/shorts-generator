@@ -68,7 +68,7 @@ class Matplotlib(LatexProvider):
 
         return LatexResult(MediaFile(id=id, path=result_path), alt=latex_code)
 
-    async def get_images(
+    def get_images(
         self,
         latex_codes: list[str],
         resolution: Resolution,
@@ -85,7 +85,7 @@ class Matplotlib(LatexProvider):
 
         return results
 
-    async def get_reel_images(
+    def get_reel_images(
         self,
         reel: Reel,
         resolution: Resolution,
@@ -98,7 +98,7 @@ class Matplotlib(LatexProvider):
                 if block.media.type == "latex":
                     latex_codes.append(block.media.code)
 
-        results = await self.get_images(latex_codes=latex_codes, resolution=resolution)
+        results = self.get_images(latex_codes=latex_codes, resolution=resolution)
 
         return results
 
@@ -243,7 +243,7 @@ class RealLatex(LatexProvider):
                 alt=latex_code,
             )
 
-    async def get_images(
+    def get_images(
         self,
         latex_codes: list[str],
         resolution: Resolution,
@@ -258,7 +258,7 @@ class RealLatex(LatexProvider):
                 raise
         return results
 
-    async def get_reel_images(
+    def get_reel_images(
         self,
         reel: Reel,
         resolution: Resolution,
@@ -267,4 +267,4 @@ class RealLatex(LatexProvider):
         for block in reel.blocks:
             if block.media and block.media.type == "latex":
                 latex_codes.append(block.media.code)
-        return await self.get_images(latex_codes, resolution)
+        return self.get_images(latex_codes, resolution)

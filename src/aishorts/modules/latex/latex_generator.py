@@ -36,7 +36,7 @@ class LatexGenerator:
             return await func(latex_codes, resolution, **kwargs)
         else:
             print("Running sync LATEX in thread...")
-            return asyncio.to_thread(func, latex_codes, resolution, **kwargs)
+            return await asyncio.to_thread(func, latex_codes, resolution, **kwargs)
 
     async def get_reel_images(
         self, reel: Reel, resolution: Resolution = Resolution(400, 200), **kwargs
@@ -48,4 +48,4 @@ class LatexGenerator:
             return await func(reel, resolution, **kwargs)
         else:
             print("Running sync LATEX in thread...")
-            return asyncio.to_thread(func, reel, resolution, **kwargs)
+            return await asyncio.to_thread(func, reel, resolution, **kwargs)
