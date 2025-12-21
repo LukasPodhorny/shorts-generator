@@ -6,6 +6,7 @@ from aishorts.modules.latex.latex_providers import (
 from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.image_utils import ImageStyle, style_image
+import asyncio
 
 
 class LatexGenerator:
@@ -40,8 +41,12 @@ class LatexGenerator:
         func = self.latex_gen.get_images
         results = await await_or_thread(func, latex_codes, resolution, **kwargs)
 
-        for result in results:
-            style_image(result.media.path, result.media.path, self.image_style)
+        async def _style_task(result):
+            await asyncio.to_thread(
+                style_image, result.media.path, result.media.path, self.image_style
+            )
+
+        await asyncio.gather(*[_style_task(r) for r in results])
 
         return results
 
@@ -52,7 +57,11 @@ class LatexGenerator:
         func = self.latex_gen.get_reel_images
         results = await await_or_thread(func, reel, resolution, **kwargs)
 
-        for result in results:
-            style_image(result.media.path, result.media.path, self.image_style)
+        async def _style_task(result):
+            await asyncio.to_thread(
+                style_image, result.media.path, result.media.path, self.image_style
+            )
+
+        await asyncio.gather(*[_style_task(r) for r in results])
 
         return results

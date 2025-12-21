@@ -2,6 +2,7 @@ from aishorts.modules.avatar import Avatar
 from aishorts.modules.lipsync.lipsync_providers import *
 from aishorts.modules.lipsync.lipsync_providers import LipsyncProvider
 from aishorts.utils.async_utils import await_or_thread
+import asyncio
 
 
 class LipsyncGenerator:
@@ -71,11 +72,13 @@ class LipsyncGenerator:
         """
 
         lipsync_results = []
+        tasks = []
         for lipsync in self.provider_instances:
             func = lipsync.generate_lipsyncs
+            tasks.append(await_or_thread(func, tts_results, **kwargs))
 
-            result = await await_or_thread(func, tts_results, **kwargs)
-
-            lipsync_results.extend(result)
+        results = await asyncio.gather(*tasks)
+        for res in results:
+            lipsync_results.extend(res)
 
         return lipsync_results

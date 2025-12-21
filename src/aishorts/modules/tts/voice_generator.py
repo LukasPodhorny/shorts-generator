@@ -3,6 +3,7 @@ from aishorts.modules.script.script import Reel
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.tts.tts_providers import TTSProvider
 from aishorts.utils.async_utils import await_or_thread
+import asyncio
 
 
 class VoiceGenerator:
@@ -55,12 +56,14 @@ class VoiceGenerator:
         """
 
         tts_results = []
+        tasks = []
         for tts in self.provider_instances:
             func = tts.generate_reel_dialogues
+            tasks.append(await_or_thread(func, reel, **kwargs))
 
-            result = await await_or_thread(func, reel, **kwargs)
-
-            tts_results.extend(result)
+        results = await asyncio.gather(*tasks)
+        for res in results:
+            tts_results.extend(res)
 
         tts_results.sort()
         return tts_results

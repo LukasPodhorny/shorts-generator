@@ -2,6 +2,7 @@ from aishorts.modules.image.image_providers import ImageProvider, ImageResult
 from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.image_utils import ImageStyle, style_image
+import asyncio
 
 
 class ImageGenerator:
@@ -39,15 +40,17 @@ class ImageGenerator:
             func, queries, self.max_width, self.max_height, **kwargs
         )
 
-        for result in results:
+        async def _style_task(result):
             if not result:
-                continue
-
-            style_image(
+                return
+            await asyncio.to_thread(
+                style_image,
                 result.media.path,
                 result.media.path,
                 self.image_style,
             )
+
+        await asyncio.gather(*[_style_task(r) for r in results])
 
         return results
 
@@ -59,14 +62,16 @@ class ImageGenerator:
             func, reel, self.max_width, self.max_height, **kwargs
         )
 
-        for result in results:
+        async def _style_task(result):
             if not result:
-                continue
-
-            style_image(
+                return
+            await asyncio.to_thread(
+                style_image,
                 result.media.path,
                 result.media.path,
                 self.image_style,
             )
+
+        await asyncio.gather(*[_style_task(r) for r in results])
 
         return results

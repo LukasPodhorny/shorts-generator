@@ -204,8 +204,6 @@ class AlphaGameplayTemplate(EditTemplate):
         num_lipsyncs = len(template_assets.lipsync_videos)
         for i in range(num_lipsyncs):
             filter_parts.append(
-                # Remove green screen with chromakey (more aggressive to eliminate fringe)
-                # Then despill to remove green color cast, then scale to full width 1080x1080
                 # f"[{i}:v] chromakey=0x00FF00:0.2:0.1, "
                 f"[{i}:v] chromakey={self.chromakey_color}:{self.chromakey_similarity}:{self.chromakey_blend}, "
                 f"scale=1080:1080 [lip{i}];"
@@ -224,7 +222,7 @@ class AlphaGameplayTemplate(EditTemplate):
         concat_audio = "".join(f"[voice{i}]" for i in range(num_lipsyncs))
         filter_parts.append(f"{concat_audio} concat=n={num_lipsyncs}:v=0:a=1 [voice];")
 
-        # Scale background video to PORTRAIT 1080x1920 (vertical/TikTok format)
+        # Scale background video to PORTRAIT 1080x1920
         filter_parts.append(
             f"[{bg_idx}:v] trim=end={total_duration}, setpts=PTS-STARTPTS, "
             f"scale=1080:1920:force_original_aspect_ratio=increase, crop=1080:1920 [game];"
@@ -235,25 +233,21 @@ class AlphaGameplayTemplate(EditTemplate):
         # y=H-h positions at bottom with no padding: 1920-1080 = 840
         filter_parts.append("[game][lip_concat] overlay=x=(W-w)/2:y=H-h [stacked];")
 
-        # ==================== CHANGED: Add media overlays ====================
         # Process and overlay each media (image/latex) at specific times
         current_label = "[stacked]"
         for i, media in enumerate(media_timings):
-            media_idx = media_start_idx + i
             next_label = f"[overlay{i}]"
 
-            # Scale the media to fit within max dimensions (450x380) without deforming
-            # force_original_aspect_ratio=decrease ensures it fits within the box
-            # while maintaining aspect ratio
-            # filter_parts.append(
-            #    f"[{media_idx}:v] scale=450:400:force_original_aspect_ratio=decrease [media{i}];"
-            # )
+            # Animation: Slide from Left (0.4s duration)
+            # Start X: -w (off-screen left)
+            # End X: (W-w)/2 (center)
+            # Logic: -w + (TotalDistance) * Progress
+            # TotalDistance = (W-w)/2 - (-w) = (W+w)/2
+            anim_dur = 0.4
+            x_expr = f"-w + ((W+w)/2) * min((t-{media.start_time})/{anim_dur}, 1)"
 
-            # Overlay at top center with timing
-            # x=(W-w)/2 centers horizontally
-            # y=100 positions near top with some padding
             filter_parts.append(
-                f"{current_label}[media{i}] overlay=x=(W-w)/2:y=100:"
+                f"{current_label}[media{i}] overlay=x='{x_expr}':y=100:"
                 f"enable='between(t,{media.start_time},{media.end_time})' {next_label};"
             )
 
@@ -261,7 +255,6 @@ class AlphaGameplayTemplate(EditTemplate):
 
         # If no media, current_label is still "[stacked]"
         subtitle_input = current_label
-        # =====================================================================
 
         # Add subtitles
         filter_parts.append(f"{subtitle_input} ass='{subs_path}' [video];")
