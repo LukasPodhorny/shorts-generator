@@ -5,6 +5,8 @@ import uuid
 import aiohttp
 from pydantic import BaseModel
 import asyncio
+import aiofiles
+from typing import Callable, Any, Awaitable, TypeVar
 
 
 class BucketConfiguration(BaseModel):
@@ -85,9 +87,9 @@ async def download_from_url(
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
                     response.raise_for_status()
-                    with open(filepath, "wb") as f:
+                    async with aiofiles.open(filepath, "wb") as f:
                         async for chunk in response.content.iter_chunked(8192):
-                            f.write(chunk)
+                            await f.write(chunk)
             break
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             if attempt == 2:

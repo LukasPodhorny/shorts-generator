@@ -31,15 +31,14 @@ class Unsplash(ImageProvider):
         self.base_url = "https://api.unsplash.com/search/photos"
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
-    async def _fetch_query(
+    async def _search_query(
         self,
         session: aiohttp.ClientSession,
         query: str,
         max_width: int,
         max_height: int,
-        id: int,
-    ) -> ImageResult | None:
-        """Fetch one image for a single query, with retries."""
+    ) -> tuple[str, str | None] | None:
+        """Search for an image URL without downloading it."""
         params = {"query": query, "per_page": 1, "client_id": self.api_key}
 
         for attempt in range(3):
@@ -62,22 +61,7 @@ class Unsplash(ImageProvider):
                         "&" if "?" in raw_url else "?"
                     ) + f"fm=png&w={max_width}&h={max_height}&fit=max"
 
-                    # 2. Download the image
-                    path = CloudflareR2.get_random_filepath(self.OUTPUT_DIR, ".png")
-                    async with session.get(raw_url) as img_resp:
-                        img_resp.raise_for_status()
-                        with open(path, "wb") as f:
-                            async for chunk in img_resp.content.iter_chunked(8192):
-                                f.write(chunk)
-
-                    return ImageResult(
-                        media=MediaFile(
-                            id=id,  # Convert string ID to int
-                            url=raw_url,  # or 'full', 'raw', 'small'
-                            path=path,
-                        ),
-                        alt=img.get("alt_description") or img.get("description"),
-                    )
+                    return raw_url, img.get("alt_description") or img.get("description")
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 print(
                     f"Attempt {attempt + 1}/3 failed for query '{query}'. Retrying... Error: {e}"
@@ -104,30 +88,41 @@ class Unsplash(ImageProvider):
         if ids is None:
             ids = list(range(len(queries)))
 
-        timeout = aiohttp.ClientTimeout(
-            total=180
-        )  # 180-second total timeout per operation
+        # Phase 1: Search for all images in parallel (low bandwidth, high latency)
+        # We use a shorter timeout for searches
+        search_timeout = aiohttp.ClientTimeout(total=30)
 
+        async with aiohttp.ClientSession(timeout=search_timeout) as session:
+            search_tasks = [
+                self._search_query(session, query, max_width, max_height)
+                for query in queries
+            ]
+            search_results = await asyncio.gather(*search_tasks)
+
+        # Phase 2: Download images (high bandwidth)
+        # We use the semaphore here to prevent network saturation
         total = len(queries)
         completed = 0
 
-        async def _bounded_fetch(session, query, max_width, max_height, id):
+        async def _bounded_download(url, alt, id):
             nonlocal completed
             async with self.semaphore:
-                result = await self._fetch_query(
-                    session, query, max_width, max_height, id
-                )
+                path = await download_from_url(url, self.OUTPUT_DIR, ".png")
                 completed += 1
                 print(f"Downloading images: {completed}/{total}")
-                return result
+                return ImageResult(media=MediaFile(id=id, url=url, path=path), alt=alt)
 
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            tasks = [
-                _bounded_fetch(session, query, max_width, max_height, id=id)
-                for query, id in zip(queries, ids)
-            ]
-            results = await asyncio.gather(*tasks)
-            return results
+        download_tasks = []
+        for (url_data), id in zip(search_results, ids):
+            if url_data:
+                url, alt = url_data
+                download_tasks.append(_bounded_download(url, alt, id))
+            else:
+                # Preserve order with None for failed searches
+                download_tasks.append(asyncio.sleep(0, result=None))
+
+        results = await asyncio.gather(*download_tasks)
+        return results
 
     async def get_reel_images(
         self,
