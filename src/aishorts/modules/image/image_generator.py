@@ -1,7 +1,7 @@
 from aishorts.modules.image.image_providers import ImageProvider, ImageResult
-import inspect
-import asyncio
 from aishorts.modules.script.script import Reel
+from aishorts.utils.async_utils import await_or_thread
+from aishorts.utils.image_utils import ImageStyle, style_image
 
 
 class ImageGenerator:
@@ -10,33 +10,63 @@ class ImageGenerator:
     """
 
     def __init__(
-        self, provider: str = "unsplash", api_key: str | None = None, **kwargs
+        self,
+        provider: str = "unsplash",
+        max_width: int = 450,
+        max_height: int = 400,
+        image_style: ImageStyle = None,
+        max_concurrent_downloads: int = 5,
+        api_key: str | None = None,
+        **kwargs,
     ):
         self.provider = provider.lower()
+        self.image_style = image_style or ImageStyle()
+        self.max_width = max_width
+        self.max_height = max_height
 
         cls = ImageProvider.get(self.provider)
 
         if not cls:
             raise ValueError(f"Unknown Image provider '{provider}'")
 
-        self.image_gen = cls(api_key, **kwargs)
+        self.image_gen = cls(max_concurrent_downloads, api_key, **kwargs)
 
     async def get_images(self, queries: list[str], **kwargs) -> list[ImageResult]:
 
         func = self.image_gen.get_images
 
-        if inspect.iscoroutinefunction(func):
-            return await func(queries, **kwargs)
-        else:
-            print("Running sync IMAGES in thread...")
-            return asyncio.to_thread(func, queries, **kwargs)
+        results = await await_or_thread(
+            func, queries, self.max_width, self.max_height, **kwargs
+        )
+
+        for result in results:
+            if not result:
+                continue
+
+            style_image(
+                result.media.path,
+                result.media.path,
+                self.image_style,
+            )
+
+        return results
 
     async def get_reel_images(self, reel: Reel, **kwargs) -> list[ImageResult]:
 
         func = self.image_gen.get_reel_images
 
-        if inspect.iscoroutinefunction(func):
-            return await func(reel, **kwargs)
-        else:
-            print("Running sync IMAGES in thread...")
-            return asyncio.to_thread(func, reel, **kwargs)
+        results = await await_or_thread(
+            func, reel, self.max_width, self.max_height, **kwargs
+        )
+
+        for result in results:
+            if not result:
+                continue
+
+            style_image(
+                result.media.path,
+                result.media.path,
+                self.image_style,
+            )
+
+        return results

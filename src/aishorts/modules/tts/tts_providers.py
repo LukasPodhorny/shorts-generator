@@ -1,6 +1,10 @@
 import os
 from aishorts.utils.runpod_caller import EndpointCaller
-from aishorts.utils.r2_handler import CloudflareR2, BucketConfiguration
+from aishorts.utils.r2_handler import (
+    CloudflareR2,
+    BucketConfiguration,
+    download_from_url,
+)
 import aiohttp
 from dataclasses import dataclass
 from aishorts.modules.script.script import Reel
@@ -105,7 +109,7 @@ class F5TTS(EndpointCaller, TTSProvider):
         result_url = result[0]["audio_url"]
 
         filepath = (
-            CloudflareR2.download_presigned_file(result_url, TTSProvider.OUTPUT_DIR)
+            await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
             if self.download_results
             else None
         )
@@ -126,9 +130,7 @@ class F5TTS(EndpointCaller, TTSProvider):
 
         for i, dialogue in enumerate(results):
             result_url = dialogue["audio_url"]
-            filepath = CloudflareR2.download_presigned_file(
-                result_url, TTSProvider.OUTPUT_DIR
-            )
+            filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
 
             tts_results.append(
                 TTSResult(

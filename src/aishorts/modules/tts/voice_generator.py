@@ -1,9 +1,8 @@
 from aishorts.modules.tts.tts_providers import *
-import inspect
-import asyncio
 from aishorts.modules.script.script import Reel
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.tts.tts_providers import TTSProvider
+from aishorts.utils.async_utils import await_or_thread
 
 
 class VoiceGenerator:
@@ -45,11 +44,8 @@ class VoiceGenerator:
         """
 
         func = self.provider_instances[0].generate_voice
-        if inspect.iscoroutinefunction(func):
-            return await func(text, id, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return await asyncio.to_thread(func, text, id, **kwargs)
+
+        return await await_or_thread(func, text, id, **kwargs)
 
     async def generate_reel_dialogues(self, reel: Reel, **kwargs) -> list[TTSResult]:
         """
@@ -62,11 +58,7 @@ class VoiceGenerator:
         for tts in self.provider_instances:
             func = tts.generate_reel_dialogues
 
-            if inspect.iscoroutinefunction(func):
-                result = await func(reel, **kwargs)
-            else:
-                print("Running sync TTS in thread...")
-                result = await asyncio.to_thread(func, reel, **kwargs)
+            result = await await_or_thread(func, reel, **kwargs)
 
             tts_results.extend(result)
 

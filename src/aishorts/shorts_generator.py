@@ -1,4 +1,8 @@
 import asyncio
+import logging
+import os
+import pickle
+from datetime import datetime
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.tts.voice_generator import VoiceGenerator
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
@@ -13,7 +17,10 @@ from aishorts.modules.video_edit.video_edit import AssetType
 from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
+from aishorts.utils.image_utils import ImageStyle
 from aishorts.modules.latex.latex_generator import LatexGenerator
+from aishorts.modules.script.llm_providers import ReelSeries
+from pathlib import Path
 
 
 class ScriptConfig(BaseModel):
@@ -55,6 +62,8 @@ class ShortsGenerator:
         subtitles_api_key: str | None = None,
         llm_api_key: str | None = None,
     ):
+        self._setup_logging()
+
         self.avatars = shorts_config.avatars
 
         self.script_gen = ScriptGenerator(
@@ -84,10 +93,45 @@ class ShortsGenerator:
 
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
 
-        self.image_gen = ImageGenerator()
-        self.latex_gen = LatexGenerator()
+        img_style = ImageStyle(
+            corner_radius=20,
+            shadow_blur=5,
+            shadow_offset=(-5, -5),
+        )
+        self.image_gen = ImageGenerator(image_style=img_style)
+        self.latex_gen = LatexGenerator(image_style=img_style)
 
         self.video_template = shorts_config.video_template
+
+    def _setup_logging(self):
+        self.logger = logging.getLogger("ShortsGenerator")
+        self.logger.setLevel(logging.INFO)
+
+        if not self.logger.handlers:
+            os.makedirs("logs", exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # File Handler
+            fh = logging.FileHandler(f"logs/run_{timestamp}.log")
+            fh.setFormatter(
+                logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+            )
+            self.logger.addHandler(fh)
+
+            # Stream Handler (console output)
+            sh = logging.StreamHandler()
+            sh.setFormatter(logging.Formatter("%(message)s"))
+            self.logger.addHandler(sh)
+
+    def _save_debug_state(self, assets: list[TemplateAssets], stage: str):
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = f"logs/assets_{stage}_{timestamp}.pkl"
+            with open(filepath, "wb") as f:
+                pickle.dump(assets, f)
+            self.logger.info(f"Saved checkpoint: {filepath}")
+        except Exception as e:
+            self.logger.error(f"Failed to save checkpoint: {e}")
 
     def _apply_results(self, template_assets, tasks_map, results):
         attr_map = {
@@ -116,28 +160,23 @@ class ShortsGenerator:
         template_assets = [TemplateAssets() for _ in range(amount)]
 
         # Script
-        print("\n\n Generating scripts...")
+        self.logger.info("\n\n Generating scripts...")
         if AssetType.SCRIPT in required_assets:
-            reel_series = await self.script_gen.generate_script(
-                num_reels=amount, files=files, user_input=user_input
-            )
+            # reel_series = await self.script_gen.generate_script(
+            #    num_reels=amount, files=files, user_input=user_input
+            # )
+
+            reel_json = Path("tests/test_configs/mock_script.json").read_text()
+            reel_series = ReelSeries.model_validate_json(reel_json)
 
             for asset, result in zip(template_assets, reel_series.reels):
                 asset.reel_script = result
 
+            self._save_debug_state(template_assets, "script")
+
         # TTS, Images, LaTex
-        print("Generating voiceover, images, latex...")
+        self.logger.info("Generating voiceover, images, latex...")
         tasks_map = {}
-
-        if AssetType.LATEX in required_assets:
-            tasks_map[AssetType.LATEX] = asyncio.gather(
-                *[self.latex_gen.get_reel_images(reel) for reel in reel_series.reels]
-            )
-
-        if AssetType.IMAGES in required_assets:
-            tasks_map[AssetType.IMAGES] = asyncio.gather(
-                *[self.image_gen.get_reel_images(reel) for reel in reel_series.reels]
-            )
 
         if AssetType.VOICE in required_assets:
             tasks_map[AssetType.VOICE] = asyncio.gather(
@@ -147,12 +186,23 @@ class ShortsGenerator:
                 ]
             )
 
+        if AssetType.IMAGES in required_assets:
+            tasks_map[AssetType.IMAGES] = asyncio.gather(
+                *[self.image_gen.get_reel_images(reel) for reel in reel_series.reels]
+            )
+
+        if AssetType.LATEX in required_assets:
+            tasks_map[AssetType.LATEX] = asyncio.gather(
+                *[self.latex_gen.get_reel_images(reel) for reel in reel_series.reels]
+            )
+
         if tasks_map:
             results = await asyncio.gather(*tasks_map.values())
             self._apply_results(template_assets, tasks_map, results)
+            self._save_debug_state(template_assets, "media")
 
         # Lipsync, Subtitles
-        print("Generating lipsync video and subtitles...")
+        self.logger.info("Generating lipsync video and subtitles...")
         tasks_map_2 = {}
 
         if AssetType.LIPSYNC in required_assets:
@@ -174,10 +224,11 @@ class ShortsGenerator:
         if tasks_map_2:
             results = await asyncio.gather(*tasks_map_2.values())
             self._apply_results(template_assets, tasks_map_2, results)
+            self._save_debug_state(template_assets, "lipsync_subs")
 
         # Video Edit
-        print(template_assets)
-        print("Generating final video...")
+        self.logger.info(f"Assets: {template_assets}")
+        self.logger.info("Generating final video...")
         results = []
         for asset in template_assets:
             results.append(self.video_gen.compose(template_assets=asset))

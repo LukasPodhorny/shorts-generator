@@ -1,7 +1,7 @@
 import os
 from aishorts.modules.avatar import Avatar
 from aishorts.utils.runpod_caller import EndpointCaller
-from aishorts.utils.r2_handler import CloudflareR2
+from aishorts.utils.r2_handler import download_from_url
 from aishorts.modules.tts.tts_providers import TTSResult
 from dataclasses import dataclass
 from aishorts.modules.provider import Provider
@@ -114,7 +114,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
         result_url = result[0]
 
         filepath = (
-            CloudflareR2.download_presigned_file(result_url, LipsyncProvider.OUTPUT_DIR)
+            await download_from_url(result_url, LipsyncProvider.OUTPUT_DIR)
             if self.downoad_results
             else None
         )
@@ -139,9 +139,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
         for i, item in enumerate(response):
             video_url = item["video_url"]
             filepath = (
-                CloudflareR2.download_presigned_file(
-                    video_url, LipsyncProvider.OUTPUT_DIR
-                )
+                await download_from_url(video_url, LipsyncProvider.OUTPUT_DIR)
                 if self.downoad_results
                 else None
             )

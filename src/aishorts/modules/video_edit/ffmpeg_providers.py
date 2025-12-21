@@ -78,7 +78,7 @@ class FFmpegAPI(FFmpegProvider):
 
 
 class LocalFFmpeg(FFmpegProvider):
-    provider_name = "local"
+    provider_name = "local_ffmpeg"
 
     def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
         output_path = os.path.join(self.OUTPUT_DIR, output_filename)

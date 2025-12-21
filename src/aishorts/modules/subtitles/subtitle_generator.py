@@ -1,6 +1,6 @@
 from aishorts.modules.subtitles.subtitle_providers import SubtitlesProvider
 from aishorts.modules.subtitles.subtitle_providers import *
-import inspect
+from aishorts.utils.async_utils import await_or_thread
 
 
 class SubtitleGenerator:
@@ -38,11 +38,7 @@ class SubtitleGenerator:
         """
         func = self.subtitle.generate_subtitles
 
-        if inspect.iscoroutinefunction(func):
-            return await func(audio_file, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return asyncio.to_thread(func, audio_file, **kwargs)
+        return await await_or_thread(func, audio_file, **kwargs)
 
     async def generate_multiple_subtitles(
         self, tts_results: list[TTSResult], **kwargs
@@ -50,8 +46,4 @@ class SubtitleGenerator:
 
         func = self.subtitle.generate_multiple_subtitles
 
-        if inspect.iscoroutinefunction(func):
-            return await func(tts_results, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return asyncio.to_thread(func, tts_results, **kwargs)
+        return await await_or_thread(func, tts_results, **kwargs)

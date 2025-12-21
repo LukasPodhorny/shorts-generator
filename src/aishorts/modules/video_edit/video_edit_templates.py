@@ -142,6 +142,9 @@ class AlphaGameplayTemplate(EditTemplate):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
+        self.chromakey_color = template_config.chromakey_color
+        self.chromakey_similarity = template_config.chromakey_similarity
+        self.chromakey_blend = template_config.chromakey_blend
 
     def compose(self, template_assets: TemplateAssets) -> FFmpegCommand:
         # Calculate total duration
@@ -153,14 +156,13 @@ class AlphaGameplayTemplate(EditTemplate):
         absolute_subtitles = self.convert_to_absolute_timing(template_assets.subtitles)
         final_subtitles = self.merge_transcriptions(absolute_subtitles)
 
-        # ==================== CHANGED: Extract media timings ====================
+        # Extract media timings
         media_timings = self.extract_media_timings(
-            blocks=template_assets.script.blocks,
+            blocks=template_assets.reel_script.blocks,
             absolute_subtitles=absolute_subtitles,
             images=template_assets.images,
             latex=template_assets.latex,
         )
-        # ========================================================================
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -182,13 +184,11 @@ class AlphaGameplayTemplate(EditTemplate):
         inputs.append(self.bg_video)
         labels.append("bg_video")
 
-        # ==================== CHANGED: Add media files as inputs ====================
-        # Add all image and latex files to inputs
+        # Add media files as inputs
         media_start_idx = len(inputs)
         for i, media in enumerate(media_timings):
             inputs.append(media.filepath)
             labels.append(f"media_{i}")
-        # ============================================================================
 
         # Add music if present (index = len(lipsync_videos) + 1 + num_media)
         music_idx = None
@@ -206,8 +206,8 @@ class AlphaGameplayTemplate(EditTemplate):
             filter_parts.append(
                 # Remove green screen with chromakey (more aggressive to eliminate fringe)
                 # Then despill to remove green color cast, then scale to full width 1080x1080
-                f"[{i}:v] chromakey=0x00FF00:0.15:0.05, "
-                f"despill=green:0.5, "
+                # f"[{i}:v] chromakey=0x00FF00:0.2:0.1, "
+                f"[{i}:v] chromakey={self.chromakey_color}:{self.chromakey_similarity}:{self.chromakey_blend}, "
                 f"scale=1080:1080 [lip{i}];"
             )
 
@@ -245,9 +245,9 @@ class AlphaGameplayTemplate(EditTemplate):
             # Scale the media to fit within max dimensions (450x380) without deforming
             # force_original_aspect_ratio=decrease ensures it fits within the box
             # while maintaining aspect ratio
-            filter_parts.append(
-                f"[{media_idx}:v] scale=450:380:force_original_aspect_ratio=decrease [media{i}];"
-            )
+            # filter_parts.append(
+            #    f"[{media_idx}:v] scale=450:400:force_original_aspect_ratio=decrease [media{i}];"
+            # )
 
             # Overlay at top center with timing
             # x=(W-w)/2 centers horizontally

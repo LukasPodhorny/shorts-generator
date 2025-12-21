@@ -2,8 +2,9 @@ import boto3
 import os
 from urllib.parse import urlparse
 import uuid
-import requests
+import aiohttp
 from pydantic import BaseModel
+import asyncio
 
 
 class BucketConfiguration(BaseModel):
@@ -62,27 +63,36 @@ class CloudflareR2:
 
         return filepath
 
-    @staticmethod
-    def download_presigned_file(url: str, path: str = "", ext: str = None) -> str:
-        """
-        Downloads a file from a presigned URL into outputs/{uuid}.{ext}
-        and returns the local file path.
-        """
 
-        # Extract filename extension from the URL
-        url_path = urlparse(url).path
-        ext = ext or os.path.splitext(url_path)[1] or ".bin"
+async def download_from_url(
+    url: str, path: str = "", ext: str | None = None, timeout: int = 600
+) -> str:
+    """
+    Downloads a file from a URL into outputs/{uuid}.{ext}
+    and returns the local file path.
+    """
+    # Extract filename extension from the URL
+    url_path = urlparse(url).path
+    ext = ext or os.path.splitext(url_path)[1] or ".bin"
 
-        # Create unique filename
-        filepath = CloudflareR2.get_random_filepath(path, ext)
+    # Create unique filename
+    filepath = CloudflareR2.get_random_filepath(path, ext)
 
-        # Download
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
+    # Download
+    timeout = aiohttp.ClientTimeout(total=timeout)
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    response.raise_for_status()
+                    with open(filepath, "wb") as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            f.write(chunk)
+            break
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if attempt == 2:
+                raise e
+            print(f"Download failed ({attempt + 1}/3). Retrying... Error: {e}")
+            await asyncio.sleep(2**attempt)
 
-        with open(filepath, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-        return filepath
+    return filepath

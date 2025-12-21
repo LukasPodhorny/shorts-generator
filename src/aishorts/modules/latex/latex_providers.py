@@ -11,6 +11,9 @@ from aishorts.modules.script.script import Reel
 import subprocess
 import tempfile
 from PIL import Image
+from concurrent.futures import ThreadPoolExecutor
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
 @dataclass
@@ -37,13 +40,13 @@ class LatexProvider(Provider):
 
 
 class Matplotlib(LatexProvider):
-    provider_name = "local_latex"
+    provider_name = "matplotlib"
 
     def render_single(self, id: int, latex_code: str, resolution: Resolution):
         dpi = 100
-        fig = plt.figure(
-            figsize=(resolution.width / dpi, resolution.height / dpi), dpi=dpi
-        )
+        # Use Figure directly to avoid global state (thread-safety)
+        fig = Figure(figsize=(resolution.width / dpi, resolution.height / dpi), dpi=dpi)
+        FigureCanvasAgg(fig)
         fig.patch.set_facecolor("white")
 
         ax = fig.add_axes([0, 0, 1, 1])
@@ -63,8 +66,7 @@ class Matplotlib(LatexProvider):
             fontsize -= 1
 
         result_path = os.path.join(self.OUTPUT_DIR, f"{uuid.uuid4()}.png")
-        plt.savefig(result_path, dpi=dpi)
-        plt.close(fig)
+        fig.savefig(result_path, dpi=dpi)
 
         return LatexResult(MediaFile(id=id, path=result_path), alt=latex_code)
 
@@ -134,7 +136,7 @@ class RealLatex(LatexProvider):
             with open(tex_path, "w") as f:
                 f.write(latex_content)
 
-            # Compile LaTeX → PDF
+            # Compile LaTeX -> PDF
             result = subprocess.run(
                 ["pdflatex", "-interaction=nonstopmode", tex_path],
                 cwd=tmp,
@@ -248,14 +250,18 @@ class RealLatex(LatexProvider):
         latex_codes: list[str],
         resolution: Resolution,
     ) -> list[LatexResult]:
-        results = []
-        for i, code in enumerate(latex_codes):
+        def _render_task(args):
+            i, code = args
             try:
-                results.append(self._render_single(i, code, resolution))
+                return self._render_single(i, code, resolution)
             except Exception as e:
                 print(f"Failed to render LaTeX code {i}: {e}")
-                # Return a placeholder or re-raise depending on your needs
                 raise
+
+        # Parallelize rendering of equations within the reel
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(_render_task, enumerate(latex_codes)))
+
         return results
 
     def get_reel_images(

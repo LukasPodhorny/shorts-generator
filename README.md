@@ -67,10 +67,11 @@ export R2_ENDPOINT="your_key"
 ### Basic example
 ```bash
 python cli/main.py \
-    --input "explain in fortnite terms" \
-    --files "path/to/file" "path/to/second/file" \
-    --avatar "biden" \
-    --template "basic_gameplay"
+    --input "explain it simply" \
+    --files tests/test_files/Photosynthesis.pdf \
+    --avatars "biden" "trump" \
+    --template "basic_gameplay" \
+    --amount 3 
 ```
 
 ### Output

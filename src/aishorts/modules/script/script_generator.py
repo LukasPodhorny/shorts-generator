@@ -1,8 +1,7 @@
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.script.llm_providers import *
 from aishorts.modules.script.llm_providers import LLMProvider
-import inspect
-import asyncio
+from aishorts.utils.async_utils import await_or_thread
 
 
 class ScriptGenerator:
@@ -108,9 +107,6 @@ class ScriptGenerator:
     ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
         func = self.llm.generate_script
-
-        if inspect.iscoroutinefunction(func):
-            return await func(instructions, files, user_input, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return asyncio.to_thread(func, instructions, files, user_input, **kwargs)
+        
+        return await await_or_thread(func, instructions, files, user_input, **kwargs)
+        

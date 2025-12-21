@@ -1,8 +1,7 @@
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.lipsync.lipsync_providers import *
-import inspect
-import asyncio
 from aishorts.modules.lipsync.lipsync_providers import LipsyncProvider
+from aishorts.utils.async_utils import await_or_thread
 
 
 class LipsyncGenerator:
@@ -55,11 +54,8 @@ class LipsyncGenerator:
                 Used by FLOAT backend only.
         """
         func = self.provider_instances[0].generate_lipsync
-        if inspect.iscoroutinefunction(func):
-            return await func(audio_url, id, **kwargs)
-        else:
-            print("Running sync TTS in thread...")
-            return await asyncio.to_thread(func, audio_url, id, **kwargs)
+
+        return await await_or_thread(func, audio_url, id, **kwargs)
 
     async def generate_lipsyncs(
         self, tts_results: list[TTSResult], **kwargs
@@ -77,11 +73,8 @@ class LipsyncGenerator:
         lipsync_results = []
         for lipsync in self.provider_instances:
             func = lipsync.generate_lipsyncs
-            if inspect.iscoroutinefunction(func):
-                result = await func(tts_results, **kwargs)
-            else:
-                print("Running sync TTS in thread...")
-                result = await asyncio.to_thread(func, tts_results, **kwargs)
+
+            result = await await_or_thread(func, tts_results, **kwargs)
 
             lipsync_results.extend(result)
 

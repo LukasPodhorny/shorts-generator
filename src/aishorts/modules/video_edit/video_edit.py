@@ -107,6 +107,9 @@ class TemplateConfig(BaseModel):
     bg_video: str | None = None
     music: str | None = None
     subtitle_style: SubtitleStyle | None = None
+    chromakey_color: str | None = "0x00FF00"
+    chromakey_similarity: float | None = 0.2
+    chromakey_blend: float | None = 0.1
 
 
 class VideoTemplate(BaseModel):
@@ -398,8 +401,8 @@ class EditTemplate(Provider):
         self,
         blocks: list[Block],  # List of Block objects from your Reel
         absolute_subtitles: list[TranscriptionVerbose],
-        images: list[ImageResult],  # List of ImageResult
-        latex: list[LatexResult],  # List of LatexResult
+        images: list[ImageResult] | None,  # List of ImageResult
+        latex: list[LatexResult] | None,  # List of LatexResult
     ) -> List[MediaTiming]:
         """
         Extract absolute timing information for all media elements (images and latex)
@@ -454,7 +457,11 @@ class EditTemplate(Provider):
 
                 # Get the filepath based on media type
                 filepath = None
-                if media_type == "image" and image_idx < len(images):
+                if (
+                    media_type == "image"
+                    and images[image_idx]
+                    and image_idx < len(images)
+                ):
                     filepath = images[image_idx].media.path
                     image_idx += 1
                 elif media_type == "latex" and latex_idx < len(latex):
