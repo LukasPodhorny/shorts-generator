@@ -46,7 +46,7 @@ class F5TTS(EndpointCaller, TTSProvider):
         self,
         avatars: list[Avatar],
         download_results: bool = True,
-        timeout=500,
+        timeout=600,
         endpoint_id: str | None = None,
         api_key: str | None = None,
     ):

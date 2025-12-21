@@ -34,7 +34,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
         self,
         avatars: list[Avatar],
         download_results: bool = True,
-        timeout=1000,
+        timeout=2000,
         endpoint_id: str | None = None,
         api_key: str | None = None,
     ):
