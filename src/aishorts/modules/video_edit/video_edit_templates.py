@@ -8,21 +8,27 @@ from aishorts.modules.video_edit.video_edit import (
 
 
 class GameplayTemplate(EditTemplate):
+
     provider_name = "gameplay"
+
     required_assets = [
         AssetType.SCRIPT,
         AssetType.VOICE,
         AssetType.LIPSYNC,
         AssetType.SUBTITLES,
+        AssetType.IMAGES,
+        AssetType.LATEX,
     ]
 
     def __init__(self, template_config: TemplateConfig):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
+        self.chromakey_color = template_config.chromakey_color
+        self.chromakey_similarity = template_config.chromakey_similarity
+        self.chromakey_blend = template_config.chromakey_blend
 
     def compose(self, template_assets: TemplateAssets) -> FFmpegCommand:
-
         # Calculate total duration
         total_duration = sum(
             self.get_video_duration(vid.filepath)
@@ -31,6 +37,14 @@ class GameplayTemplate(EditTemplate):
 
         absolute_subtitles = self.convert_to_absolute_timing(template_assets.subtitles)
         final_subtitles = self.merge_transcriptions(absolute_subtitles)
+
+        # Extract media timings
+        media_timings = self.extract_media_timings(
+            blocks=template_assets.reel_script.blocks,
+            absolute_subtitles=absolute_subtitles,
+            images=template_assets.images,
+            latex=template_assets.latex,
+        )
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -52,7 +66,12 @@ class GameplayTemplate(EditTemplate):
         inputs.append(self.bg_video)
         labels.append("bg_video")
 
-        # Add music if present (index = len(lipsync_videos) + 1)
+        # Add media files as inputs
+        for i, media in enumerate(media_timings):
+            inputs.append(media.filepath)
+            labels.append(f"media_{i}")
+
+        # Add music if present (index = len(lipsync_videos) + 1 + num_media)
         music_idx = None
         if self.music is not None:
             music_idx = len(inputs)
@@ -62,12 +81,10 @@ class GameplayTemplate(EditTemplate):
         # Build filter graph using actual indices
         filter_parts = []
 
-        # Scale and crop each lipsync video
+        # scale each lipsync video
         num_lipsyncs = len(template_assets.lipsync_videos)
         for i in range(num_lipsyncs):
-            filter_parts.append(
-                f"[{i}:v] scale=1080:-1, crop=1080:960:(in_w-1080)/2:(in_h-960)/2 [lip{i}];"
-            )
+            filter_parts.append(f"scale=1080:1080 [lip{i}];")
 
         # Concatenate all lipsync videos
         concat_inputs = "".join(f"[lip{i}]" for i in range(num_lipsyncs))
@@ -82,17 +99,42 @@ class GameplayTemplate(EditTemplate):
         concat_audio = "".join(f"[voice{i}]" for i in range(num_lipsyncs))
         filter_parts.append(f"{concat_audio} concat=n={num_lipsyncs}:v=0:a=1 [voice];")
 
-        # Background video
+        # Scale background video to PORTRAIT 1080x1920
         filter_parts.append(
             f"[{bg_idx}:v] trim=end={total_duration}, setpts=PTS-STARTPTS, "
-            f"crop=1080:960:(in_w-1080)/2:(in_h-960)/2 [game];"
+            f"scale=1080:1920:force_original_aspect_ratio=increase, crop=1080:1920 [game];"
         )
 
-        # Stack lip and game
-        filter_parts.append("[lip_concat][game] vstack=inputs=2 [stacked];")
+        # Overlay lipsync at bottom top (flush with bottom edge)
+        # x=(W-w)/2 centers horizontally: (1080-1080)/2 = 0
+        # y=H-h positions at bottom with no padding: 1920-1080 = 840
+        filter_parts.append("[game][lip_concat] overlay=x=(W-w)/2:y=0 [stacked];")
+
+        # Process and overlay each media (image/latex) at specific times
+        current_label = "[stacked]"
+        for i, media in enumerate(media_timings):
+            next_label = f"[overlay{i}]"
+
+            # Animation: Slide from Left (0.4s duration)
+            # Start X: -w (off-screen left)
+            # End X: (W-w)/2 (center)
+            # Logic: -w + (TotalDistance) * Progress
+            # TotalDistance = (W-w)/2 - (-w) = (W+w)/2
+            anim_dur = 0.4
+            x_expr = f"-w + ((W+w)/2) * min((t-{media.start_time})/{anim_dur}, 1)"
+
+            filter_parts.append(
+                f"{current_label}[media{i}] overlay=x='{x_expr}':y=100:"
+                f"enable='between(t,{media.start_time},{media.end_time})' {next_label};"
+            )
+
+            current_label = next_label
+
+        # If no media, current_label is still "[stacked]"
+        subtitle_input = current_label
 
         # Add subtitles
-        filter_parts.append(f"[stacked] ass='{subs_path}' [video];")
+        filter_parts.append(f"{subtitle_input} ass='{subs_path}' [video];")
 
         # Handle music
         if music_idx is not None:
@@ -185,7 +227,6 @@ class AlphaGameplayTemplate(EditTemplate):
         labels.append("bg_video")
 
         # Add media files as inputs
-        media_start_idx = len(inputs)
         for i, media in enumerate(media_timings):
             inputs.append(media.filepath)
             labels.append(f"media_{i}")

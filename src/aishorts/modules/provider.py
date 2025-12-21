@@ -26,9 +26,9 @@ class Provider(ABC):
         """
         super().__init_subclass__(**kwargs)
 
-        # Create a new registry for each direct subclass of Provider
-        # This ensures TTS, Lipsync, etc. have separate registries
-        if not hasattr(cls, "_registry"):
+        # Create a new registry for direct subclasses of Provider.
+        # This ensures different provider types (TTS, Image, etc.) have separate registries.
+        if Provider in cls.__bases__:
             cls._registry = {}
 
         # Only register if provider_name is set (concrete implementations)

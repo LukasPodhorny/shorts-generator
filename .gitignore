@@ -218,7 +218,9 @@ __marimo__/
 
 output/
 assets/
-tests/
 pytest.ini
 logs/
 .pkl
+tests/integration/
+tests/test_configs/
+tests/test_files/
