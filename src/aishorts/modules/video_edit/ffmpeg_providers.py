@@ -8,6 +8,7 @@ from abc import abstractmethod
 from aishorts.modules.video_edit.video_edit import FFmpegCommand
 from pathlib import Path
 import subprocess
+import tempfile
 
 
 @dataclass
@@ -21,24 +22,57 @@ class FFmpegResult:
 class FFmpegProvider(Provider):
 
     OUTPUT_DIR = "output/videos"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod
     def render(self, cmd: FFmpegCommand, **kwargs) -> FFmpegResult:
         pass
 
+    @staticmethod
+    def nvenc_available() -> bool:
+        """
+        Check if h264_nvenc actually works (not only exists in the encoder list).
+        This tries encoding a single black frame with NVENC.
+        """
+
+        test_out = tempfile.NamedTemporaryFile(suffix=".mp4").name
+
+        cmd = [
+            "ffmpeg",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:s=16x16:d=0.1",
+            "-c:v",
+            "h264_nvenc",
+            "-y",
+            test_out,
+        ]
+
+        try:
+            subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            )
+            return True
+        except:
+            return False
+
 
 class FFmpegAPI(FFmpegProvider):
     provider_name = "ffmpegapi"
     API_BASE = "https://api.ffmpeg-api.com"
+    video_codec = "h264_nvenc"
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("FFMPEG_API_KEY")
-        os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
     async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
         """
         Upload all inputs, build command with URLs, execute
         """
+        # set video codec
+        cmd.video_codec = self.video_codec
+
         # 1. Upload all input files and get URLs (in order!)
         resolved_inputs = []
         for i, input_path in enumerate(cmd.inputs):
@@ -79,8 +113,16 @@ class FFmpegAPI(FFmpegProvider):
 
 class LocalFFmpeg(FFmpegProvider):
     provider_name = "local_ffmpeg"
+    video_codec = video_codec = (
+        "h264_nvenc" if FFmpegProvider.nvenc_available() else "libx264"
+    )
+
+    def __init__(self):
+        os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
     def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+        cmd.video_codec = self.video_codec
+
         output_path = os.path.join(self.OUTPUT_DIR, output_filename)
 
         resolved_inputs = [str(path) for path in cmd.inputs]

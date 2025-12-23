@@ -4,7 +4,9 @@ from aishorts.modules.video_edit.video_edit import (
     TemplateAssets,
     AssetType,
     FFmpegCommand,
+    FilterGraph,
 )
+import os
 
 
 class GameplayTemplate(EditTemplate):
@@ -52,120 +54,87 @@ class GameplayTemplate(EditTemplate):
             style=self.subtitle_style,
         ).download()
 
-        # Build ordered input list
-        inputs = []
-        labels = []
+        # --- Build Filter Graph ---
+        graph = FilterGraph()
 
-        # Add all lipsync videos first (indices 0, 1, 2, ...)
+        # 1. Process Lipsync Videos
+        lip_v_nodes = []
+        lip_a_nodes = []
+
         for i, lipsync_vid in enumerate(template_assets.lipsync_videos):
-            inputs.append(lipsync_vid.filepath)
-            labels.append(f"lipsync_{i}")
+            v, a = graph.add_input(lipsync_vid.filepath, f"lipsync_{i}")
+            # Scale to square
+            v = v.filter("scale", "1080:1080")
+            # Boost volume
+            a = a.filter("volume", "5.0")
 
-        # Add background video (index = len(lipsync_videos))
-        bg_idx = len(inputs)
-        inputs.append(self.bg_video)
-        labels.append("bg_video")
+            lip_v_nodes.append(v)
+            lip_a_nodes.append(a)
 
-        # Add media files as inputs
-        for i, media in enumerate(media_timings):
-            inputs.append(media.filepath)
-            labels.append(f"media_{i}")
-
-        # Add music if present (index = len(lipsync_videos) + 1 + num_media)
-        music_idx = None
-        if self.music is not None:
-            music_idx = len(inputs)
-            inputs.append(self.music)
-            labels.append("music")
-
-        # Build filter graph using actual indices
-        filter_parts = []
-
-        # scale each lipsync video
-        num_lipsyncs = len(template_assets.lipsync_videos)
-        for i in range(num_lipsyncs):
-            filter_parts.append(f"scale=1080:1080 [lip{i}];")
-
-        # Concatenate all lipsync videos
-        concat_inputs = "".join(f"[lip{i}]" for i in range(num_lipsyncs))
-        filter_parts.append(
-            f"{concat_inputs} concat=n={num_lipsyncs}:v=1:a=0 [lip_concat];"
+        # Concat lipsyncs
+        # (We use add_raw because concat takes a list of inputs and specific syntax)
+        lip_concat_v = graph.add_raw(
+            lip_v_nodes, f"concat=n={len(lip_v_nodes)}:v=1:a=0", "lip_concat_v"
+        )
+        lip_concat_a = graph.add_raw(
+            lip_a_nodes, f"concat=n={len(lip_a_nodes)}:v=0:a=1", "lip_concat_a"
         )
 
-        # Audio concatenation
-        for i in range(num_lipsyncs):
-            filter_parts.append(f"[{i}:a] volume=5.0 [voice{i}];")
+        # 2. Process Background
+        bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        bg_v = bg_v.filter("trim", end=total_duration).filter("setpts", "PTS-STARTPTS")
+        bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
+        bg_v = bg_v.filter("crop", "1080:1920")
 
-        concat_audio = "".join(f"[voice{i}]" for i in range(num_lipsyncs))
-        filter_parts.append(f"{concat_audio} concat=n={num_lipsyncs}:v=0:a=1 [voice];")
+        # 3. Overlay Lipsync on Background
+        # overlay takes [background][foreground]
+        main_v = graph.add_raw([bg_v, lip_concat_v], "overlay=x=(W-w)/2:y=0", "stacked")
 
-        # Scale background video to PORTRAIT 1080x1920
-        filter_parts.append(
-            f"[{bg_idx}:v] trim=end={total_duration}, setpts=PTS-STARTPTS, "
-            f"scale=1080:1920:force_original_aspect_ratio=increase, crop=1080:1920 [game];"
-        )
-
-        # Overlay lipsync at bottom top (flush with bottom edge)
-        # x=(W-w)/2 centers horizontally: (1080-1080)/2 = 0
-        # y=H-h positions at bottom with no padding: 1920-1080 = 840
-        filter_parts.append("[game][lip_concat] overlay=x=(W-w)/2:y=0 [stacked];")
-
-        # Process and overlay each media (image/latex) at specific times
-        current_label = "[stacked]"
+        # 4. Media Overlays
         for i, media in enumerate(media_timings):
-            next_label = f"[overlay{i}]"
+            # temporary for testing
+            if not os.path.isfile(media.filepath):
+                continue
 
-            # Animation: Slide from Left (0.4s duration)
-            # Start X: -w (off-screen left)
-            # End X: (W-w)/2 (center)
-            # Logic: -w + (TotalDistance) * Progress
-            # TotalDistance = (W-w)/2 - (-w) = (W+w)/2
+            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+
             anim_dur = 0.4
             x_expr = f"-w + ((W+w)/2) * min((t-{media.start_time})/{anim_dur}, 1)"
 
-            filter_parts.append(
-                f"{current_label}[media{i}] overlay=x='{x_expr}':y=100:"
-                f"enable='between(t,{media.start_time},{media.end_time})' {next_label};"
+            # Chain the overlay onto main_v
+            main_v = graph.add_raw(
+                [main_v, media_v],
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})'",
             )
 
-            current_label = next_label
+        # 5. Subtitles
+        main_v = main_v.filter("ass", f"'{subs_path}'")
 
-        # If no media, current_label is still "[stacked]"
-        subtitle_input = current_label
-
-        # Add subtitles
-        filter_parts.append(f"{subtitle_input} ass='{subs_path}' [video];")
-
-        # Handle music
-        if music_idx is not None:
-            filter_parts.append(
-                f"[{music_idx}:a] atrim=end={total_duration}, asetpts=PTS-STARTPTS, volume=0.2 [music];"
+        # 6. Audio Mixing
+        final_audio = lip_concat_a
+        if self.music:
+            _, music_a = graph.add_input(self.music, "music")
+            music_a = (
+                music_a.filter("atrim", end=total_duration)
+                .filter("asetpts", "PTS-STARTPTS")
+                .filter("volume", "0.2")
             )
-            filter_parts.append("[voice][music] amix=inputs=2:normalize=0 [audio]")
-        else:
-            filter_parts.append("[voice] acopy [audio]")
+            final_audio = graph.add_raw(
+                [final_audio, music_a], "amix=inputs=2:normalize=0", "audio_mix"
+            )
 
-        filter_graph = "".join(filter_parts)
-
-        # Build command arguments (everything except inputs)
-        args = [
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[video]",
-            "-map",
-            "[audio]",
-            "-c:v",
-            self.video_codec,
-            "-preset",
-            "fast",
-            "-c:a",
-            "aac",
-            "-r",
-            "30",
-        ]
-
-        return FFmpegCommand(inputs=inputs, args=args, input_labels=labels)
+        return graph.build(
+            video_out=main_v,
+            audio_out=final_audio,
+            extra_args=[
+                "-preset",
+                "fast",
+                "-c:a",
+                "aac",
+                "-r",
+                "30",
+            ],
+        )
 
 
 class AlphaGameplayTemplate(EditTemplate):
@@ -212,121 +181,97 @@ class AlphaGameplayTemplate(EditTemplate):
             style=self.subtitle_style,
         ).download()
 
-        # Build ordered input list
-        inputs = []
-        labels = []
+        # --- Build Filter Graph ---
+        graph = FilterGraph()
 
-        # Add all lipsync videos first (indices 0, 1, 2, ...)
+        # 1. Process Lipsync Videos
+        lip_v_nodes = []
+        lip_a_nodes = []
+
         for i, lipsync_vid in enumerate(template_assets.lipsync_videos):
-            inputs.append(lipsync_vid.filepath)
-            labels.append(f"lipsync_{i}")
+            v, a = graph.add_input(lipsync_vid.filepath, f"lipsync_{i}")
 
-        # Add background video (index = len(lipsync_videos))
-        bg_idx = len(inputs)
-        inputs.append(self.bg_video)
-        labels.append("bg_video")
-
-        # Add media files as inputs
-        for i, media in enumerate(media_timings):
-            inputs.append(media.filepath)
-            labels.append(f"media_{i}")
-
-        # Add music if present (index = len(lipsync_videos) + 1 + num_media)
-        music_idx = None
-        if self.music is not None:
-            music_idx = len(inputs)
-            inputs.append(self.music)
-            labels.append("music")
-
-        # Build filter graph using actual indices
-        filter_parts = []
-
-        # Remove green screen and scale each lipsync video
-        num_lipsyncs = len(template_assets.lipsync_videos)
-        for i in range(num_lipsyncs):
-            filter_parts.append(
-                # f"[{i}:v] chromakey=0x00FF00:0.2:0.1, "
-                f"[{i}:v] chromakey={self.chromakey_color}:{self.chromakey_similarity}:{self.chromakey_blend}, "
-                f"scale=1080:1080 [lip{i}];"
+            # Alpha specific: Chromakey
+            v = v.filter(
+                "chromakey",
+                self.chromakey_color,
+                self.chromakey_similarity,
+                self.chromakey_blend,
             )
 
-        # Concatenate all lipsync videos
-        concat_inputs = "".join(f"[lip{i}]" for i in range(num_lipsyncs))
-        filter_parts.append(
-            f"{concat_inputs} concat=n={num_lipsyncs}:v=1:a=0 [lip_concat];"
+            # Remove green spill (outline)
+            v = v.filter("despill", type="green")
+
+            # Scale to square
+            v = v.filter("scale", "1080:1080")
+
+            # Boost volume
+            a = a.filter("volume", "5.0")
+
+            lip_v_nodes.append(v)
+            lip_a_nodes.append(a)
+
+        # Concat lipsyncs
+        lip_concat_v = graph.add_raw(
+            lip_v_nodes, f"concat=n={len(lip_v_nodes)}:v=1:a=0", "lip_concat_v"
+        )
+        lip_concat_a = graph.add_raw(
+            lip_a_nodes, f"concat=n={len(lip_a_nodes)}:v=0:a=1", "lip_concat_a"
         )
 
-        # Audio concatenation
-        for i in range(num_lipsyncs):
-            filter_parts.append(f"[{i}:a] volume=5.0 [voice{i}];")
+        # 2. Process Background
+        bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        bg_v = bg_v.filter("trim", end=total_duration).filter("setpts", "PTS-STARTPTS")
+        bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
+        bg_v = bg_v.filter("crop", "1080:1920")
 
-        concat_audio = "".join(f"[voice{i}]" for i in range(num_lipsyncs))
-        filter_parts.append(f"{concat_audio} concat=n={num_lipsyncs}:v=0:a=1 [voice];")
-
-        # Scale background video to PORTRAIT 1080x1920
-        filter_parts.append(
-            f"[{bg_idx}:v] trim=end={total_duration}, setpts=PTS-STARTPTS, "
-            f"scale=1080:1920:force_original_aspect_ratio=increase, crop=1080:1920 [game];"
+        # 3. Overlay Lipsync on Background
+        # Alpha specific: y=H-h (bottom)
+        main_v = graph.add_raw(
+            [bg_v, lip_concat_v], "overlay=x=(W-w)/2:y=H-h", "stacked"
         )
 
-        # Overlay lipsync at bottom center (flush with bottom edge)
-        # x=(W-w)/2 centers horizontally: (1080-1080)/2 = 0
-        # y=H-h positions at bottom with no padding: 1920-1080 = 840
-        filter_parts.append("[game][lip_concat] overlay=x=(W-w)/2:y=H-h [stacked];")
-
-        # Process and overlay each media (image/latex) at specific times
-        current_label = "[stacked]"
+        # 4. Media Overlays
         for i, media in enumerate(media_timings):
-            next_label = f"[overlay{i}]"
+            # temporary for testing
+            if not os.path.isfile(media.filepath):
+                continue
 
-            # Animation: Slide from Left (0.4s duration)
-            # Start X: -w (off-screen left)
-            # End X: (W-w)/2 (center)
-            # Logic: -w + (TotalDistance) * Progress
-            # TotalDistance = (W-w)/2 - (-w) = (W+w)/2
+            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+
             anim_dur = 0.4
             x_expr = f"-w + ((W+w)/2) * min((t-{media.start_time})/{anim_dur}, 1)"
 
-            filter_parts.append(
-                f"{current_label}[media{i}] overlay=x='{x_expr}':y=100:"
-                f"enable='between(t,{media.start_time},{media.end_time})' {next_label};"
+            main_v = graph.add_raw(
+                [main_v, media_v],
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})'",
             )
 
-            current_label = next_label
+        # 5. Subtitles
+        main_v = main_v.filter("ass", f"'{subs_path}'")
 
-        # If no media, current_label is still "[stacked]"
-        subtitle_input = current_label
-
-        # Add subtitles
-        filter_parts.append(f"{subtitle_input} ass='{subs_path}' [video];")
-
-        # Handle music
-        if music_idx is not None:
-            filter_parts.append(
-                f"[{music_idx}:a] atrim=end={total_duration}, asetpts=PTS-STARTPTS, volume=0.2 [music];"
+        # 6. Audio Mixing
+        final_audio = lip_concat_a
+        if self.music:
+            _, music_a = graph.add_input(self.music, "music")
+            music_a = (
+                music_a.filter("atrim", end=total_duration)
+                .filter("asetpts", "PTS-STARTPTS")
+                .filter("volume", "0.2")
             )
-            filter_parts.append("[voice][music] amix=inputs=2:normalize=0 [audio]")
-        else:
-            filter_parts.append("[voice] acopy [audio]")
+            final_audio = graph.add_raw(
+                [final_audio, music_a], "amix=inputs=2:normalize=0", "audio_mix"
+            )
 
-        filter_graph = "".join(filter_parts)
-
-        # Build command arguments (everything except inputs)
-        args = [
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[video]",
-            "-map",
-            "[audio]",
-            "-c:v",
-            self.video_codec,
-            "-preset",
-            "fast",
-            "-c:a",
-            "aac",
-            "-r",
-            "30",
-        ]
-
-        return FFmpegCommand(inputs=inputs, args=args, input_labels=labels)
+        return graph.build(
+            video_out=main_v,
+            audio_out=final_audio,
+            extra_args=[
+                "-preset",
+                "fast",
+                "-c:a",
+                "aac",
+                "-r",
+                "30",
+            ],
+        )

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import os
 from openai.types.audio import TranscriptionVerbose
 import subprocess
-import tempfile
 from pydantic import BaseModel
 from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
 from aishorts.modules.tts.tts_providers import TTSResult
@@ -52,6 +51,9 @@ class FFmpegCommand:
     # The filter graph and other args (already have correct indices)
     args: List[str]
 
+    # Video codec for optimatization
+    video_codec: str = None
+
     # Optional: metadata about what each input is (for debugging/logging)
     input_labels: List[str] = field(default_factory=list)
 
@@ -70,6 +72,10 @@ class FFmpegCommand:
 
         # Add the rest of the arguments
         cmd.extend(self.args)
+
+        # Add video codec
+        if self.video_codec:
+            cmd.extend(["-c:v", self.video_codec])
 
         return cmd
 
@@ -108,8 +114,8 @@ class TemplateConfig(BaseModel):
     music: str | None = None
     subtitle_style: SubtitleStyle | None = None
     chromakey_color: str | None = "0x00FF00"
-    chromakey_similarity: float | None = 0.2
-    chromakey_blend: float | None = 0.1
+    chromakey_similarity: float | None = 0.17
+    chromakey_blend: float | None = 0.2
 
 
 class VideoTemplate(BaseModel):
@@ -267,37 +273,6 @@ class EditTemplate(Provider):
                 events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
 
         return AssSubtitles("\n".join(events))
-
-    @staticmethod
-    def nvenc_available() -> bool:
-        """
-        Check if h264_nvenc actually works (not only exists in the encoder list).
-        This tries encoding a single black frame with NVENC.
-        """
-
-        test_out = tempfile.NamedTemporaryFile(suffix=".mp4").name
-
-        cmd = [
-            "ffmpeg",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=black:s=16x16:d=0.1",
-            "-c:v",
-            "h264_nvenc",
-            "-y",
-            test_out,
-        ]
-
-        try:
-            subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
-            )
-            return True
-        except:
-            return False
-
-    video_codec = "h264_nvenc" if nvenc_available() else "libx264"
 
     def get_video_duration(self, video_path: str) -> float:
         """Get video duration in seconds using ffprobe"""
@@ -481,3 +456,71 @@ class EditTemplate(Provider):
             dialogue_idx += 1
 
         return media_timings
+
+
+class FilterNode:
+    """Represents a stream in the filter graph (e.g. [tmp_1])"""
+
+    def __init__(self, graph: "FilterGraph", label: str):
+        self.graph = graph
+        self.label = label
+
+    def filter(self, name: str, *args, **kwargs) -> "FilterNode":
+        """Chain a filter to this node"""
+        return self.graph.add_filter([self], name, *args, **kwargs)
+
+    def __repr__(self):
+        return f"[{self.label}]"
+
+
+class FilterGraph:
+    """Helper to build FFmpeg filter graphs without manual index management"""
+
+    def __init__(self):
+        self.inputs: List[Path] = []
+        self.input_labels: List[str] = []
+        self.chains: List[str] = []
+        self._counter = 0
+
+    def add_input(
+        self, path: str | Path, label: str = None
+    ) -> tuple[FilterNode, FilterNode]:
+        """Adds an input and returns (video_node, audio_node)"""
+        idx = len(self.inputs)
+        self.inputs.append(Path(path))
+        self.input_labels.append(label or f"input_{idx}")
+        return FilterNode(self, f"{idx}:v"), FilterNode(self, f"{idx}:a")
+
+    def add_filter(
+        self, inputs: List[FilterNode], name: str, *args, **kwargs
+    ) -> FilterNode:
+        """Adds a filter command"""
+        # Format arguments: filter=arg1:arg2:key=value
+        arg_list = [str(a) for a in args]
+        arg_list.extend(f"{k}={v}" for k, v in kwargs.items())
+        params = ":".join(arg_list)
+        filter_str = f"{name}={params}" if params else name
+
+        return self.add_raw(inputs, filter_str)
+
+    def add_raw(
+        self, inputs: List[FilterNode], filter_str: str, output_label: str = None
+    ) -> FilterNode:
+        """Adds a raw filter string for complex cases (like overlay expressions)"""
+        if not output_label:
+            output_label = f"tmp_{self._counter}"
+            self._counter += 1
+
+        input_str = "".join(str(n) for n in inputs)
+        self.chains.append(f"{input_str} {filter_str} [{output_label}]")
+        return FilterNode(self, output_label)
+
+    def build(
+        self, video_out: FilterNode, audio_out: FilterNode, extra_args: List[str]
+    ) -> FFmpegCommand:
+        args = ["-filter_complex", ";".join(self.chains)]
+        args.extend(["-map", str(video_out), "-map", str(audio_out)])
+        args.extend(extra_args)
+        return FFmpegCommand(
+            inputs=self.inputs, args=args, input_labels=self.input_labels
+        )
