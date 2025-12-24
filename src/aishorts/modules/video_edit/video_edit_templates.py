@@ -5,6 +5,7 @@ from aishorts.modules.video_edit.video_edit import (
     AssetType,
     FFmpegCommand,
     FilterGraph,
+    Animator,
 )
 import os
 
@@ -88,7 +89,9 @@ class GameplayTemplate(EditTemplate):
 
         # 3. Overlay Lipsync on Background
         # overlay takes [background][foreground]
-        main_v = graph.add_raw([bg_v, lip_concat_v], "overlay=x=(W-w)/2:y=0", "stacked")
+        main_v = graph.add_raw(
+            [bg_v, lip_concat_v], "overlay=x=(W-w)/2:y=0:shortest=1", "stacked"
+        )
 
         # 4. Media Overlays
         for i, media in enumerate(media_timings):
@@ -98,13 +101,24 @@ class GameplayTemplate(EditTemplate):
 
             media_v, _ = graph.add_input(media.filepath, f"media_{i}")
 
-            anim_dur = 0.4
-            x_expr = f"-w + ((W+w)/2) * min((t-{media.start_time})/{anim_dur}, 1)"
+            media_v = Animator.fade(
+                media_v,
+                start_time=media.start_time,
+                end_time=media.end_time,
+                duration=0.4,
+            )
 
-            # Chain the overlay onto main_v
+            x_expr = Animator.slide_horizontal(
+                start_time=media.start_time,
+                end_time=media.end_time,
+                duration=0.4,
+                enter_from="left",
+                exit_to="right",
+            )
+
             main_v = graph.add_raw(
                 [main_v, media_v],
-                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})'",
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})':shortest=1",
             )
 
         # 5. Subtitles
@@ -228,7 +242,7 @@ class AlphaGameplayTemplate(EditTemplate):
         # 3. Overlay Lipsync on Background
         # Alpha specific: y=H-h (bottom)
         main_v = graph.add_raw(
-            [bg_v, lip_concat_v], "overlay=x=(W-w)/2:y=H-h", "stacked"
+            [bg_v, lip_concat_v], "overlay=x=(W-w)/2:y=H-h:shortest=1", "stacked"
         )
 
         # 4. Media Overlays
@@ -239,12 +253,24 @@ class AlphaGameplayTemplate(EditTemplate):
 
             media_v, _ = graph.add_input(media.filepath, f"media_{i}")
 
-            anim_dur = 0.4
-            x_expr = f"-w + ((W+w)/2) * min((t-{media.start_time})/{anim_dur}, 1)"
+            media_v = Animator.fade(
+                media_v,
+                start_time=media.start_time,
+                end_time=media.end_time,
+                duration=0.4,
+            )
+
+            x_expr = Animator.slide_horizontal(
+                start_time=media.start_time,
+                end_time=media.end_time,
+                duration=0.4,
+                enter_from="left",
+                exit_to="right",
+            )
 
             main_v = graph.add_raw(
                 [main_v, media_v],
-                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})'",
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})':shortest=1",
             )
 
         # 5. Subtitles

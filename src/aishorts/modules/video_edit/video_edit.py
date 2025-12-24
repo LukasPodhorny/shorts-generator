@@ -531,3 +531,66 @@ class FilterGraph:
         return FFmpegCommand(
             inputs=self.inputs, args=args, input_labels=self.input_labels
         )
+
+
+class Animator:
+    """Helper for generating FFmpeg animation expressions and filters"""
+
+    @staticmethod
+    def slide_horizontal(
+        start_time: float,
+        end_time: float,
+        duration: float = 0.4,
+        enter_from: str = "left",  # "left", "right", "none"
+        exit_to: str = "right",  # "left", "right", "none"
+        width_var: str = "w",
+        parent_width_var: str = "W",
+    ) -> str:
+        center = f"(({parent_width_var}-{width_var})/2)"
+
+        # Entry Logic
+        if enter_from == "left":
+            # Linear interp from -w to center
+            entry = f"-{width_var} + ({center} + {width_var}) * min((t-{start_time})/{duration}, 1)"
+        elif enter_from == "right":
+            entry = f"{parent_width_var} - ({parent_width_var} - {center}) * min((t-{start_time})/{duration}, 1)"
+        else:
+            entry = center
+
+        # Exit Logic
+        # Exit starts at end_time - duration
+        exit_start = f"({end_time}-{duration})"
+
+        if exit_to == "right":
+            # Linear interp from center to W
+            exit_expr = f"{center} + ({parent_width_var} - {center}) * (t-{exit_start})/{duration}"
+        elif exit_to == "left":
+            exit_expr = (
+                f"{center} - ({center} + {width_var}) * (t-{exit_start})/{duration}"
+            )
+        else:
+            exit_expr = center
+
+        # Composite Expression
+        return (
+            f"if(lt(t, {start_time}+{duration}), {entry}, "
+            f"if(gt(t, {end_time}-{duration}), {exit_expr}, {center}))"
+        )
+
+    @staticmethod
+    def fade(
+        node: FilterNode,
+        start_time: float,
+        end_time: float,
+        duration: float = 0.4,
+        is_static: bool = True,
+    ) -> FilterNode:
+        """Applies fade-in and fade-out to the alpha channel"""
+        if is_static:
+            node = node.filter("loop", loop=-1, size=1, start=0)
+            node = node.filter("setpts", "N/FRAME_RATE/TB")
+            node = node.filter("format", "yuva420p")
+
+        return node.filter("fade", t="in", st=start_time, d=duration, alpha=1).filter(
+            "fade", t="out", st=end_time - duration, d=duration, alpha=1
+        )
