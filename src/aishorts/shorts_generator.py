@@ -34,23 +34,31 @@ class ScriptConfig(BaseModel):
         )
     )
     provider: str | None = "chatgpt"
-    generate_latex: bool = True
-    generate_image: bool = True
     provider_config: dict = Field(default_factory=dict)
 
 
-@dataclass
-class SubtitleConfig:
+class ImagesConfig(BaseModel):
+    provider: str = "unsplash"
+    provider_config: dict = field(default_factory=dict)
+
+
+class LatexConfig(BaseModel):
+    provider: str = "real_latex"
+    provider_config: dict = field(default_factory=dict)
+
+
+class SubtitleConfig(BaseModel):
     provider: str = "elevenlabs"
     provider_config: dict = field(default_factory=dict)
 
 
-@dataclass
-class ShortsConfig:
+class ShortsConfig(BaseModel):
     avatars: list[Avatar]
     video_template: VideoTemplate
     script_config: ScriptConfig = field(default_factory=ScriptConfig)
     subtitle_config: SubtitleConfig = field(default_factory=SubtitleConfig)
+    images_config: ImagesConfig = field(default_factory=ImagesConfig)
+    latex_config: LatexConfig = field(default_factory=LatexConfig)
 
 
 class ShortsGenerator:
@@ -64,44 +72,64 @@ class ShortsGenerator:
     ):
         self._setup_logging()
 
+        self.tts_api_key = tts_api_key
+        self.lipsync_api_key = lipsync_api_key
+        self.subtitles_api_key = subtitles_api_key
+        self.llm_api_key = llm_api_key
+
+        self.update_config(shorts_config)
+
+    def update_config(self, shorts_config: ShortsConfig):
         self.avatars = shorts_config.avatars
+        self.video_template = shorts_config.video_template
+        self.template_config = self.video_template.template_config
+
+        self.required_assets = EditTemplate.get(
+            self.video_template.edit_template.lower()
+        ).required_assets
+
+        self.image_gen = ImageGenerator(
+            provider=shorts_config.images_config.provider,
+            max_width=self.template_config.max_image_width,
+            max_height=self.template_config.max_image_height,
+            image_style=self.template_config.image_style,
+            **shorts_config.images_config.provider_config,
+        )
+
+        self.latex_gen = LatexGenerator(
+            provider=shorts_config.latex_config.provider,
+            width=self.template_config.latex_width,
+            height=self.template_config.latex_height,
+            image_style=self.template_config.latex_style,
+            **shorts_config.latex_config.provider_config,
+        )
 
         self.script_gen = ScriptGenerator(
             base_instructions=shorts_config.script_config.base_instructions,
             avatars=self.avatars,
-            generate_latex=shorts_config.script_config.generate_latex,
-            generate_image=shorts_config.script_config.generate_image,
+            generate_latex=AssetType.LATEX in self.required_assets,
+            generate_image=AssetType.IMAGES in self.required_assets,
             provider=shorts_config.script_config.provider,
-            api_key=llm_api_key,
+            api_key=self.llm_api_key,
             **shorts_config.script_config.provider_config,
         )
 
         self.voice_gen = VoiceGenerator(
             avatars=self.avatars,
-            api_key=tts_api_key,
+            api_key=self.tts_api_key,
         )
 
         self.lipsync_gen = LipsyncGenerator(
-            avatars=self.avatars, api_key=lipsync_api_key
+            avatars=self.avatars, api_key=self.lipsync_api_key
         )
 
         self.subtitle_gen = SubtitleGenerator(
             shorts_config.subtitle_config.provider,
             **shorts_config.subtitle_config.provider_config,
-            api_key=subtitles_api_key,
+            api_key=self.subtitles_api_key,
         )
 
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
-
-        img_style = ImageStyle(
-            corner_radius=20,
-            shadow_blur=5,
-            shadow_offset=(-5, -5),
-        )
-        self.image_gen = ImageGenerator(image_style=img_style)
-        self.latex_gen = LatexGenerator(image_style=img_style)
-
-        self.video_template = shorts_config.video_template
 
     def _setup_logging(self):
         self.logger = logging.getLogger("ShortsGenerator")
@@ -153,15 +181,12 @@ class ShortsGenerator:
         files: list[str] | None = None,
         user_input: str | None = None,
     ) -> list[str]:
-        required_assets = EditTemplate.get(
-            self.video_template.edit_template.lower()
-        ).required_assets
 
         template_assets = [TemplateAssets() for _ in range(amount)]
 
         # Script
         self.logger.info("\n\n Generating scripts...")
-        if AssetType.SCRIPT in required_assets:
+        if AssetType.SCRIPT in self.required_assets:
             # reel_series = await self.script_gen.generate_script(
             #    num_reels=amount, files=files, user_input=user_input
             # )
@@ -178,7 +203,7 @@ class ShortsGenerator:
         self.logger.info("Generating voiceover, images, latex...")
         tasks_map = {}
 
-        if AssetType.VOICE in required_assets:
+        if AssetType.VOICE in self.required_assets:
             tasks_map[AssetType.VOICE] = asyncio.gather(
                 *[
                     self.voice_gen.generate_reel_dialogues(reel)
@@ -186,12 +211,12 @@ class ShortsGenerator:
                 ]
             )
 
-        if AssetType.IMAGES in required_assets:
+        if AssetType.IMAGES in self.required_assets:
             tasks_map[AssetType.IMAGES] = asyncio.gather(
                 *[self.image_gen.get_reel_images(reel) for reel in reel_series.reels]
             )
 
-        if AssetType.LATEX in required_assets:
+        if AssetType.LATEX in self.required_assets:
             tasks_map[AssetType.LATEX] = asyncio.gather(
                 *[self.latex_gen.get_reel_images(reel) for reel in reel_series.reels]
             )
@@ -205,7 +230,7 @@ class ShortsGenerator:
         self.logger.info("Generating lipsync video and subtitles...")
         tasks_map_2 = {}
 
-        if AssetType.LIPSYNC in required_assets:
+        if AssetType.LIPSYNC in self.required_assets:
             tasks_map_2[AssetType.LIPSYNC] = asyncio.gather(
                 *[
                     self.lipsync_gen.generate_lipsyncs(asset.voiceovers)
@@ -213,7 +238,7 @@ class ShortsGenerator:
                 ]
             )
 
-        if AssetType.SUBTITLES in required_assets:
+        if AssetType.SUBTITLES in self.required_assets:
             tasks_map_2[AssetType.SUBTITLES] = asyncio.gather(
                 *[
                     self.subtitle_gen.generate_multiple_subtitles(asset.voiceovers)

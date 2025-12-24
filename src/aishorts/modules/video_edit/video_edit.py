@@ -17,6 +17,7 @@ from typing import List
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from aishorts.modules.image.image_providers import ImageResult
 from aishorts.modules.latex.latex_providers import LatexResult
+from aishorts.utils.image_utils import ImageStyle
 
 
 class AssetType(Enum):
@@ -116,6 +117,12 @@ class TemplateConfig(BaseModel):
     chromakey_color: str | None = "0x00FF00"
     chromakey_similarity: float | None = 0.17
     chromakey_blend: float | None = 0.2
+    image_style: ImageStyle | None = None
+    max_image_width: int | None = None
+    max_image_height: int | None = None
+    latex_style: ImageStyle | None = None
+    latex_width: int | None = None
+    latex_height: int | None = None
 
 
 class VideoTemplate(BaseModel):

@@ -17,11 +17,14 @@ class LatexGenerator:
     def __init__(
         self,
         provider: str = "real_latex",
+        width: int | None = None,
+        height: int | None = None,
         image_style: ImageStyle | None = None,
         **kwargs,
     ):
         self.image_style = image_style or ImageStyle()
-
+        self.width = width
+        self.height = height
         self.provider = provider.lower()
 
         cls = LatexProvider.get(self.provider)
@@ -34,9 +37,10 @@ class LatexGenerator:
     async def get_images(
         self,
         latex_codes: list[str],
-        resolution: Resolution = Resolution(400, 200),
         **kwargs,
     ) -> list[LatexResult]:
+
+        resolution = Resolution(self.width, self.height)
 
         func = self.latex_gen.get_images
         results = await await_or_thread(func, latex_codes, resolution, **kwargs)
@@ -50,9 +54,8 @@ class LatexGenerator:
 
         return results
 
-    async def get_reel_images(
-        self, reel: Reel, resolution: Resolution = Resolution(400, 200), **kwargs
-    ) -> list[LatexResult]:
+    async def get_reel_images(self, reel: Reel, **kwargs) -> list[LatexResult]:
+        resolution = Resolution(self.width, self.height)
 
         func = self.latex_gen.get_reel_images
         results = await await_or_thread(func, reel, resolution, **kwargs)
