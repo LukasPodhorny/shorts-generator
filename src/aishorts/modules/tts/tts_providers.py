@@ -48,10 +48,13 @@ class F5TTS(EndpointCaller, TTSProvider):
         download_results: bool = True,
         timeout=600,
         endpoint_id: str | None = None,
-        api_key: str | None = None,
+        tts_f5tts_api_key: str | None = None,
+        **kwargs,
     ):
         self.endpoint_id = endpoint_id or os.getenv("F5TTS_ENDPOINT_ID")
-        super().__init__(endpoint_id=self.endpoint_id, timeout=timeout, api_key=api_key)
+        super().__init__(
+            endpoint_id=self.endpoint_id, timeout=timeout, api_key=tts_f5tts_api_key
+        )
         self.avatars = avatars
         self.download_results = download_results
 
@@ -153,18 +156,21 @@ class LemonFoxTTS(TTSProvider):
     def __init__(
         self,
         avatars: list[Avatar],
-        api_key: str | None = None,
+        tts_lemonfox_api_key: str | None = None,
         bucket_configuration: BucketConfiguration = BucketConfiguration(),
+        **kwargs,
     ):
         self.avatars = avatars
-        self.api_key = api_key or os.getenv("LEMONFOX_API_KEY")
+        self.tts_lemonfox_api_key = tts_lemonfox_api_key or os.getenv(
+            "LEMONFOX_API_KEY"
+        )
         self.r2 = CloudflareR2(bucket_configuration)
 
     async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
 
         url = "https://api.lemonfox.ai/v1/audio/speech"
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self.tts_lemonfox_api_key}",
             "Content-Type": "application/json",
         }
 
@@ -204,7 +210,7 @@ class LemonFoxTTS(TTSProvider):
         url = "https://api.lemonfox.ai/v1/audio/speech"
 
         headers = {
-            "Authorization": self.api_key,
+            "Authorization": self.tts_lemonfox_api_key,
             "Content-Type": "application/json",
         }
 

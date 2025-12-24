@@ -1,7 +1,6 @@
-from aishorts.modules.tts.tts_providers import *
+from aishorts.modules.tts.tts_providers import TTSProvider, TTSResult
 from aishorts.modules.script.script import Reel
 from aishorts.modules.avatar import Avatar
-from aishorts.modules.tts.tts_providers import TTSProvider
 from aishorts.utils.async_utils import await_or_thread
 import asyncio
 
@@ -13,12 +12,10 @@ class VoiceGenerator:
             The avatars configurations that will be used.
         download_results: bool, optional
             Whether to download the generated audio files locally.
-        api_key: str, optional
-            Used by F5TTS, LemonFoxTTS backend only.
-        endpoint_id: str, optional
-            Used by F5TTS backend only.
-        timeout: int, optional
-            Used by F5TTS backend only.
+        tts_f5tts_api_key: str, optional
+            API key for F5TTS provider.
+        tts_lemonfox_api_key: str, optional
+            API key for LemonFox provider.
 
     One reel needs to have same provider for all dialogues.
     """
@@ -37,7 +34,7 @@ class VoiceGenerator:
             cls(avatars=avatars, **kwargs) for cls in provider_classes
         ]
 
-    async def generate_voice(self, text: str, id: int = 0, **kwargs) -> str:
+    async def generate_voice(self, text: str, id: int = 0, **kwargs) -> TTSResult:
         """
         Parameters:
             text: str

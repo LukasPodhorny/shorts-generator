@@ -7,7 +7,6 @@ from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.tts.voice_generator import VoiceGenerator
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
 from aishorts.modules.video_edit.video_generator import VideoGenerator
-from dataclasses import dataclass, field
 from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
 from aishorts.modules.video_edit.video_edit import VideoTemplate, TemplateAssets
 from aishorts.modules.avatar import Avatar
@@ -17,10 +16,7 @@ from aishorts.modules.video_edit.video_edit import AssetType
 from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
-from aishorts.utils.image_utils import ImageStyle
 from aishorts.modules.latex.latex_generator import LatexGenerator
-from aishorts.modules.script.llm_providers import ReelSeries
-from pathlib import Path
 
 
 class ScriptConfig(BaseModel):
@@ -39,44 +35,47 @@ class ScriptConfig(BaseModel):
 
 class ImagesConfig(BaseModel):
     provider: str = "unsplash"
-    provider_config: dict = field(default_factory=dict)
+    provider_config: dict = Field(default_factory=dict)
 
 
 class LatexConfig(BaseModel):
     provider: str = "real_latex"
-    provider_config: dict = field(default_factory=dict)
+    provider_config: dict = Field(default_factory=dict)
 
 
 class SubtitleConfig(BaseModel):
     provider: str = "elevenlabs"
-    provider_config: dict = field(default_factory=dict)
+    provider_config: dict = Field(default_factory=dict)
 
 
 class ShortsConfig(BaseModel):
     avatars: list[Avatar]
     video_template: VideoTemplate
-    script_config: ScriptConfig = field(default_factory=ScriptConfig)
-    subtitle_config: SubtitleConfig = field(default_factory=SubtitleConfig)
-    images_config: ImagesConfig = field(default_factory=ImagesConfig)
-    latex_config: LatexConfig = field(default_factory=LatexConfig)
+    script_config: ScriptConfig = Field(default_factory=ScriptConfig)
+    subtitle_config: SubtitleConfig = Field(default_factory=SubtitleConfig)
+    images_config: ImagesConfig = Field(default_factory=ImagesConfig)
+    latex_config: LatexConfig = Field(default_factory=LatexConfig)
 
 
 class ShortsGenerator:
     def __init__(
         self,
         shorts_config: ShortsConfig,
-        tts_api_key: str | None = None,
-        lipsync_api_key: str | None = None,
+        tts_f5tts_api_key: str | None = None,
+        tts_lemonfox_api_key: str | None = None,
+        lipsync_float_api_key: str | None = None,
         subtitles_api_key: str | None = None,
         llm_api_key: str | None = None,
+        image_api_key: str | None = None,
     ):
-        self._setup_logging()
-
-        self.tts_api_key = tts_api_key
-        self.lipsync_api_key = lipsync_api_key
+        self.tts_f5tts_api_key = tts_f5tts_api_key
+        self.tts_lemonfox_api_key = tts_lemonfox_api_key
+        self.lipsync_float_api_key = lipsync_float_api_key
         self.subtitles_api_key = subtitles_api_key
         self.llm_api_key = llm_api_key
+        self.image_api_key = image_api_key
 
+        self._setup_logging()
         self.update_config(shorts_config)
 
     def update_config(self, shorts_config: ShortsConfig):
@@ -88,11 +87,14 @@ class ShortsGenerator:
             self.video_template.edit_template.lower()
         ).required_assets
 
+        # Setup all the modules
+
         self.image_gen = ImageGenerator(
             provider=shorts_config.images_config.provider,
             max_width=self.template_config.max_image_width,
             max_height=self.template_config.max_image_height,
             image_style=self.template_config.image_style,
+            api_key=self.image_api_key,
             **shorts_config.images_config.provider_config,
         )
 
@@ -116,11 +118,12 @@ class ShortsGenerator:
 
         self.voice_gen = VoiceGenerator(
             avatars=self.avatars,
-            api_key=self.tts_api_key,
+            tts_f5tts_api_key=self.tts_f5tts_api_key,
+            tts_lemonfox_api_key=self.tts_lemonfox_api_key,
         )
 
         self.lipsync_gen = LipsyncGenerator(
-            avatars=self.avatars, api_key=self.lipsync_api_key
+            avatars=self.avatars, lipsync_float_api_key=self.lipsync_float_api_key
         )
 
         self.subtitle_gen = SubtitleGenerator(
@@ -185,14 +188,14 @@ class ShortsGenerator:
         template_assets = [TemplateAssets() for _ in range(amount)]
 
         # Script
-        self.logger.info("\n\n Generating scripts...")
+        self.logger.info("Generating scripts...")
         if AssetType.SCRIPT in self.required_assets:
-            # reel_series = await self.script_gen.generate_script(
-            #    num_reels=amount, files=files, user_input=user_input
-            # )
+            reel_series = await self.script_gen.generate_script(
+                num_reels=amount, files=files, user_input=user_input
+            )
 
-            reel_json = Path("tests/test_configs/mock_script.json").read_text()
-            reel_series = ReelSeries.model_validate_json(reel_json)
+            # reel_json = Path("tests/test_configs/mock_script.json").read_text()
+            # reel_series = ReelSeries.model_validate_json(reel_json)
 
             for asset, result in zip(template_assets, reel_series.reels):
                 asset.reel_script = result
@@ -252,7 +255,6 @@ class ShortsGenerator:
             self._save_debug_state(template_assets, "lipsync_subs")
 
         # Video Edit
-        self.logger.info(f"Assets: {template_assets}")
         self.logger.info("Generating final video...")
         results = []
         for asset in template_assets:

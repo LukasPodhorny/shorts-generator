@@ -56,7 +56,7 @@ def mock_reel(mock_f5_avatar, mock_lemon_avatar):
 @patch.dict(os.environ, {"F5TTS_ENDPOINT_ID": "test-endpoint"})
 @patch("aishorts.modules.tts.tts_providers.EndpointCaller.__init__")
 def test_f5tts_init(mock_caller_init, mock_f5_avatar):
-    tts = F5TTS(avatars=[mock_f5_avatar], api_key="test-key")
+    tts = F5TTS(avatars=[mock_f5_avatar], tts_f5tts_api_key="test-key")
     mock_caller_init.assert_called_once_with(
         endpoint_id="test-endpoint", timeout=600, api_key="test-key"
     )
@@ -103,8 +103,8 @@ async def test_f5tts_generate_reel_dialogues(mock_download, mock_f5_avatar, mock
 
 @patch("aishorts.modules.tts.tts_providers.CloudflareR2")
 def test_lemonfox_init(MockR2, mock_lemon_avatar):
-    tts = LemonFoxTTS(avatars=[mock_lemon_avatar], api_key="test-key")
-    assert tts.api_key == "test-key"
+    tts = LemonFoxTTS(avatars=[mock_lemon_avatar], tts_lemonfox_api_key="test-key")
+    assert tts.tts_lemonfox_api_key == "test-key"
     MockR2.assert_called_once()
 
 

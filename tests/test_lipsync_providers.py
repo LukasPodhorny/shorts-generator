@@ -22,7 +22,9 @@ def float_provider(mock_avatar):
     # Mock EndpointCaller init to avoid network/env checks
     with patch("aishorts.modules.lipsync.lipsync_providers.EndpointCaller.__init__"):
         provider = FLOATLipsync(
-            avatars=[mock_avatar], api_key="key", endpoint_id="test_id"
+            avatars=[mock_avatar],
+            lipsync_float_api_key="key",
+            endpoint_id="test_id",
         )
         # Manually set attributes usually set by super().__init__
         provider.endpoint_id = "test_id"

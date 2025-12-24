@@ -36,12 +36,15 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
         download_results: bool = True,
         timeout=2000,
         endpoint_id: str | None = None,
-        api_key: str | None = None,
+        lipsync_float_api_key: str | None = None,
+        **kwargs,
     ):
         self.endpoint_id = endpoint_id or os.getenv("FLOAT_ENDPOINT_ID")
-        super().__init__(endpoint_id=self.endpoint_id, timeout=timeout, api_key=api_key)
+        super().__init__(
+            endpoint_id=self.endpoint_id, timeout=timeout, api_key=lipsync_float_api_key
+        )
         self.avatars = avatars
-        self.downoad_results = download_results
+        self.download_results = download_results
 
     def _prepare_single_input(
         self, audio_url: str, emotion: str, seed: int, id: int
@@ -115,7 +118,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
 
         filepath = (
             await download_from_url(result_url, LipsyncProvider.OUTPUT_DIR)
-            if self.downoad_results
+            if self.download_results
             else None
         )
         return LipsyncResult(
@@ -140,7 +143,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
             video_url = item["video_url"]
             filepath = (
                 await download_from_url(video_url, LipsyncProvider.OUTPUT_DIR)
-                if self.downoad_results
+                if self.download_results
                 else None
             )
 

@@ -50,11 +50,23 @@ def test_voice_generator_init(mock_get_provider, mock_avatars):
         "lemonfox": mock_lemon_cls,
     }.get(p)
 
-    vg = VoiceGenerator(avatars=mock_avatars, api_key="test")
+    vg = VoiceGenerator(
+        avatars=mock_avatars,
+        tts_f5tts_api_key="f5_key",
+        tts_lemonfox_api_key="lemon_key",
+    )
 
     assert len(vg.provider_instances) == 2
-    mock_f5_cls.assert_called_once_with(avatars=mock_avatars, api_key="test")
-    mock_lemon_cls.assert_called_once_with(avatars=mock_avatars, api_key="test")
+    mock_f5_cls.assert_called_once_with(
+        avatars=mock_avatars,
+        tts_f5tts_api_key="f5_key",
+        tts_lemonfox_api_key="lemon_key",
+    )
+    mock_lemon_cls.assert_called_once_with(
+        avatars=mock_avatars,
+        tts_f5tts_api_key="f5_key",
+        tts_lemonfox_api_key="lemon_key",
+    )
 
 
 @pytest.mark.asyncio

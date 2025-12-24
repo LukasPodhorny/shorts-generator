@@ -63,8 +63,6 @@ async def test_generate_shorts_flow(shorts_generator):
     # Mock EditTemplate to return required assets
     with (
         patch("aishorts.shorts_generator.EditTemplate.get") as mock_edit_template_get,
-        patch("aishorts.shorts_generator.Path") as MockPath,
-        patch("aishorts.shorts_generator.ReelSeries") as MockReelSeries,
     ):
 
         # Setup required assets
@@ -79,17 +77,15 @@ async def test_generate_shorts_flow(shorts_generator):
         ]
         mock_edit_template_get.return_value = mock_template_cls
 
-        # Setup Script Mock (Path.read_text and ReelSeries.model_validate_json)
-        mock_path_instance = MockPath.return_value
-        mock_path_instance.read_text.return_value = "{}"
-
         mock_reel = MagicMock()
         mock_series = MagicMock()
         mock_series.reels = [mock_reel]
-        MockReelSeries.model_validate_json.return_value = mock_series
 
         # Setup Generator Mocks
         # Note: The generator instances are attributes of shorts_generator
+        shorts_generator.script_gen.generate_script = AsyncMock(
+            return_value=mock_series
+        )
         shorts_generator.voice_gen.generate_reel_dialogues = AsyncMock(
             return_value=["voice_result"]
         )
@@ -116,9 +112,7 @@ async def test_generate_shorts_flow(shorts_generator):
 
         # Verify calls
         # Script
-        MockPath.assert_called_with("tests/test_configs/mock_script.json")
-        mock_path_instance.read_text.assert_called_once()
-        MockReelSeries.model_validate_json.assert_called_once()
+        shorts_generator.script_gen.generate_script.assert_called_once()
 
         # Generators
         shorts_generator.voice_gen.generate_reel_dialogues.assert_called()
