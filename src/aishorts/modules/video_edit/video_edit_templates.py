@@ -106,6 +106,7 @@ class GameplayTemplate(EditTemplate):
                 start_time=media.start_time,
                 end_time=media.end_time,
                 duration=0.4,
+                easing="ease_ease_in_out_quart",
             )
 
             x_expr = Animator.slide_horizontal(
@@ -114,6 +115,7 @@ class GameplayTemplate(EditTemplate):
                 duration=0.4,
                 enter_from="left",
                 exit_to="right",
+                easing="ease_in_out_quart",
             )
 
             main_v = graph.add_raw(

@@ -537,37 +537,74 @@ class Animator:
     """Helper for generating FFmpeg animation expressions and filters"""
 
     @staticmethod
+    def _get_easing(p: str, type: str = "linear") -> str:
+        """Returns FFmpeg expression for easing function applied to normalized time p (0-1)"""
+        if type == "linear":
+            return p
+
+        # Quadratic
+        if type == "ease_in_quad":
+            return f"pow({p},2)"
+        if type == "ease_out_quad":
+            return f"(1-pow(1-{p},2))"
+        if type == "ease_in_out_quad":
+            return f"if(lt({p},0.5), 2*pow({p},2), 1-pow(-2*{p}+2,2)/2)"
+
+        # Cubic
+        if type == "ease_in_cubic":
+            return f"pow({p},3)"
+        if type == "ease_out_cubic":
+            return f"(1-pow(1-{p},3))"
+        if type == "ease_in_out_cubic":
+            return f"if(lt({p},0.5), 4*pow({p},3), 1-pow(-2*{p}+2,3)/2)"
+
+        # Quartic
+        if type == "ease_in_quart":
+            return f"pow({p},4)"
+        if type == "ease_out_quart":
+            return f"(1-pow(1-{p},4))"
+        if type == "ease_in_out_quart":
+            return f"if(lt({p},0.5), 8*pow({p},4), 1-pow(-2*{p}+2,4)/2)"
+
+        return p
+
+    @staticmethod
     def slide_horizontal(
         start_time: float,
         end_time: float,
         duration: float = 0.4,
         enter_from: str = "left",  # "left", "right", "none"
         exit_to: str = "right",  # "left", "right", "none"
+        easing: str = "ease_in_out_quart",
         width_var: str = "w",
         parent_width_var: str = "W",
     ) -> str:
         center = f"(({parent_width_var}-{width_var})/2)"
 
+        # Normalized time 0->1
+        t_entry = f"min(max((t-{start_time})/{duration},0),1)"
+        p_entry = Animator._get_easing(t_entry, easing)
+
         # Entry Logic
         if enter_from == "left":
             # Linear interp from -w to center
-            entry = f"-{width_var} + ({center} + {width_var}) * min((t-{start_time})/{duration}, 1)"
+            entry = f"-{width_var} + ({center} + {width_var}) * {p_entry}"
         elif enter_from == "right":
-            entry = f"{parent_width_var} - ({parent_width_var} - {center}) * min((t-{start_time})/{duration}, 1)"
+            entry = f"{parent_width_var} - ({parent_width_var} - {center}) * {p_entry}"
         else:
             entry = center
 
         # Exit Logic
         # Exit starts at end_time - duration
         exit_start = f"({end_time}-{duration})"
+        t_exit = f"min(max((t-{exit_start})/{duration},0),1)"
+        p_exit = Animator._get_easing(t_exit, easing)
 
         if exit_to == "right":
             # Linear interp from center to W
-            exit_expr = f"{center} + ({parent_width_var} - {center}) * (t-{exit_start})/{duration}"
+            exit_expr = f"{center} + ({parent_width_var} - {center}) * {p_exit}"
         elif exit_to == "left":
-            exit_expr = (
-                f"{center} - ({center} + {width_var}) * (t-{exit_start})/{duration}"
-            )
+            exit_expr = f"{center} - ({center} + {width_var}) * {p_exit}"
         else:
             exit_expr = center
 
@@ -584,6 +621,7 @@ class Animator:
         end_time: float,
         duration: float = 0.4,
         is_static: bool = True,
+        easing: str = "linear",
     ) -> FilterNode:
         """Applies fade-in and fade-out to the alpha channel"""
         if is_static:
@@ -591,6 +629,18 @@ class Animator:
             node = node.filter("setpts", "N/FRAME_RATE/TB")
             node = node.filter("format", "yuva420p")
 
-        return node.filter("fade", t="in", st=start_time, d=duration, alpha=1).filter(
-            "fade", t="out", st=end_time - duration, d=duration, alpha=1
-        )
+        if easing == "linear":
+            return node.filter(
+                "fade", t="in", st=start_time, d=duration, alpha=1
+            ).filter("fade", t="out", st=end_time - duration, d=duration, alpha=1)
+
+        # Custom easing using geq
+        t_in = f"min(max((t-{start_time})/{duration},0),1)"
+        p_in = Animator._get_easing(t_in, easing)
+
+        exit_start = f"({end_time}-{duration})"
+        t_out = f"min(max((t-{exit_start})/{duration},0),1)"
+        p_out = Animator._get_easing(t_out, easing)
+
+        expr = f"if(lt(t, {start_time}+{duration}), {p_in}, if(gt(t, {end_time}-{duration}), 1-{p_out}, 1))"
+        return node.filter("geq", a=f"alpha(X,Y)*({expr})")
