@@ -28,17 +28,25 @@ class LatexMedia(MediaBase):
 Media = ImageMedia | LatexMedia
 
 
-class Block(BaseModel):
+class DialogueBlock(BaseModel):
     type: Literal["dialogue"]
     avatar: str
     text: str
-
-    # Each block can have:
-    # - no media
-    # - one image
-    # - one latex
-    # (but not both)
     media: Optional[Media] = None
+
+
+class QuestionBlock(BaseModel):
+    type: Literal["question"]
+    avatar: str
+    text: str
+    answer: str
+    answer_duration: float = 2.0
+    thinking_duration: float = 5.0
+
+
+# A Block can now be one of several types, distinguished by the `type` field.
+# Pydantic uses this "discriminated union" to automatically parse the correct data model.
+Block = DialogueBlock | QuestionBlock
 
 
 class Reel(BaseModel):

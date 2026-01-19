@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import os
 from openai.types.audio import TranscriptionVerbose
 import subprocess
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
 from aishorts.modules.tts.tts_providers import TTSResult
 from aishorts.modules.script.script import Reel, Block
@@ -113,16 +113,29 @@ class SubtitleStyle(BaseModel):
 class TemplateConfig(BaseModel):
     bg_video: str | None = None
     music: str | None = None
-    subtitle_style: SubtitleStyle | None = None
+    subtitle_style: SubtitleStyle | None = Field(default_factory=SubtitleStyle)
     chromakey_color: str | None = "0x00FF00"
     chromakey_similarity: float | None = 0.17
     chromakey_blend: float | None = 0.2
-    image_style: ImageStyle | None = None
-    max_image_width: int | None = None
-    max_image_height: int | None = None
-    latex_style: ImageStyle | None = None
-    latex_width: int | None = None
-    latex_height: int | None = None
+    image_style: ImageStyle | None = Field(default_factory=ImageStyle)
+    max_image_width: int | None = 800
+    max_image_height: int | None = 600
+    latex_style: ImageStyle | None = Field(default_factory=ImageStyle)
+    latex_width: int | None = 600
+    latex_height: int | None = 300
+    question_graphic: str = "MotionGraphicQuestion"
+
+    def get_question_graphic_class(self):
+        from aishorts.modules.motion_graphic.questions import MotionGraphicQuestion
+
+        registry = {
+            "MotionGraphicQuestion": MotionGraphicQuestion,
+        }
+
+        if self.question_graphic not in registry:
+            raise ValueError(f"Unknown motion graphic class: {self.question_graphic}")
+
+        return registry[self.question_graphic]
 
 
 class VideoTemplate(BaseModel):

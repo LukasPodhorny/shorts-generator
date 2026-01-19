@@ -17,6 +17,8 @@ from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
 from aishorts.modules.latex.latex_generator import LatexGenerator
+from pathlib import Path
+from aishorts.modules.script.script import ReelSeries
 
 
 class ScriptConfig(BaseModel):
@@ -190,12 +192,12 @@ class ShortsGenerator:
         # Script
         self.logger.info("Generating scripts...")
         if AssetType.SCRIPT in self.required_assets:
-            reel_series = await self.script_gen.generate_script(
-                num_reels=amount, files=files, user_input=user_input
-            )
+            # reel_series = await self.script_gen.generate_script(
+            #    num_reels=amount, files=files, user_input=user_input
+            # )
 
-            # reel_json = Path("tests/test_configs/mock_script.json").read_text()
-            # reel_series = ReelSeries.model_validate_json(reel_json)
+            reel_json = Path("tests/test_configs/mock_script.json").read_text()
+            reel_series = ReelSeries.model_validate_json(reel_json)
 
             for asset, result in zip(template_assets, reel_series.reels):
                 asset.reel_script = result
