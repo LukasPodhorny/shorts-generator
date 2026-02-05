@@ -2,6 +2,7 @@ from aishorts.modules.avatar import Avatar
 from aishorts.modules.script.llm_providers import *
 from aishorts.modules.script.llm_providers import LLMProvider
 from aishorts.utils.async_utils import await_or_thread
+from aishorts.modules.script.script import ReelSeries
 
 
 class ScriptGenerator:

@@ -8,7 +8,7 @@ from aishorts.modules.tts.voice_generator import VoiceGenerator
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
 from aishorts.modules.video_edit.video_generator import VideoGenerator
 from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
-from aishorts.modules.video_edit.video_edit import VideoTemplate, TemplateAssets
+from aishorts.modules.video_edit.video_edit import VideoTemplate
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.video_edit.video_edit_templates import *
 from aishorts.modules.video_edit.video_edit_templates import EditTemplate
@@ -156,31 +156,15 @@ class ShortsGenerator:
             sh.setFormatter(logging.Formatter("%(message)s"))
             self.logger.addHandler(sh)
 
-    def _save_debug_state(self, assets: list[TemplateAssets], stage: str):
     def _save_debug_state(self, reel_series: ReelSeries, stage: str):
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = f"logs/assets_{stage}_{timestamp}.pkl"
             with open(filepath, "wb") as f:
-                pickle.dump(assets, f)
                 pickle.dump(reel_series, f)
             self.logger.info(f"Saved checkpoint: {filepath}")
         except Exception as e:
             self.logger.error(f"Failed to save checkpoint: {e}")
-
-    def _apply_results(self, template_assets, tasks_map, results):
-        attr_map = {
-            AssetType.LATEX: "latex",
-            AssetType.IMAGES: "images",
-            AssetType.VOICE: "voiceovers",
-            AssetType.LIPSYNC: "lipsync_videos",
-            AssetType.SUBTITLES: "subtitles",
-        }
-
-        for asset_type, batch_result in zip(tasks_map.keys(), results):
-            if attr_name := attr_map.get(asset_type):
-                for asset, res in zip(template_assets, batch_result):
-                    setattr(asset, attr_name, res)
 
     async def generate_shorts_async(
         self,
@@ -189,28 +173,22 @@ class ShortsGenerator:
         user_input: str | None = None,
     ) -> list[str]:
 
-        template_assets = [TemplateAssets() for _ in range(amount)]
-
         # Script
         self.logger.info("Generating scripts...")
+        reel_series = None
         if AssetType.SCRIPT in self.required_assets:
-            # reel_series = await self.script_gen.generate_script(
-            #    num_reels=amount, files=files, user_input=user_input
-            # )
-
-            reel_json = Path("tests/test_configs/mock_script.json").read_text()
-            reel_series = ReelSeries.model_validate_json(reel_json)
-
-            for asset, result in zip(template_assets, reel_series.reels):
-                asset.reel_script = result
+            reel_series = await self.script_gen.generate_script(
+                num_reels=amount, files=files, user_input=user_input
+            )
             self._save_debug_state(reel_series, "script")
 
-            self._save_debug_state(template_assets, "script")
+        if not reel_series:
+            self.logger.warning("No script generated or loaded. Exiting.")
+            return []
 
         # TTS, Images, LaTex
         self.logger.info("Generating voiceover, images, latex...")
-        tasks_map = {}
-        
+
         async def process_reel_media(reel):
             tasks = []
             if AssetType.VOICE in self.required_assets:
@@ -219,7 +197,7 @@ class ShortsGenerator:
                 tasks.append(self.image_gen.populate_reel(reel))
             if AssetType.LATEX in self.required_assets:
                 tasks.append(self.latex_gen.populate_reel(reel))
-            
+
             if tasks:
                 await asyncio.gather(*tasks)
             return reel
@@ -229,28 +207,32 @@ class ShortsGenerator:
 
         # Lipsync, Subtitles
         self.logger.info("Generating lipsync video and subtitles...")
-        
+
         async def process_reel_lipsync(reel):
             tasks = []
             if AssetType.LIPSYNC in self.required_assets:
                 tasks.append(self.lipsync_gen.populate_reel(reel))
             if AssetType.SUBTITLES in self.required_assets:
                 tasks.append(self.subtitle_gen.populate_reel(reel))
-            
+
             if tasks:
                 await asyncio.gather(*tasks)
             return reel
 
-        await asyncio.gather(*[process_reel_lipsync(reel) for reel in reel_series.reels])
+        await asyncio.gather(
+            *[process_reel_lipsync(reel) for reel in reel_series.reels]
+        )
         self._save_debug_state(reel_series, "lipsync_subs")
 
         # Video Edit
         self.logger.info("Generating final video...")
         results = []
-        for asset in template_assets:
-            results.append(self.video_gen.compose(template_assets=asset))
-        # Note: VideoGenerator.compose will need to be updated to accept 'reel' instead of 'template_assets'
-        # But per instructions, we are not touching video edit part yet.
+
+        # for asset in template_assets:
+        #   results.append(self.video_gen.compose(template_assets=asset))
+        # Note: VideoGenerator.compose needs to be updated to accept 'reel' instead of 'template_assets'.
+        # Commenting out for now as requested to not touch video edit part yet.
+
         # for reel in reel_series.reels:
         #     results.append(self.video_gen.compose(reel=reel))
 
