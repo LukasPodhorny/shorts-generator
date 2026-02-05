@@ -23,12 +23,7 @@ class LipsyncProvider(Provider):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod
-    def generate_lipsyncs(
-        self, tts_results: list[TTSResult], **kwargs
-    ) -> list[LipsyncResult]:
-    def populate_reel(
-        self, reel: Reel, **kwargs
-    ) -> None:
+    def populate_reel(self, reel: Reel, **kwargs) -> None:
         pass
 
 
@@ -130,14 +125,11 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
             filepath=filepath, url=result_url, avatar=self.avatars[0], id=id
         )
 
-    async def generate_lipsyncs(
     async def populate_reel(
         self,
-        tts_results: list[TTSResult],
         reel: Reel,
         emotion: str = "neutral",
         seed: int = 15,
-    ) -> list[LipsyncResult]:
     ) -> None:
         # Reconstruct TTSResults from Reel
         tts_results = []
@@ -146,13 +138,15 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
                 # Check if this avatar belongs to this provider
                 avatar = find_by(self.avatars, name=block.avatar)
                 if avatar and avatar.lipsync_provider.lower() == self.provider_name:
-                    tts_results.append(TTSResult(
-                        id=i,
-                        url=block.assets.voice_url,
-                        filepath=block.assets.voice_filepath,
-                        avatar=avatar
-                    ))
-        
+                    tts_results.append(
+                        TTSResult(
+                            id=i,
+                            url=block.assets.voice_url,
+                            filepath=block.assets.voice_filepath,
+                            avatar=avatar,
+                        )
+                    )
+
         if not tts_results:
             return
 
@@ -172,21 +166,11 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
                 else None
             )
 
-            results.append(
-                LipsyncResult(
-                    filepath=filepath,
-                    url=video_url,
-                    avatar=tts_results[i].avatar,
-                    id=item["id"],
-                )
-            )
             # Map back to reel
             block_id = item["id"]
             block = reel.blocks[block_id]
             block.assets.lipsync_filepath = filepath
             block.assets.lipsync_url = video_url
-
-        return results
 
 
 """

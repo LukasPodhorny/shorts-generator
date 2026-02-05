@@ -59,33 +59,12 @@ class LipsyncGenerator:
 
         return await await_or_thread(func, audio_url, id, **kwargs)
 
-    async def generate_lipsyncs(
-        self, tts_results: list[TTSResult], **kwargs
-    ) -> list[LipsyncResult]:
-        """
-        Parameters:
-            audio_url: str
-                Link with audio file
-            emotion: str
-                Used by FLOAT backend only.
-            seed: int
-                Used by FLOAT backend only.
-        """
-
-        lipsync_results = []
     async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
         """Generates lipsyncs and populates the reel.blocks[i].assets fields in-place."""
         tasks = []
         for lipsync in self.provider_instances:
-            func = lipsync.generate_lipsyncs
-            tasks.append(await_or_thread(func, tts_results, **kwargs))
             func = lipsync.populate_reel
             tasks.append(await_or_thread(func, reel, **kwargs))
 
-        results = await asyncio.gather(*tasks)
-        for res in results:
-            lipsync_results.extend(res)
-
-        return lipsync_results
         await asyncio.gather(*tasks)
         return reel

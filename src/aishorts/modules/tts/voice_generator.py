@@ -1,5 +1,5 @@
 from aishorts.modules.tts.tts_providers import TTSProvider, TTSResult
-from aishorts.modules.script.script import Reel
+from aishorts.modules.script.script import Reel, BlockAssets, AssetType
 from aishorts.modules.avatar import Avatar
 from aishorts.utils.async_utils import await_or_thread
 import asyncio
@@ -45,22 +45,13 @@ class VoiceGenerator:
 
         return await await_or_thread(func, text, id, **kwargs)
 
-    async def generate_reel_dialogues(self, reel: Reel, **kwargs) -> list[TTSResult]:
-        """
-        Parameters:
-            text: str
-                Text that will be converted to speech
-        """
-
-        tts_results = []
+    async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
+        """Generates voiceovers and populates the reel.blocks[i].assets fields in-place."""
         tasks = []
         for tts in self.provider_instances:
-            func = tts.generate_reel_dialogues
+            func = tts.populate_reel
             tasks.append(await_or_thread(func, reel, **kwargs))
 
-        results = await asyncio.gather(*tasks)
-        for res in results:
-            tts_results.extend(res)
+        await asyncio.gather(*tasks)
 
-        tts_results.sort()
-        return tts_results
+        return reel

@@ -1,5 +1,4 @@
 from aishorts.modules.image.image_providers import ImageProvider, ImageResult
-from aishorts.modules.script.script import Reel
 from aishorts.modules.script.script import Reel, BlockAssets, AssetType
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.image_utils import ImageStyle, style_image
@@ -55,18 +54,12 @@ class ImageGenerator:
 
         return results
 
-    async def get_reel_images(self, reel: Reel, **kwargs) -> list[ImageResult]:
     async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
         """Generates images and populates the reel.blocks[i].assets fields in-place."""
         func = self.image_gen.populate_reel
 
-        func = self.image_gen.get_reel_images
-
-        results = await await_or_thread(
         # Provider now populates the reel directly
-        await await_or_thread(
-            func, reel, self.max_width, self.max_height, **kwargs
-        )
+        await await_or_thread(func, reel, self.max_width, self.max_height, **kwargs)
 
         # We need to iterate blocks to style the images that were just generated
         async def _style_task(result):
@@ -79,15 +72,15 @@ class ImageGenerator:
                 self.image_style,
             )
 
-        await asyncio.gather(*[_style_task(r) for r in results])
         # Collect results from the reel for styling
         results_to_style = []
         for block in reel.blocks:
             if AssetType.IMAGES in block.valid_assets and block.assets.image_filepath:
                 # Create a temporary object or just pass path to style task
-                results_to_style.append(ImageResult(media=MediaFile(id=0, path=block.assets.image_filepath)))
+                results_to_style.append(
+                    ImageResult(media=MediaFile(id=0, path=block.assets.image_filepath))
+                )
 
-        return results
         await asyncio.gather(*[_style_task(r) for r in results_to_style])
-        
+
         return reel

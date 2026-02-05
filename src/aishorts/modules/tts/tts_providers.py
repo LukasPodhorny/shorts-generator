@@ -11,7 +11,7 @@ from aishorts.modules.script.script import Reel
 from aishorts.modules.avatar import Avatar
 from aishorts.utils.pydantic_helper import find_by
 import asyncio
-from aishorts.modules.script.script import Reel
+from aishorts.modules.script.script import Reel, AssetType
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
 
@@ -32,11 +32,11 @@ class TTSProvider(Provider):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod
-    def generate_reel_dialogues(
+    def populate_reel(
         self,
         reel: Reel,
         **kwargs,
-    ) -> list[TTSResult]:
+    ) -> None:
         pass
 
 
@@ -103,7 +103,7 @@ class F5TTS(EndpointCaller, TTSProvider):
                 "id": idx,
             }
             for idx, block in enumerate(reel.blocks)
-            if block.type == "dialogue" and block.avatar in valid_avatars
+            if AssetType.VOICE in block.valid_assets and block.avatar in valid_avatars
         ]
 
         return {"input": {"voices": voices, "dialogues": dialogues}}
@@ -126,29 +126,22 @@ class F5TTS(EndpointCaller, TTSProvider):
             transcription=text,
         )
 
-    async def generate_reel_dialogues(self, reel: Reel) -> list[TTSResult]:
-        tts_results = []
-
+    async def populate_reel(self, reel: Reel) -> None:
         reel_input = self._prepare_reel_input(reel)
+        if not reel_input["input"]["dialogues"]:
+            return
+
         results = await self.run_async(reel_input)
 
         for i, dialogue in enumerate(results):
             result_url = dialogue["audio_url"]
             filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
 
-            tts_results.append(
-                TTSResult(
-                    filepath=filepath,
-                    url=result_url,
-                    avatar=find_by(
-                        self.avatars, name=reel_input["input"]["dialogues"][i]["voice"]
-                    ),
-                    id=dialogue["id"],
-                    transcription=reel_input["input"]["dialogues"][i]["text"],
-                )
-            )
-
-        return tts_results
+            # Map back to block
+            block_id = dialogue["id"]
+            block = reel.blocks[block_id]
+            block.assets.voice_filepath = filepath
+            block.assets.voice_url = result_url
 
 
 class LemonFoxTTS(TTSProvider):
@@ -207,7 +200,7 @@ class LemonFoxTTS(TTSProvider):
                     text = await response.text()
                     raise RuntimeError(f"Error {response.status}: {text}")
 
-    async def generate_reel_dialogues(self, reel: Reel) -> list[TTSResult]:
+    async def populate_reel(self, reel: Reel) -> None:
         url = "https://api.lemonfox.ai/v1/audio/speech"
 
         headers = {
@@ -244,13 +237,10 @@ class LemonFoxTTS(TTSProvider):
                             filepath, "lemonfox/" + os.path.basename(filepath)
                         )
 
-                        return TTSResult(
-                            filepath=filepath,
-                            url=result_url,
-                            avatar=avatar,
-                            id=id,
-                            transcription=block.text,
-                        )
+                        # Populate block directly
+                        block.assets.voice_filepath = filepath
+                        block.assets.voice_url = result_url
+
                     else:
                         text = await response.text()
                         raise RuntimeError(f"Error {response.status}: {text}")
@@ -258,9 +248,8 @@ class LemonFoxTTS(TTSProvider):
         tasks = [
             generate_single_dialogue(block, idx)
             for idx, block in enumerate(reel.blocks)
-            if block.type == "dialogue" and block.avatar in valid_avatars
+            if AssetType.VOICE in block.valid_assets and block.avatar in valid_avatars
         ]
 
         # Execute all tasks concurrently
-        results = await asyncio.gather(*tasks)
-        return results
+        await asyncio.gather(*tasks)

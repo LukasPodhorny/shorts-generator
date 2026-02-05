@@ -224,34 +224,11 @@ class ShortsGenerator:
                 await asyncio.gather(*tasks)
             return reel
 
-        if AssetType.VOICE in self.required_assets:
-            tasks_map[AssetType.VOICE] = asyncio.gather(
-                *[
-                    self.voice_gen.generate_reel_dialogues(reel)
-                    for reel in reel_series.reels
-                ]
-            )
         await asyncio.gather(*[process_reel_media(reel) for reel in reel_series.reels])
         self._save_debug_state(reel_series, "media")
 
-        if AssetType.IMAGES in self.required_assets:
-            tasks_map[AssetType.IMAGES] = asyncio.gather(
-                *[self.image_gen.get_reel_images(reel) for reel in reel_series.reels]
-            )
-
-        if AssetType.LATEX in self.required_assets:
-            tasks_map[AssetType.LATEX] = asyncio.gather(
-                *[self.latex_gen.get_reel_images(reel) for reel in reel_series.reels]
-            )
-
-        if tasks_map:
-            results = await asyncio.gather(*tasks_map.values())
-            self._apply_results(template_assets, tasks_map, results)
-            self._save_debug_state(template_assets, "media")
-
         # Lipsync, Subtitles
         self.logger.info("Generating lipsync video and subtitles...")
-        tasks_map_2 = {}
         
         async def process_reel_lipsync(reel):
             tasks = []
@@ -264,28 +241,8 @@ class ShortsGenerator:
                 await asyncio.gather(*tasks)
             return reel
 
-        if AssetType.LIPSYNC in self.required_assets:
-            tasks_map_2[AssetType.LIPSYNC] = asyncio.gather(
-                *[
-                    self.lipsync_gen.generate_lipsyncs(asset.voiceovers)
-                    for asset in template_assets
-                ]
-            )
         await asyncio.gather(*[process_reel_lipsync(reel) for reel in reel_series.reels])
         self._save_debug_state(reel_series, "lipsync_subs")
-
-        if AssetType.SUBTITLES in self.required_assets:
-            tasks_map_2[AssetType.SUBTITLES] = asyncio.gather(
-                *[
-                    self.subtitle_gen.generate_multiple_subtitles(asset.voiceovers)
-                    for asset in template_assets
-                ]
-            )
-
-        if tasks_map_2:
-            results = await asyncio.gather(*tasks_map_2.values())
-            self._apply_results(template_assets, tasks_map_2, results)
-            self._save_debug_state(template_assets, "lipsync_subs")
 
         # Video Edit
         self.logger.info("Generating final video...")

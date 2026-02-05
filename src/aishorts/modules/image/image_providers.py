@@ -5,7 +5,6 @@ import aiohttp
 from dataclasses import dataclass
 import os
 from aishorts.utils.r2_handler import download_from_url, CloudflareR2
-from aishorts.modules.script.script import Reel
 from aishorts.modules.script.script import Reel, AssetType
 
 
@@ -20,7 +19,6 @@ class ImageProvider(Provider):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod
-    def get_reel_images(self, reel: Reel, **kwargs) -> list[ImageResult]:
     def populate_reel(self, reel: Reel, **kwargs) -> None:
         pass
 
@@ -126,13 +124,11 @@ class Unsplash(ImageProvider):
         results = await asyncio.gather(*download_tasks)
         return results
 
-    async def get_reel_images(
     async def populate_reel(
         self,
         reel: Reel,
         max_width: int,
         max_height: int,
-    ) -> list[ImageResult | None]:
     ) -> None:
         """Fetch images for all queries concurrently"""
 
@@ -140,17 +136,15 @@ class Unsplash(ImageProvider):
         ids = []
 
         for i, block in enumerate(reel.blocks):
-            if block.media:
             if AssetType.IMAGES in block.valid_assets and block.media:
                 if block.media.type == "image":
                     queries.append(block.media.keywords)
                     ids.append(i)
 
-        return await self.get_images(
         results = await self.get_images(
             queries=queries, max_width=max_width, max_height=max_height, ids=ids
         )
-        
+
         for res in results:
             if res:
                 block = reel.blocks[res.media.id]

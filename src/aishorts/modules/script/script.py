@@ -62,7 +62,6 @@ class DialogueBlock(BaseModel):
     avatar: str
     text: str
     media: Optional[Media] = None
-    assets: SkipJsonSchema[Optional[BlockAssets]] = None
     assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
@@ -78,7 +77,6 @@ class QuestionBlock(BaseModel):
     answer: str
     answer_duration: float = 2.0
     thinking_duration: float = 5.0
-    assets: SkipJsonSchema[Optional[BlockAssets]] = None
     assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
