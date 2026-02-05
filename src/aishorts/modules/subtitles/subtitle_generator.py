@@ -1,5 +1,6 @@
 from aishorts.modules.subtitles.subtitle_providers import SubtitlesProvider
 from aishorts.modules.subtitles.subtitle_providers import *
+from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread
 
 
@@ -43,7 +44,11 @@ class SubtitleGenerator:
     async def generate_multiple_subtitles(
         self, tts_results: list[TTSResult], **kwargs
     ) -> list[TranscriptionVerbose]:
+    async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
 
         func = self.subtitle.generate_multiple_subtitles
+        func = self.subtitle.populate_reel
 
         return await await_or_thread(func, tts_results, **kwargs)
+        await await_or_thread(func, reel, **kwargs)
+        return reel

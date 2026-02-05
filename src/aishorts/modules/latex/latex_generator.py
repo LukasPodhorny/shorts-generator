@@ -4,6 +4,7 @@ from aishorts.modules.latex.latex_providers import (
     Resolution,
 )
 from aishorts.modules.script.script import Reel
+from aishorts.modules.script.script import Reel, AssetType, MediaFile
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.image_utils import ImageStyle, style_image
 import asyncio
@@ -55,10 +56,13 @@ class LatexGenerator:
         return results
 
     async def get_reel_images(self, reel: Reel, **kwargs) -> list[LatexResult]:
+    async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
         resolution = Resolution(self.width, self.height)
 
         func = self.latex_gen.get_reel_images
         results = await await_or_thread(func, reel, resolution, **kwargs)
+        func = self.latex_gen.populate_reel
+        await await_or_thread(func, reel, resolution, **kwargs)
 
         async def _style_task(result):
             await asyncio.to_thread(
@@ -66,5 +70,11 @@ class LatexGenerator:
             )
 
         await asyncio.gather(*[_style_task(r) for r in results])
+        results_to_style = []
+        for block in reel.blocks:
+            if AssetType.LATEX in block.valid_assets and block.assets.latex_filepath:
+                results_to_style.append(LatexResult(media=MediaFile(id=0, path=block.assets.latex_filepath)))
 
         return results
+        await asyncio.gather(*[_style_task(r) for r in results_to_style])
+        return reel

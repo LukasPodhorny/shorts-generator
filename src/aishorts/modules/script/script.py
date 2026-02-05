@@ -1,9 +1,17 @@
-from pydantic import BaseModel
-from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional, Literal, ClassVar
+from typing import List, Optional, Literal, ClassVar, Any
+from pydantic.json_schema import SkipJsonSchema
+from enum import Enum
 
 
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+class AssetType(Enum):
+    SCRIPT = "script"
+    VOICE = "voice"
+    LIPSYNC = "lipsync"
+    SUBTITLES = "subtitles"
+    IMAGES = "images"
+    LATEX = "latex"
 
 
 class Trigger(BaseModel):
@@ -28,20 +36,50 @@ class LatexMedia(MediaBase):
 Media = ImageMedia | LatexMedia
 
 
+class BlockAssets(BaseModel):
+    """Generated assets associated with a block"""
+
+    voice_filepath: Optional[str] = None
+    voice_url: Optional[str] = None
+    lipsync_filepath: Optional[str] = None
+    lipsync_url: Optional[str] = None
+    image_filepath: Optional[str] = None
+    image_url: Optional[str] = None
+    latex_filepath: Optional[str] = None
+    latex_url: Optional[str] = None
+    subtitles: Optional[Any] = None
+
+
 class DialogueBlock(BaseModel):
     type: Literal["dialogue"]
+    valid_assets: ClassVar[List[AssetType]] = [
+        AssetType.VOICE,
+        AssetType.LIPSYNC,
+        AssetType.SUBTITLES,
+        AssetType.IMAGES,
+        AssetType.LATEX,
+    ]
     avatar: str
     text: str
     media: Optional[Media] = None
+    assets: SkipJsonSchema[Optional[BlockAssets]] = None
+    assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
 class QuestionBlock(BaseModel):
     type: Literal["question"]
+    valid_assets: ClassVar[List[AssetType]] = [
+        AssetType.VOICE,
+        AssetType.LIPSYNC,
+        AssetType.SUBTITLES,
+    ]
     avatar: str
     text: str
     answer: str
     answer_duration: float = 2.0
     thinking_duration: float = 5.0
+    assets: SkipJsonSchema[Optional[BlockAssets]] = None
+    assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
 # A Block can now be one of several types, distinguished by the `type` field.

@@ -6,17 +6,22 @@ from elevenlabs.client import ElevenLabs
 import asyncio
 from aishorts.modules.tts.tts_providers import TTSResult
 from aishorts.modules.provider import Provider
+from aishorts.modules.provider import Provider, AssetType
 from abc import abstractmethod
 from pydub import AudioSegment
+from aishorts.modules.script.script import Reel
 
 
 class SubtitlesProvider(Provider):
     @abstractmethod
     def generate_multiple_subtitles(
+    def populate_reel(
         self,
         tts_results: list[TTSResult],
+        reel: Reel,
         **kwargs,
     ) -> list[TranscriptionVerbose]:
+    ) -> None:
         pass
 
 
@@ -116,8 +121,25 @@ class ElevenLabsSubtitles(SubtitlesProvider):
     async def generate_multiple_subtitles(
         self, tts_results: list[TTSResult]
     ) -> list[TranscriptionVerbose]:
+    async def populate_reel(
+        self, reel: Reel
+    ) -> None:
+        
+        tts_results = []
+        for i, block in enumerate(reel.blocks):
+            if AssetType.SUBTITLES in block.valid_assets and block.assets.voice_filepath:
+                tts_results.append(TTSResult(
+                    id=i,
+                    filepath=block.assets.voice_filepath,
+                    transcription=block.text
+                ))
+
         tasks = [
             self.generate_subtitles(tts_result.filepath, tts_result.transcription)
             for tts_result in tts_results
         ]
         return await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+        
+        for tts_res, sub_res in zip(tts_results, results):
+            reel.blocks[tts_res.id].assets.subtitles = sub_res

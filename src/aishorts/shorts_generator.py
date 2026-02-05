@@ -12,7 +12,7 @@ from aishorts.modules.video_edit.video_edit import VideoTemplate, TemplateAssets
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.video_edit.video_edit_templates import *
 from aishorts.modules.video_edit.video_edit_templates import EditTemplate
-from aishorts.modules.video_edit.video_edit import AssetType
+from aishorts.modules.script.script import AssetType
 from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
@@ -157,11 +157,13 @@ class ShortsGenerator:
             self.logger.addHandler(sh)
 
     def _save_debug_state(self, assets: list[TemplateAssets], stage: str):
+    def _save_debug_state(self, reel_series: ReelSeries, stage: str):
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = f"logs/assets_{stage}_{timestamp}.pkl"
             with open(filepath, "wb") as f:
                 pickle.dump(assets, f)
+                pickle.dump(reel_series, f)
             self.logger.info(f"Saved checkpoint: {filepath}")
         except Exception as e:
             self.logger.error(f"Failed to save checkpoint: {e}")
@@ -201,12 +203,26 @@ class ShortsGenerator:
 
             for asset, result in zip(template_assets, reel_series.reels):
                 asset.reel_script = result
+            self._save_debug_state(reel_series, "script")
 
             self._save_debug_state(template_assets, "script")
 
         # TTS, Images, LaTex
         self.logger.info("Generating voiceover, images, latex...")
         tasks_map = {}
+        
+        async def process_reel_media(reel):
+            tasks = []
+            if AssetType.VOICE in self.required_assets:
+                tasks.append(self.voice_gen.populate_reel(reel))
+            if AssetType.IMAGES in self.required_assets:
+                tasks.append(self.image_gen.populate_reel(reel))
+            if AssetType.LATEX in self.required_assets:
+                tasks.append(self.latex_gen.populate_reel(reel))
+            
+            if tasks:
+                await asyncio.gather(*tasks)
+            return reel
 
         if AssetType.VOICE in self.required_assets:
             tasks_map[AssetType.VOICE] = asyncio.gather(
@@ -215,6 +231,8 @@ class ShortsGenerator:
                     for reel in reel_series.reels
                 ]
             )
+        await asyncio.gather(*[process_reel_media(reel) for reel in reel_series.reels])
+        self._save_debug_state(reel_series, "media")
 
         if AssetType.IMAGES in self.required_assets:
             tasks_map[AssetType.IMAGES] = asyncio.gather(
@@ -234,6 +252,17 @@ class ShortsGenerator:
         # Lipsync, Subtitles
         self.logger.info("Generating lipsync video and subtitles...")
         tasks_map_2 = {}
+        
+        async def process_reel_lipsync(reel):
+            tasks = []
+            if AssetType.LIPSYNC in self.required_assets:
+                tasks.append(self.lipsync_gen.populate_reel(reel))
+            if AssetType.SUBTITLES in self.required_assets:
+                tasks.append(self.subtitle_gen.populate_reel(reel))
+            
+            if tasks:
+                await asyncio.gather(*tasks)
+            return reel
 
         if AssetType.LIPSYNC in self.required_assets:
             tasks_map_2[AssetType.LIPSYNC] = asyncio.gather(
@@ -242,6 +271,8 @@ class ShortsGenerator:
                     for asset in template_assets
                 ]
             )
+        await asyncio.gather(*[process_reel_lipsync(reel) for reel in reel_series.reels])
+        self._save_debug_state(reel_series, "lipsync_subs")
 
         if AssetType.SUBTITLES in self.required_assets:
             tasks_map_2[AssetType.SUBTITLES] = asyncio.gather(
@@ -261,6 +292,10 @@ class ShortsGenerator:
         results = []
         for asset in template_assets:
             results.append(self.video_gen.compose(template_assets=asset))
+        # Note: VideoGenerator.compose will need to be updated to accept 'reel' instead of 'template_assets'
+        # But per instructions, we are not touching video edit part yet.
+        # for reel in reel_series.reels:
+        #     results.append(self.video_gen.compose(reel=reel))
 
         return results
 

@@ -3,6 +3,8 @@ from aishorts.modules.avatar import Avatar
 from aishorts.utils.runpod_caller import EndpointCaller
 from aishorts.utils.r2_handler import download_from_url
 from aishorts.modules.tts.tts_providers import TTSResult
+from aishorts.modules.script.script import Reel, AssetType
+from aishorts.utils.pydantic_helper import find_by
 from dataclasses import dataclass
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
@@ -24,6 +26,9 @@ class LipsyncProvider(Provider):
     def generate_lipsyncs(
         self, tts_results: list[TTSResult], **kwargs
     ) -> list[LipsyncResult]:
+    def populate_reel(
+        self, reel: Reel, **kwargs
+    ) -> None:
         pass
 
 
@@ -126,11 +131,31 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
         )
 
     async def generate_lipsyncs(
+    async def populate_reel(
         self,
         tts_results: list[TTSResult],
+        reel: Reel,
         emotion: str = "neutral",
         seed: int = 15,
     ) -> list[LipsyncResult]:
+    ) -> None:
+        # Reconstruct TTSResults from Reel
+        tts_results = []
+        for i, block in enumerate(reel.blocks):
+            if AssetType.LIPSYNC in block.valid_assets and block.assets.voice_url:
+                # Check if this avatar belongs to this provider
+                avatar = find_by(self.avatars, name=block.avatar)
+                if avatar and avatar.lipsync_provider.lower() == self.provider_name:
+                    tts_results.append(TTSResult(
+                        id=i,
+                        url=block.assets.voice_url,
+                        filepath=block.assets.voice_filepath,
+                        avatar=avatar
+                    ))
+        
+        if not tts_results:
+            return
+
         input_data = self._prepare_list_input(
             tts_results=tts_results, emotion=emotion, seed=seed
         )
@@ -155,6 +180,11 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
                     id=item["id"],
                 )
             )
+            # Map back to reel
+            block_id = item["id"]
+            block = reel.blocks[block_id]
+            block.assets.lipsync_filepath = filepath
+            block.assets.lipsync_url = video_url
 
         return results
 

@@ -2,11 +2,11 @@ from aishorts.modules.video_edit.video_edit import (
     EditTemplate,
     TemplateConfig,
     TemplateAssets,
-    AssetType,
     FFmpegCommand,
     FilterGraph,
     Animator,
 )
+from aishorts.modules.script.script import AssetType
 import os
 
 

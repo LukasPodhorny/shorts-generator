@@ -1,6 +1,7 @@
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.lipsync.lipsync_providers import *
 from aishorts.modules.lipsync.lipsync_providers import LipsyncProvider
+from aishorts.modules.script.script import Reel, AssetType
 from aishorts.utils.async_utils import await_or_thread
 import asyncio
 
@@ -72,13 +73,19 @@ class LipsyncGenerator:
         """
 
         lipsync_results = []
+    async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
+        """Generates lipsyncs and populates the reel.blocks[i].assets fields in-place."""
         tasks = []
         for lipsync in self.provider_instances:
             func = lipsync.generate_lipsyncs
             tasks.append(await_or_thread(func, tts_results, **kwargs))
+            func = lipsync.populate_reel
+            tasks.append(await_or_thread(func, reel, **kwargs))
 
         results = await asyncio.gather(*tasks)
         for res in results:
             lipsync_results.extend(res)
 
         return lipsync_results
+        await asyncio.gather(*tasks)
+        return reel

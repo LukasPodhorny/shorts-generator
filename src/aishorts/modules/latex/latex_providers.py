@@ -8,6 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import uuid
 from aishorts.modules.script.script import Reel
+from aishorts.modules.script.script import Reel, AssetType
 import subprocess
 import tempfile
 from PIL import Image
@@ -34,8 +35,10 @@ class LatexProvider(Provider):
 
     @abstractmethod
     def get_reel_images(
+    def populate_reel(
         self, reel: Reel, resolution: Resolution, **kwargs
     ) -> list[LatexResult]:
+    ) -> None:
         pass
 
 
@@ -88,19 +91,28 @@ class Matplotlib(LatexProvider):
         return results
 
     def get_reel_images(
+    def populate_reel(
         self,
         reel: Reel,
         resolution: Resolution,
     ) -> list[LatexResult]:
+    ) -> None:
 
         latex_codes = []
+        ids = []
 
         for block in reel.blocks:
             if block.media:
+        for i, block in enumerate(reel.blocks):
+            if AssetType.LATEX in block.valid_assets and block.media:
                 if block.media.type == "latex":
                     latex_codes.append(block.media.code)
+                    ids.append(i)
 
         results = self.get_images(latex_codes=latex_codes, resolution=resolution)
+        
+        for res, block_id in zip(results, ids):
+            reel.blocks[block_id].assets.latex_filepath = res.media.path
 
         return results
 
@@ -265,12 +277,22 @@ class RealLatex(LatexProvider):
         return results
 
     def get_reel_images(
+    def populate_reel(
         self,
         reel: Reel,
         resolution: Resolution,
     ) -> list[LatexResult]:
+    ) -> None:
         latex_codes = []
         for block in reel.blocks:
             if block.media and block.media.type == "latex":
+        ids = []
+        for i, block in enumerate(reel.blocks):
+            if AssetType.LATEX in block.valid_assets and block.media and block.media.type == "latex":
                 latex_codes.append(block.media.code)
         return self.get_images(latex_codes, resolution)
+                ids.append(i)
+        
+        results = self.get_images(latex_codes, resolution)
+        for res, block_id in zip(results, ids):
+            reel.blocks[block_id].assets.latex_filepath = res.media.path

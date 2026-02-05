@@ -28,6 +28,7 @@ class TTSResult:
 class TTSProvider(Provider):
 
     OUTPUT_DIR = os.getenv("TTS_OUTPUT_DIR") or "output/tts"
+    # asset type
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod

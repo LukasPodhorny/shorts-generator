@@ -5,7 +5,7 @@ import subprocess
 from pydantic import BaseModel, Field
 from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
 from aishorts.modules.tts.tts_providers import TTSResult
-from aishorts.modules.script.script import Reel, Block
+from aishorts.modules.script.script import Reel, Block, AssetType
 import uuid
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
@@ -18,15 +18,6 @@ from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from aishorts.modules.image.image_providers import ImageResult
 from aishorts.modules.latex.latex_providers import LatexResult
 from aishorts.utils.image_utils import ImageStyle
-
-
-class AssetType(Enum):
-    SCRIPT = "script"
-    VOICE = "voice"
-    LIPSYNC = "lipsync"
-    SUBTITLES = "subtitles"
-    IMAGES = "images"
-    LATEX = "latex"
 
 
 @dataclass
