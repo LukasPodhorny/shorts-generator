@@ -5,7 +5,8 @@ from io import BytesIO
 from elevenlabs.client import ElevenLabs
 import asyncio
 from aishorts.modules.tts.tts_providers import TTSResult
-from aishorts.modules.provider import Provider, AssetType
+from aishorts.modules.provider import Provider
+from aishorts.modules.script.script import AssetType
 from abc import abstractmethod
 from pydub import AudioSegment
 from aishorts.modules.script.script import Reel

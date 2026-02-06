@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
-from aishorts.modules.image.image_providers import ImageResult
-from aishorts.modules.latex.latex_providers import LatexResult
 from aishorts.utils.image_utils import ImageStyle
 
 
@@ -70,16 +68,6 @@ class FFmpegCommand:
             cmd.extend(["-c:v", self.video_codec])
 
         return cmd
-
-
-@dataclass
-class TemplateAssets:
-    reel_script: Reel | None = None
-    lipsync_videos: list[LipsyncResult] | None = None
-    subtitles: TranscriptionVerbose | None = None
-    voiceovers: list[TTSResult] | None = None
-    images: list[ImageResult] | None = None
-    latex: list[LatexResult] | None = None
 
 
 class SubtitleStyle(BaseModel):
@@ -152,7 +140,7 @@ class EditTemplate(Provider):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod
-    def compose(self, template_assets: TemplateAssets, **kwargs) -> FFmpegCommand:
+    def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         pass
 
     def transcription_to_ass(
@@ -387,8 +375,6 @@ class EditTemplate(Provider):
         self,
         blocks: list[Block],  # List of Block objects from your Reel
         absolute_subtitles: list[TranscriptionVerbose],
-        images: list[ImageResult] | None,  # List of ImageResult
-        latex: list[LatexResult] | None,  # List of LatexResult
     ) -> List[MediaTiming]:
         """
         Extract absolute timing information for all media elements (images and latex)
@@ -397,15 +383,11 @@ class EditTemplate(Provider):
         Args:
             blocks: List of Block objects containing dialogue and media triggers
             absolute_subtitles: Subtitles with absolute timings across entire video
-            images: List of ImageResult objects
-            latex: List of LatexResult objects
 
         Returns:
             List of MediaTiming objects with absolute start/end times
         """
         media_timings = []
-        image_idx = 0
-        latex_idx = 0
         dialogue_idx = 0
 
         for block in blocks:
@@ -445,14 +427,16 @@ class EditTemplate(Provider):
                 filepath = None
                 if (
                     media_type == "image"
-                    and images[image_idx]
-                    and image_idx < len(images)
+                    and block.assets
+                    and block.assets.image_filepath
                 ):
-                    filepath = images[image_idx].media.path
-                    image_idx += 1
-                elif media_type == "latex" and latex_idx < len(latex):
-                    filepath = latex[latex_idx].media.path
-                    latex_idx += 1
+                    filepath = block.assets.image_filepath
+                elif (
+                    media_type == "latex"
+                    and block.assets
+                    and block.assets.latex_filepath
+                ):
+                    filepath = block.assets.latex_filepath
 
                 if filepath:
                     media_timings.append(

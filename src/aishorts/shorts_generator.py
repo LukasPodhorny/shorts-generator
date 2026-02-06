@@ -75,6 +75,10 @@ class ShortsGenerator:
         self.lipsync_float_api_key = lipsync_float_api_key
         self.subtitles_api_key = subtitles_api_key
         self.llm_api_key = llm_api_key
+        self.tts_lemonfox_api_key = tts_lemonfox_api_key
+        self.lipsync_float_api_key = lipsync_float_api_key
+        self.subtitles_api_key = subtitles_api_key
+        self.llm_api_key = llm_api_key
         self.image_api_key = image_api_key
 
         self._setup_logging()
@@ -177,9 +181,12 @@ class ShortsGenerator:
         self.logger.info("Generating scripts...")
         reel_series = None
         if AssetType.SCRIPT in self.required_assets:
-            reel_series = await self.script_gen.generate_script(
-                num_reels=amount, files=files, user_input=user_input
-            )
+            # reel_series = await self.script_gen.generate_script(
+            #    num_reels=amount, files=files, user_input=user_input
+            # )
+            reel_json = Path("tests/test_configs/mock_script.json").read_text()
+            reel_series = ReelSeries.model_validate_json(reel_json)
+
             self._save_debug_state(reel_series, "script")
 
         if not reel_series:
@@ -228,13 +235,8 @@ class ShortsGenerator:
         self.logger.info("Generating final video...")
         results = []
 
-        # for asset in template_assets:
-        #   results.append(self.video_gen.compose(template_assets=asset))
-        # Note: VideoGenerator.compose needs to be updated to accept 'reel' instead of 'template_assets'.
-        # Commenting out for now as requested to not touch video edit part yet.
-
-        # for reel in reel_series.reels:
-        #     results.append(self.video_gen.compose(reel=reel))
+        for reel in reel_series.reels:
+            results.append(self.video_gen.compose(reel=reel))
 
         return results
 

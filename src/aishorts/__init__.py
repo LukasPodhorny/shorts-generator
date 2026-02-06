@@ -8,6 +8,5 @@ from aishorts.modules.video_edit.video_edit import (
     VideoTemplate,
     TemplateConfig,
     SubtitleStyle,
-    TemplateAssets,
 )
 from aishorts.modules.avatar import Voice, Avatar

@@ -1,7 +1,5 @@
-from aishorts.modules.video_edit.video_edit import (
-    TemplateAssets,
-    VideoTemplate,
-)
+from aishorts.modules.video_edit.video_edit import VideoTemplate
+from aishorts.modules.script.script import Reel
 from aishorts.modules.video_edit.video_edit_templates import EditTemplate
 from aishorts.modules.video_edit.ffmpeg_providers import FFmpegProvider
 import uuid
@@ -27,6 +25,6 @@ class VideoGenerator:
 
         self.render = render_cls(**kwargs)
 
-    def compose(self, template_assets: TemplateAssets, **kwargs) -> str:
-        cmd = self.edit.compose(template_assets=template_assets, **kwargs)
+    def compose(self, reel: Reel, **kwargs) -> str:
+        cmd = self.edit.compose(reel=reel, **kwargs)
         return self.render.render(cmd, f"{uuid.uuid4()}.mp4")

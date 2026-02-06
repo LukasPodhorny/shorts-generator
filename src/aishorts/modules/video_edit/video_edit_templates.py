@@ -1,11 +1,11 @@
 from aishorts.modules.video_edit.video_edit import (
     EditTemplate,
     TemplateConfig,
-    TemplateAssets,
     FFmpegCommand,
     FilterGraph,
     Animator,
 )
+from aishorts.modules.script.script import Reel
 from aishorts.modules.script.script import AssetType
 import os
 
@@ -31,22 +31,28 @@ class GameplayTemplate(EditTemplate):
         self.chromakey_similarity = template_config.chromakey_similarity
         self.chromakey_blend = template_config.chromakey_blend
 
-    def compose(self, template_assets: TemplateAssets) -> FFmpegCommand:
-        # Calculate total duration
-        total_duration = sum(
-            self.get_video_duration(vid.filepath)
-            for vid in template_assets.lipsync_videos
-        )
+    def compose(self, reel: Reel) -> FFmpegCommand:
+        # Collect assets from blocks
+        lipsync_paths = []
+        raw_subtitles = []
 
-        absolute_subtitles = self.convert_to_absolute_timing(template_assets.subtitles)
+        for block in reel.blocks:
+            if block.assets:
+                if block.assets.lipsync_filepath:
+                    lipsync_paths.append(block.assets.lipsync_filepath)
+                if block.assets.subtitles:
+                    raw_subtitles.append(block.assets.subtitles)
+
+        # Calculate total duration
+        total_duration = sum(self.get_video_duration(path) for path in lipsync_paths)
+
+        absolute_subtitles = self.convert_to_absolute_timing(raw_subtitles)
         final_subtitles = self.merge_transcriptions(absolute_subtitles)
 
         # Extract media timings
         media_timings = self.extract_media_timings(
-            blocks=template_assets.reel_script.blocks,
+            blocks=reel.blocks,
             absolute_subtitles=absolute_subtitles,
-            images=template_assets.images,
-            latex=template_assets.latex,
         )
 
         # Generate subtitles file
@@ -62,8 +68,8 @@ class GameplayTemplate(EditTemplate):
         lip_v_nodes = []
         lip_a_nodes = []
 
-        for i, lipsync_vid in enumerate(template_assets.lipsync_videos):
-            v, a = graph.add_input(lipsync_vid.filepath, f"lipsync_{i}")
+        for i, path in enumerate(lipsync_paths):
+            v, a = graph.add_input(path, f"lipsync_{i}")
             # Scale to square
             v = v.filter("scale", "1080:1080")
             # Boost volume
@@ -173,22 +179,28 @@ class AlphaGameplayTemplate(EditTemplate):
         self.chromakey_similarity = template_config.chromakey_similarity
         self.chromakey_blend = template_config.chromakey_blend
 
-    def compose(self, template_assets: TemplateAssets) -> FFmpegCommand:
-        # Calculate total duration
-        total_duration = sum(
-            self.get_video_duration(vid.filepath)
-            for vid in template_assets.lipsync_videos
-        )
+    def compose(self, reel: Reel) -> FFmpegCommand:
+        # Collect assets from blocks
+        lipsync_paths = []
+        raw_subtitles = []
 
-        absolute_subtitles = self.convert_to_absolute_timing(template_assets.subtitles)
+        for block in reel.blocks:
+            if block.assets:
+                if block.assets.lipsync_filepath:
+                    lipsync_paths.append(block.assets.lipsync_filepath)
+                if block.assets.subtitles:
+                    raw_subtitles.append(block.assets.subtitles)
+
+        # Calculate total duration
+        total_duration = sum(self.get_video_duration(path) for path in lipsync_paths)
+
+        absolute_subtitles = self.convert_to_absolute_timing(raw_subtitles)
         final_subtitles = self.merge_transcriptions(absolute_subtitles)
 
         # Extract media timings
         media_timings = self.extract_media_timings(
-            blocks=template_assets.reel_script.blocks,
+            blocks=reel.blocks,
             absolute_subtitles=absolute_subtitles,
-            images=template_assets.images,
-            latex=template_assets.latex,
         )
 
         # Generate subtitles file
@@ -204,8 +216,8 @@ class AlphaGameplayTemplate(EditTemplate):
         lip_v_nodes = []
         lip_a_nodes = []
 
-        for i, lipsync_vid in enumerate(template_assets.lipsync_videos):
-            v, a = graph.add_input(lipsync_vid.filepath, f"lipsync_{i}")
+        for i, path in enumerate(lipsync_paths):
+            v, a = graph.add_input(path, f"lipsync_{i}")
 
             # Alpha specific: Chromakey
             v = v.filter(
