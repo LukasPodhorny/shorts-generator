@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from aishorts.utils.image_utils import ImageStyle
+from aishorts.modules.script.script import Reel, Block
 
 
 @dataclass
