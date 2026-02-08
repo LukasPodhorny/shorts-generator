@@ -1,7 +1,7 @@
-from .base import MotionGraphic
+from aishorts.modules.motion_graphic.motion_graphic import MotionGraphic
 
 
-class MotionGraphicQuestion(MotionGraphic):
+class BasicQuestion(MotionGraphic):
     HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -32,7 +32,7 @@ class MotionGraphicQuestion(MotionGraphic):
             top: -100px;
             left: -100px;
             font-size: 350px;
-            color: #FFEB33;
+            color: #FFEA00;
             font-weight: 900;
             z-index: 10;
             line-height: 1;
@@ -61,8 +61,8 @@ class MotionGraphicQuestion(MotionGraphic):
             box-shadow: 0 45px 50px rgba(0,0,0,0.4);
         }
         .card-front { background: #F2F2F2; z-index: 2; }
-        .card-back { background: #33A3FF; color: white; transform: rotateY(180deg); justify-content: center; align-items: center; }
-        .top-bar { background-color:#FF3333; width:100%; height:110px; box-shadow: 0 20px 30px rgba(0,0,0,0.3); flex-shrink: 0; }
+        .card-back { background: #33A3FF; color: white; transform: rotateY(180deg); justify-content: center; align-items: center; padding: 80px; text-align: center; }
+        .top-bar { background-color:#FF2424; width:100%; height:110px; box-shadow: 0 20px 30px rgba(0,0,0,0.3); flex-shrink: 0; }
         .content {
             position: relative;
             flex-grow: 1;
@@ -75,7 +75,7 @@ class MotionGraphicQuestion(MotionGraphic):
             min-height: 0;
         }
         .title { font-size: 70px; font-weight: 800; color: #242424; line-height: 1.1; width: 100%; word-wrap: break-word; }
-        .answer-text { font-size: 110px; font-weight: 900; text-transform: uppercase; }
+        .answer-text { font-size: 110px; font-weight: 900; line-height: 1.1; }
         .progress-container {
             position: absolute;
             bottom: 0px; left: 50%; transform: translateX(-50%);
@@ -95,7 +95,7 @@ class MotionGraphicQuestion(MotionGraphic):
                     <div class="progress-container"><div class="progress-fill" id="progress"></div></div>
                 </div>
             </div>
-            <div class="card-back"><div class="answer-text">__ANSWER__</div></div>
+            <div class="card-back"><div class="answer-text" id="answer-text">__ANSWER__</div></div>
         </div>
     </div>
     <script>
@@ -119,6 +119,23 @@ class MotionGraphicQuestion(MotionGraphic):
             titleElement.innerText = '';
         }
         fitText();
+
+        const answerElement = document.getElementById('answer-text');
+        
+        function fitAnswer() {
+            let fontSize = 110;
+            answerElement.style.fontSize = fontSize + 'px';
+            const container = answerElement.parentElement;
+            const style = window.getComputedStyle(container);
+            const maxHeight = container.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+            const maxWidth = container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+
+            while ((answerElement.scrollHeight > maxHeight || answerElement.scrollWidth > maxWidth) && fontSize > 20) {
+                fontSize -= 2;
+                answerElement.style.fontSize = fontSize + 'px';
+            }
+        }
+        fitAnswer();
 
         // Standard Back Ease
         function easeOutBack(x) {

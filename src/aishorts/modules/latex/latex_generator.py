@@ -2,7 +2,6 @@ from aishorts.modules.latex.latex_providers import (
     LatexProvider,
     LatexResult,
     Resolution,
-    MediaFile,
 )
 from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread

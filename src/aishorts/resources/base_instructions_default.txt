@@ -145,3 +145,14 @@ MEDIA RULES:
     - Each reel should have a balanced distribution of media throughout its 3-minute duration.
     - With more content per reel, ensure media appears at natural intervals (roughly every 15-30 seconds).
     - Longer speaking turns can accommodate multiple media items if they explain distinct concepts.
+
+QUESTION BLOCKS:
+
+18. Final Reel Questions:
+    - IF question blocks are supported/allowed in the output structure
+    - You must include them only at the very end of the last generated reel in the series.
+    - Do NOT include questions in the first or middle reels.
+    - Generate strictly between 2 to 5 questions maximum.
+    - Questions should be relevant to the key concepts discussed throughout the series.
+    - Transition Requirement: The very last dialogue block of the final reel must explicitly introdu- the quiz segment.
+    - The avatar speaking last should use a natural transition phrase like "Now let's do some questio- " "Time to test your knowledge," or "Let's see what you remember."

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, ClassVar
 from typing import List, Optional, Literal, ClassVar, Any
 from pydantic.json_schema import SkipJsonSchema
@@ -12,6 +12,8 @@ class AssetType(Enum):
     SUBTITLES = "subtitles"
     IMAGES = "images"
     LATEX = "latex"
+    QUESTION = "question"
+    STATICFACE = "staticface"
 
 
 class Trigger(BaseModel):
@@ -43,11 +45,14 @@ class BlockAssets(BaseModel):
     voice_url: Optional[str] = None
     lipsync_filepath: Optional[str] = None
     lipsync_url: Optional[str] = None
+    staticface_filepath: Optional[str] = None
+    staticface_url: Optional[str] = None
     image_filepath: Optional[str] = None
     image_url: Optional[str] = None
     latex_filepath: Optional[str] = None
     latex_url: Optional[str] = None
     subtitles: Optional[Any] = None
+    question_filepath: Optional[str] = None
 
 
 class DialogueBlock(BaseModel):
@@ -58,6 +63,7 @@ class DialogueBlock(BaseModel):
         AssetType.SUBTITLES,
         AssetType.IMAGES,
         AssetType.LATEX,
+        AssetType.STATICFACE,
     ]
     avatar: str
     text: str
@@ -69,8 +75,7 @@ class QuestionBlock(BaseModel):
     type: Literal["question"]
     valid_assets: ClassVar[List[AssetType]] = [
         AssetType.VOICE,
-        AssetType.LIPSYNC,
-        AssetType.SUBTITLES,
+        AssetType.QUESTION,
     ]
     avatar: str
     text: str

@@ -173,6 +173,14 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
             block.assets.lipsync_url = video_url
 
 
+def populate_reel_static_faces(reel: Reel, avatars: list[Avatar]) -> None:
+    for block in reel.blocks:
+        if AssetType.STATICFACE in block.valid_assets:
+            avatar = find_by(avatars, name=block.avatar)
+            if avatar:
+                block.assets.staticface_filepath = avatar.static_face_path
+
+
 """
 
 # currently unavailable

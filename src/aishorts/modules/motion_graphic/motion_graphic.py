@@ -4,6 +4,8 @@ import asyncio
 import os
 import subprocess
 from playwright.async_api import async_playwright
+import shutil
+import uuid
 
 
 @dataclass
@@ -36,7 +38,9 @@ class MotionGraphicRenderer:
     def __init__(self, config: RenderConfig = None):
         self.config = config or RenderConfig()
 
-    async def _render_worker(self, queue, browser, html_content, update_fn_factory):
+    async def _render_worker(
+        self, queue, browser, html_content, update_fn_factory, output_dir
+    ):
         page = await browser.new_page(
             viewport={"width": self.config.width, "height": self.config.height}
         )
@@ -53,7 +57,7 @@ class MotionGraphicRenderer:
 
             await page.evaluate(js_call)
             await page.screenshot(
-                path=f"{self.config.output_dir}/frame_{frame:04d}.png",
+                path=f"{output_dir}/frame_{frame:04d}.png",
                 omit_background=True,
             )
 
@@ -63,8 +67,9 @@ class MotionGraphicRenderer:
         await page.close()
 
     async def render(self, graphic: MotionGraphic, output_filename: str):
-        if not os.path.exists(self.config.output_dir):
-            os.makedirs(self.config.output_dir)
+        # Create unique output directory for this render to avoid collisions
+        job_output_dir = os.path.join(self.config.output_dir, str(uuid.uuid4()))
+        os.makedirs(job_output_dir, exist_ok=True)
 
         total_frames = int(graphic.get_total_duration() * self.config.fps)
         queue = asyncio.Queue()
@@ -80,7 +85,9 @@ class MotionGraphicRenderer:
             for _ in range(self.config.concurrency):
                 tasks.append(
                     asyncio.create_task(
-                        self._render_worker(queue, browser, html_content, update_fn)
+                        self._render_worker(
+                            queue, browser, html_content, update_fn, job_output_dir
+                        )
                     )
                 )
             await asyncio.gather(*tasks)
@@ -94,7 +101,7 @@ class MotionGraphicRenderer:
                 "-framerate",
                 str(self.config.fps),
                 "-i",
-                f"{self.config.output_dir}/frame_%04d.png",
+                f"{job_output_dir}/frame_%04d.png",
                 "-c:v",
                 "prores_ks",
                 "-profile:v",
@@ -104,3 +111,7 @@ class MotionGraphicRenderer:
                 output_filename,
             ]
         )
+
+        # Cleanup frames
+        if os.path.exists(job_output_dir):
+            shutil.rmtree(job_output_dir)

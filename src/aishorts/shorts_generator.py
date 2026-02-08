@@ -17,8 +17,10 @@ from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
 from aishorts.modules.latex.latex_generator import LatexGenerator
-from pathlib import Path
 from aishorts.modules.script.script import ReelSeries
+from aishorts.modules.question.question_generator import QuestionGenerator
+from aishorts.modules.lipsync.lipsync_providers import populate_reel_static_faces
+from pathlib import Path
 
 
 class ScriptConfig(BaseModel):
@@ -50,6 +52,11 @@ class SubtitleConfig(BaseModel):
     provider_config: dict = Field(default_factory=dict)
 
 
+class QuestionConfig(BaseModel):
+    provider: str = "motion_graphic"
+    provider_config: dict = Field(default_factory=dict)
+
+
 class ShortsConfig(BaseModel):
     avatars: list[Avatar]
     video_template: VideoTemplate
@@ -57,6 +64,7 @@ class ShortsConfig(BaseModel):
     subtitle_config: SubtitleConfig = Field(default_factory=SubtitleConfig)
     images_config: ImagesConfig = Field(default_factory=ImagesConfig)
     latex_config: LatexConfig = Field(default_factory=LatexConfig)
+    question_config: QuestionConfig = Field(default_factory=QuestionConfig)
 
 
 class ShortsGenerator:
@@ -117,6 +125,7 @@ class ShortsGenerator:
             avatars=self.avatars,
             generate_latex=AssetType.LATEX in self.required_assets,
             generate_image=AssetType.IMAGES in self.required_assets,
+            generate_question=AssetType.QUESTION in self.required_assets,
             provider=shorts_config.script_config.provider,
             api_key=self.llm_api_key,
             **shorts_config.script_config.provider_config,
@@ -136,6 +145,17 @@ class ShortsGenerator:
             shorts_config.subtitle_config.provider,
             **shorts_config.subtitle_config.provider_config,
             api_key=self.subtitles_api_key,
+        )
+
+        question_provider_config = shorts_config.question_config.provider_config.copy()
+        if shorts_config.question_config.provider == "motion_graphic":
+            question_provider_config["graphic_class"] = (
+                self.template_config.get_question_graphic_class()
+            )
+
+        self.question_gen = QuestionGenerator(
+            provider=shorts_config.question_config.provider,
+            **question_provider_config,
         )
 
         self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
@@ -184,7 +204,7 @@ class ShortsGenerator:
             # reel_series = await self.script_gen.generate_script(
             #    num_reels=amount, files=files, user_input=user_input
             # )
-            reel_json = Path("tests/test_configs/mock_script.json").read_text()
+            reel_json = Path("tests/test_configs/mock_script_short.json").read_text()
             reel_series = ReelSeries.model_validate_json(reel_json)
 
             self._save_debug_state(reel_series, "script")
@@ -192,6 +212,11 @@ class ShortsGenerator:
         if not reel_series:
             self.logger.warning("No script generated or loaded. Exiting.")
             return []
+
+        # static faces
+        if AssetType.STATICFACE in self.required_assets:
+            for reel in reel_series.reels:
+                populate_reel_static_faces(reel, self.avatars)
 
         # TTS, Images, LaTex
         self.logger.info("Generating voiceover, images, latex...")
@@ -212,24 +237,26 @@ class ShortsGenerator:
         await asyncio.gather(*[process_reel_media(reel) for reel in reel_series.reels])
         self._save_debug_state(reel_series, "media")
 
-        # Lipsync, Subtitles
-        self.logger.info("Generating lipsync video and subtitles...")
+        # Lipsync, Subtitles, Questions
+        self.logger.info("Generating lipsync video, subtitles, and questions...")
 
-        async def process_reel_lipsync(reel):
+        async def process_reel_secondary(reel):
             tasks = []
             if AssetType.LIPSYNC in self.required_assets:
                 tasks.append(self.lipsync_gen.populate_reel(reel))
             if AssetType.SUBTITLES in self.required_assets:
                 tasks.append(self.subtitle_gen.populate_reel(reel))
+            if AssetType.QUESTION in self.required_assets:
+                tasks.append(self.question_gen.populate_reel(reel))
 
             if tasks:
                 await asyncio.gather(*tasks)
             return reel
 
         await asyncio.gather(
-            *[process_reel_lipsync(reel) for reel in reel_series.reels]
+            *[process_reel_secondary(reel) for reel in reel_series.reels]
         )
-        self._save_debug_state(reel_series, "lipsync_subs")
+        self._save_debug_state(reel_series, "secondary_assets")
 
         # Video Edit
         self.logger.info("Generating final video...")

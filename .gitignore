@@ -224,3 +224,4 @@ logs/
 tests/integration/
 tests/test_configs/
 tests/test_files/
+animated_frames/

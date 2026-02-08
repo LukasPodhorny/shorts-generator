@@ -55,13 +55,40 @@ class ScriptGenerator:
         else:
             media_rules.append("- LaTeX: DISABLED (never produce latex media objects).")
 
+        if self.generate_question:
+            media_rules.append(
+                "- Question Blocks: ENABLED (you may generate question blocks)."
+            )
+        else:
+            media_rules.append(
+                "- Question Blocks: DISABLED (never generate question blocks)."
+            )
+
         media_block = "\n".join(media_rules)
+
+        # ------------------------------
+        # Build allowed block settings
+        # ------------------------------
+        blocks_rules = ["ALLOWED BLOCKS:"]
+
+        blocks_rules.append(
+            '- "dialogue" blocks: ENABLED (you may generate "dialogue" blocks).'
+        )
+
+        if self.generate_question:
+            blocks_rules.append(
+                '- "question" blocks: ENABLED (you may generate "question" blocks).'
+            )
+        else:
+            blocks_rules.append(
+                '- "question" blocks: DISABLED (never generate "question" blocks).'
+            )
+
+        blocks_block = "\n".join(blocks_rules)
 
         reel_conf = ["REEL CONFIGURATION:"]
         reel_conf.append(f"- Number of reels to generate: {num_reels}")
         reel_block = "\n".join(reel_conf)
-
-        media_block = "\n".join(media_rules)
 
         # ------------------------------
         # Combine everything into final prompt
@@ -74,6 +101,8 @@ class ScriptGenerator:
             + media_block
             + "\n\n"
             + reel_block
+            + "\n\n"
+            + blocks_block
         )
 
         return instructions
@@ -84,6 +113,7 @@ class ScriptGenerator:
         avatars: list[Avatar],
         generate_latex: bool = True,
         generate_image: bool = True,
+        generate_question: bool = False,
         provider: str = "chatgpt",
         **kwargs,
     ):
@@ -91,6 +121,7 @@ class ScriptGenerator:
         self.avatars = avatars
         self.generate_latex = generate_latex
         self.generate_image = generate_image
+        self.generate_question = generate_question
         self.provider = provider.lower()
 
         cls = LLMProvider.get(self.provider)

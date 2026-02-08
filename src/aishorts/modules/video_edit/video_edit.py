@@ -3,13 +3,9 @@ import os
 from openai.types.audio import TranscriptionVerbose
 import subprocess
 from pydantic import BaseModel, Field
-from aishorts.modules.lipsync.lipsync_providers import LipsyncResult
-from aishorts.modules.tts.tts_providers import TTSResult
-from aishorts.modules.script.script import Reel, Block, AssetType
 import uuid
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
-from enum import Enum
 from typing import List
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -105,10 +101,10 @@ class TemplateConfig(BaseModel):
     question_graphic: str = "MotionGraphicQuestion"
 
     def get_question_graphic_class(self):
-        from aishorts.modules.motion_graphic.questions import MotionGraphicQuestion
+        from aishorts.modules.motion_graphic.questions import BasicQuestion
 
         registry = {
-            "MotionGraphicQuestion": MotionGraphicQuestion,
+            "MotionGraphicQuestion": BasicQuestion,
         }
 
         if self.question_graphic not in registry:
