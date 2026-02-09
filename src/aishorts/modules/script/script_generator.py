@@ -109,8 +109,8 @@ class ScriptGenerator:
 
     def __init__(
         self,
-        base_instructions: str,
-        avatars: list[Avatar],
+        base_instructions: str = None,
+        avatars: list[Avatar] = None,
         generate_latex: bool = True,
         generate_image: bool = True,
         generate_question: bool = False,
@@ -140,4 +140,14 @@ class ScriptGenerator:
         instructions = self._generate_instructions(num_reels)
         func = self.llm.generate_script
 
+        return await await_or_thread(func, instructions, files, user_input, **kwargs)
+
+    async def generate_response(
+        self,
+        instructions: str | None = None,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> str:
+        func = self.llm.generate_response
         return await await_or_thread(func, instructions, files, user_input, **kwargs)

@@ -520,7 +520,11 @@ class StaticGameplayTemplate(EditTemplate):
             audio_path = None
 
             if block.type == "dialogue":
-                if block.assets and block.assets.staticface_filepath and block.assets.voice_filepath:
+                if (
+                    block.assets
+                    and block.assets.staticface_filepath
+                    and block.assets.voice_filepath
+                ):
                     seg_type = "static_face"
                     video_path = block.assets.staticface_filepath
                     audio_path = block.assets.voice_filepath
@@ -605,21 +609,35 @@ class StaticGameplayTemplate(EditTemplate):
                 # Same logic as AlphaGameplayTemplate for questions
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
                 v = v.filter("scale", "1000:-1")
-                v = v.filter("pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=0x00000000")
+                v = v.filter(
+                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=0x00000000"
+                )
 
-                silence = graph.add_raw([], f"anullsrc=channel_layout=stereo:sample_rate=44100:d={seg['duration']}", f"silence_{i}")
+                silence = graph.add_raw(
+                    [],
+                    f"anullsrc=channel_layout=stereo:sample_rate=44100:d={seg['duration']}",
+                    f"silence_{i}",
+                )
 
                 if seg["audio"]:
                     _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
-                    a = graph.add_raw([silence, a_in], "amix=inputs=2:duration=first:dropout_transition=0:normalize=0", f"seg_{i}_mix")
+                    a = graph.add_raw(
+                        [silence, a_in],
+                        "amix=inputs=2:duration=first:dropout_transition=0:normalize=0",
+                        f"seg_{i}_mix",
+                    )
                 else:
                     a = silence
 
             lip_v_nodes.append(v)
             lip_a_nodes.append(a)
 
-        lip_concat_v = graph.add_raw(lip_v_nodes, f"concat=n={len(lip_v_nodes)}:v=1:a=0", "lip_concat_v")
-        lip_concat_a = graph.add_raw(lip_a_nodes, f"concat=n={len(lip_a_nodes)}:v=0:a=1", "lip_concat_a")
+        lip_concat_v = graph.add_raw(
+            lip_v_nodes, f"concat=n={len(lip_v_nodes)}:v=1:a=0", "lip_concat_v"
+        )
+        lip_concat_a = graph.add_raw(
+            lip_a_nodes, f"concat=n={len(lip_a_nodes)}:v=0:a=1", "lip_concat_a"
+        )
         lip_concat_a = lip_concat_a.filter("loudnorm", I="-16", TP="-1.5", LRA="11")
 
         bg_v, _ = graph.add_input(self.bg_video, "bg_video")
@@ -627,14 +645,25 @@ class StaticGameplayTemplate(EditTemplate):
         bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
         bg_v = bg_v.filter("crop", "1080:1920")
 
-        main_v = graph.add_raw([bg_v, lip_concat_v], "overlay=0:0:shortest=1", "stacked")
+        main_v = graph.add_raw(
+            [bg_v, lip_concat_v], "overlay=0:0:shortest=1", "stacked"
+        )
         main_v = main_v.filter("ass", f"'{subs_path}'")
 
         final_audio = lip_concat_a
         if self.music:
             _, music_a = graph.add_input(self.music, "music")
-            music_a = music_a.filter("atrim", end=current_time).filter("asetpts", "PTS-STARTPTS").filter("volume", "0.2")
-            final_audio = graph.add_raw([final_audio, music_a], "amix=inputs=2:normalize=0", "audio_mix")
+            music_a = (
+                music_a.filter("atrim", end=current_time)
+                .filter("asetpts", "PTS-STARTPTS")
+                .filter("volume", "0.2")
+            )
+            final_audio = graph.add_raw(
+                [final_audio, music_a], "amix=inputs=2:normalize=0", "audio_mix"
+            )
 
-        return graph.build(video_out=main_v, audio_out=final_audio, extra_args=["-preset", "fast", "-c:a", "aac", "-r", "30"])
-        
+        return graph.build(
+            video_out=main_v,
+            audio_out=final_audio,
+            extra_args=["-preset", "fast", "-c:a", "aac", "-r", "30"],
+        )

@@ -14,6 +14,7 @@ class AssetType(Enum):
     LATEX = "latex"
     QUESTION = "question"
     STATICFACE = "staticface"
+    MANIM = "manim"
 
 
 class Trigger(BaseModel):
@@ -64,6 +65,7 @@ class DialogueBlock(BaseModel):
         AssetType.IMAGES,
         AssetType.LATEX,
         AssetType.STATICFACE,
+        AssetType.MANIM
     ]
     avatar: str
     text: str

@@ -4,6 +4,8 @@ from aishorts.modules.script.script import ReelSeries
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
 import asyncio
+import os
+from google import genai
 
 
 class LLMProvider(Provider):
@@ -11,6 +13,17 @@ class LLMProvider(Provider):
     @abstractmethod
     async def generate_script(
         self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> ReelSeries:
+        pass
+
+    @abstractmethod
+    async def generate_response(
+        self,
+        instructions: str,
         files: list[str] | None = None,
         user_input: str | None = None,
         **kwargs,
@@ -118,3 +131,126 @@ class ChatGPT(LLMProvider):
             )
 
             return response.output_parsed
+
+    async def generate_response(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> str:
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+
+        async with self._temporary_files(files or []) as uploaded_files:
+            messages = self._build_messages(
+                instructions, user_input or "", uploaded_files
+            )
+
+            response = await self.client.responses.parse(
+                model=self.model,
+                input=messages,
+                max_output_tokens=self.max_output_tokens,
+            )
+
+            # Assuming the raw text is in the .output attribute
+            return response.output_text
+
+
+class Gemini(LLMProvider):
+    provider_name = "gemini"
+
+    def __init__(
+        self,
+        model: str = "gemini-3-flash-preview",
+        max_output_tokens: int = 50_000,
+        api_key: str | None = None,
+        **kwargs,
+    ):
+
+        self.model_name = model
+        self.max_output_tokens = max_output_tokens
+
+        key = api_key or os.getenv("GEMINI_API_KEY")
+        self.client = genai.Client(api_key=key)
+
+    @asynccontextmanager
+    async def _temporary_files(self, files: list[str]):
+
+        if not files:
+            yield []
+            return
+
+        uploaded = []
+        try:
+            for filepath in files:
+                file = await asyncio.to_thread(self.client.files.upload, path=filepath)
+                uploaded.append(file)
+            yield uploaded
+
+        finally:
+            for file in uploaded:
+                try:
+                    await asyncio.to_thread(self.client.files.delete, name=file.name)
+                except Exception:
+                    pass
+
+    async def generate_script(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> ReelSeries:
+        from google.genai import types
+
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+
+        async with self._temporary_files(files or []) as uploaded_files:
+            content = []
+            content.extend(uploaded_files)
+            if user_input:
+                content.append(user_input)
+
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=content,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ReelSeries,
+                    max_output_tokens=self.max_output_tokens,
+                    system_instruction=instructions,
+                ),
+            )
+
+            return ReelSeries.model_validate_json(response.text)
+
+    async def generate_response(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> str:
+        from google.genai import types
+
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+
+        async with self._temporary_files(files or []) as uploaded_files:
+            content = []
+            content.extend(uploaded_files)
+            if user_input:
+                content.append(user_input)
+
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=content,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=self.max_output_tokens,
+                    system_instruction=instructions,
+                ),
+            )
+
+            return response.text

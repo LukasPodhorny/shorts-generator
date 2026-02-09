@@ -77,6 +77,7 @@ class ShortsGenerator:
         subtitles_api_key: str | None = None,
         llm_api_key: str | None = None,
         image_api_key: str | None = None,
+        ffmpeg_api_key: str | None = None,
     ):
         self.tts_f5tts_api_key = tts_f5tts_api_key
         self.tts_lemonfox_api_key = tts_lemonfox_api_key
@@ -88,6 +89,7 @@ class ShortsGenerator:
         self.subtitles_api_key = subtitles_api_key
         self.llm_api_key = llm_api_key
         self.image_api_key = image_api_key
+        self.ffmpeg_api_key = ffmpeg_api_key
 
         self._setup_logging()
         self.update_config(shorts_config)
@@ -158,7 +160,10 @@ class ShortsGenerator:
             **question_provider_config,
         )
 
-        self.video_gen = VideoGenerator(video_template=shorts_config.video_template)
+        self.video_gen = VideoGenerator(
+            video_template=shorts_config.video_template,
+            api_key=self.ffmpeg_api_key,
+        )
 
     def _setup_logging(self):
         self.logger = logging.getLogger("ShortsGenerator")
