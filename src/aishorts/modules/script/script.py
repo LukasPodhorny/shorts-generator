@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, ClassVar
-from typing import List, Optional, Literal, ClassVar, Any
+from typing import List, Optional, Literal, ClassVar, Any, Dict
 from pydantic.json_schema import SkipJsonSchema
 from enum import Enum
+import uuid
 
 
 class AssetType(Enum):
@@ -15,6 +15,13 @@ class AssetType(Enum):
     QUESTION = "question"
     STATICFACE = "staticface"
     MANIM = "manim"
+    SONG = "song"
+
+
+class BlockType(str, Enum):
+    DIALOGUE = "dialogue"
+    QUESTION = "question"
+    SONG = "song"
 
 
 class Trigger(BaseModel):
@@ -23,12 +30,16 @@ class Trigger(BaseModel):
 
 
 class MediaBase(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     trigger: Optional[Trigger] = None
 
 
 class ImageMedia(MediaBase):
     type: Literal["image"]
-    keywords: str
+    keywords: str = Field(
+        description="Search keywords for the image API. STRICT LIMIT: Keep to 3-7 words maximum.",
+        max_length=150,
+    )
 
 
 class LatexMedia(MediaBase):
@@ -36,7 +47,12 @@ class LatexMedia(MediaBase):
     code: str
 
 
-Media = ImageMedia | LatexMedia
+class ManimMedia(MediaBase):
+    type: Literal["manim"]
+    prompt: str
+
+
+Media = ImageMedia | LatexMedia | ManimMedia
 
 
 class BlockAssets(BaseModel):
@@ -48,16 +64,18 @@ class BlockAssets(BaseModel):
     lipsync_url: Optional[str] = None
     staticface_filepath: Optional[str] = None
     staticface_url: Optional[str] = None
-    image_filepath: Optional[str] = None
-    image_url: Optional[str] = None
-    latex_filepath: Optional[str] = None
-    latex_url: Optional[str] = None
     subtitles: Optional[Any] = None
     question_filepath: Optional[str] = None
+    song_filepath: Optional[str] = None
+    song_url: Optional[str] = None
+
+    # Maps MediaBase.id -> filepath/url
+    media_map: Dict[str, str] = Field(default_factory=dict)
+    media_url_map: Dict[str, str] = Field(default_factory=dict)
 
 
 class DialogueBlock(BaseModel):
-    type: Literal["dialogue"]
+    type: Literal[BlockType.DIALOGUE]
     valid_assets: ClassVar[List[AssetType]] = [
         AssetType.VOICE,
         AssetType.LIPSYNC,
@@ -65,16 +83,16 @@ class DialogueBlock(BaseModel):
         AssetType.IMAGES,
         AssetType.LATEX,
         AssetType.STATICFACE,
-        AssetType.MANIM
+        AssetType.MANIM,
     ]
     avatar: str
     text: str
-    media: Optional[Media] = None
+    media: List[Media] = Field(default_factory=list)
     assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
 class QuestionBlock(BaseModel):
-    type: Literal["question"]
+    type: Literal[BlockType.QUESTION]
     valid_assets: ClassVar[List[AssetType]] = [
         AssetType.VOICE,
         AssetType.QUESTION,
@@ -87,9 +105,25 @@ class QuestionBlock(BaseModel):
     assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
+class SongBlock(BaseModel):
+    type: Literal[BlockType.SONG]
+    valid_assets: ClassVar[List[AssetType]] = [
+        AssetType.SONG,
+        AssetType.LIPSYNC,
+        AssetType.SUBTITLES,
+        AssetType.IMAGES,
+        AssetType.LATEX,
+        AssetType.STATICFACE,
+        AssetType.MANIM,
+    ]
+    text: str
+    media: List[Media] = Field(default_factory=list)
+    assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
+
+
 # A Block can now be one of several types, distinguished by the `type` field.
 # Pydantic uses this "discriminated union" to automatically parse the correct data model.
-Block = DialogueBlock | QuestionBlock
+Block = DialogueBlock | QuestionBlock | SongBlock
 
 
 class Reel(BaseModel):

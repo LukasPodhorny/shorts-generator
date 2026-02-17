@@ -1,59 +1,84 @@
 from aishorts.modules.manim.manim_providers import ManimProvider, ManimResult
-from aishorts.modules.script.script_generator import ScriptGenerator
+from aishorts.modules.llm.llm_generator import LLMGenerator
 from aishorts.utils.async_utils import await_or_thread
+from aishorts.modules.script.script import Reel
 import re
+import textwrap
+from aishorts.modules.video_edit.video_edit import AssetType
 
 
 class ManimGenerator:
-    def __init__(self, provider: str = "local", llm_provider: str = "gemini", **kwargs):
+    def __init__(
+        self,
+        provider: str = "local",
+        llm_provider: str = "gemini",
+        base_instructions: str = None,
+        **kwargs,
+    ):
         self.provider_name = provider
         self.llm_provider = llm_provider
+        self.base_instructions = base_instructions
 
         cls = ManimProvider.get(self.provider_name)
         if not cls:
             raise ValueError(f"Unknown Manim provider '{provider}'")
 
         self.manim_provider = cls(**kwargs)
-        self.script_gen = ScriptGenerator(provider=llm_provider)
+        self.llm_gen = LLMGenerator(provider=llm_provider)
 
     def _extract_code(self, text: str) -> str:
         # Try to find python code block
-        match = re.search(r"```python\s*(.*?)\s*```", text, re.DOTALL)
+        match = re.search(r"```python(.*?)```", text, re.DOTALL)
         if match:
-            return match.group(1)
+            return textwrap.dedent(match.group(1)).strip()
 
         # Try generic code block
-        match = re.search(r"```\s*(.*?)\s*```", text, re.DOTALL)
+        match = re.search(r"```(.*?)```", text, re.DOTALL)
         if match:
-            return match.group(1)
+            return textwrap.dedent(match.group(1)).strip()
 
         # Assume the whole text is code if no blocks found
-        return text
+        return textwrap.dedent(text).strip()
 
-    async def generate(self, prompt: str, **kwargs) -> ManimResult:
-        instructions = (
-            "You are an expert in Manim (Community Edition). "
-            "Write a Python script to visualize the user's request. "
-            "Requirements:\n"
-            "1. Import manim: `from manim import *`\n"
-            "2. Create a Scene class named `GenScene`.\n"
-            "3. The code must be complete and runnable.\n"
-            "4. Do not use external assets (images/sounds) unless generated in code.\n"
-            "5. Output ONLY the python code wrapped in ```python ... ``` blocks."
-        )
+    async def generate(self, prompt: str, retries: int = 3, **kwargs) -> ManimResult:
+        last_error = None
 
-        response = await self.script_gen.generate_response(
-            instructions=instructions, user_input=prompt
-        )
+        for attempt in range(1, retries + 1):
+            try:
+                instructions = self.base_instructions
+                if last_error:
+                    instructions += f"\n\nIMPORTANT: Your previous attempt failed with the following error. Please fix the code to resolve it:\n{last_error}"
 
-        code = self._extract_code(response)
+                response = await self.llm_gen.generate_response(
+                    instructions=instructions, user_input=prompt
+                )
 
-        # If the LLM didn't use the required class name, we can try to patch it
-        # or rely on the prompt instructions. For now, we rely on the prompt.
-        if "class GenScene" not in code:
-            # Fallback: try to find any scene class and rename it, or just warn
-            # For simplicity, we assume the LLM follows instructions.
-            pass
+                code = self._extract_code(response)
 
-        func = self.manim_provider.render
-        return await await_or_thread(func, code, **kwargs)
+                if "class GenScene" not in code:
+                    raise ValueError("Generated code does not contain 'class GenScene'")
+
+                func = self.manim_provider.render
+                return await await_or_thread(func, code, **kwargs)
+            except Exception as e:
+                last_error = str(e)
+                print(
+                    f"Manim generation attempt {attempt}/{retries} failed: {last_error}"
+                )
+                if attempt == retries:
+                    raise e
+
+    async def populate_reel(self, reel: Reel, **kwargs):
+        """
+        Iterates through the reel's blocks and generates Manim animations
+        for any block that has ManimMedia.
+        """
+        for block in reel.blocks:
+            if AssetType.MANIM in block.valid_assets:
+                for media_item in block.media:
+                    if media_item.type == "manim":
+                        # Generate the animation
+                        result = await self.generate(media_item.prompt, **kwargs)
+
+                        # Store the result in the block assets
+                        block.assets.media_map[media_item.id] = result.media.path

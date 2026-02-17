@@ -96,14 +96,15 @@ class Matplotlib(LatexProvider):
 
         for i, block in enumerate(reel.blocks):
             if AssetType.LATEX in block.valid_assets and block.media:
-                if block.media.type == "latex":
-                    latex_codes.append(block.media.code)
-                    ids.append(i)
+                for media_item in block.media:
+                    if media_item.type == "latex":
+                        latex_codes.append(media_item.code)
+                        ids.append((i, media_item.id))
 
         results = self.get_images(latex_codes=latex_codes, resolution=resolution)
 
-        for res, block_id in zip(results, ids):
-            reel.blocks[block_id].assets.latex_filepath = res.media.path
+        for res, (block_id, media_id) in zip(results, ids):
+            reel.blocks[block_id].assets.media_map[media_id] = res.media.path
 
 
 class RealLatex(LatexProvider):
@@ -273,14 +274,12 @@ class RealLatex(LatexProvider):
         latex_codes = []
         ids = []
         for i, block in enumerate(reel.blocks):
-            if (
-                AssetType.LATEX in block.valid_assets
-                and block.media
-                and block.media.type == "latex"
-            ):
-                latex_codes.append(block.media.code)
-                ids.append(i)
+            if AssetType.LATEX in block.valid_assets and block.media:
+                for media_item in block.media:
+                    if media_item.type == "latex":
+                        latex_codes.append(media_item.code)
+                        ids.append((i, media_item.id))
 
         results = self.get_images(latex_codes, resolution)
-        for res, block_id in zip(results, ids):
-            reel.blocks[block_id].assets.latex_filepath = res.media.path
+        for res, (block_id, media_id) in zip(results, ids):
+            reel.blocks[block_id].assets.media_map[media_id] = res.media.path

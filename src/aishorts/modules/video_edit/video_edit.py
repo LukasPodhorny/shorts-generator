@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from aishorts.utils.image_utils import ImageStyle
-from aishorts.modules.script.script import Reel, Block
+from aishorts.modules.script.script import Reel, Block, AssetType
 
 
 @dataclass
@@ -99,7 +99,12 @@ class TemplateConfig(BaseModel):
     latex_style: ImageStyle | None = Field(default_factory=ImageStyle)
     latex_width: int | None = 600
     latex_height: int | None = 300
+    manim_width: int | None = 900
+    manim_style: ImageStyle | None = Field(
+        default_factory=lambda: ImageStyle(corner_radius=40)
+    )
     question_graphic: str = "MotionGraphicQuestion"
+    style_prompt: str = "pop music, Female vocals"
 
     def get_question_graphic_class(self):
         from aishorts.modules.motion_graphic.questions import BasicQuestion
@@ -139,6 +144,62 @@ class EditTemplate(Provider):
     @abstractmethod
     def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         pass
+
+    @abstractmethod
+    def _get_block_segment(self, block: Block) -> dict | None:
+        """
+        Returns a dictionary with keys: 'type', 'video', 'audio', 'duration'
+        or None if the block produces no video segment.
+        """
+        pass
+
+    def collect_segments_and_timings(self, reel: Reel):
+        """
+        Iterates through the reel to build the timeline of segments,
+        synchronize subtitles, and extract media timings.
+        """
+        segments = []
+        final_transcriptions = []
+        current_time = 0.0
+
+        for block in reel.blocks:
+            seg_info = self._get_block_segment(block)
+
+            if seg_info:
+                segments.append(seg_info)
+                duration = seg_info.get("duration", 0.0)
+            else:
+                duration = 0.0
+
+            # Handle Subtitles
+            if block.assets and block.assets.subtitles:
+                trans = block.assets.subtitles
+                shifted_words = [
+                    TranscriptionWord(
+                        word=w.word,
+                        start=w.start + current_time,
+                        end=w.end + current_time,
+                    )
+                    for w in trans.words
+                ]
+                final_transcriptions.append(
+                    TranscriptionVerbose(
+                        duration=trans.duration,
+                        language=trans.language,
+                        text=trans.text,
+                        words=shifted_words,
+                    )
+                )
+
+            current_time += duration
+
+        final_subtitles = self.merge_transcriptions(final_transcriptions)
+
+        # Pass final_transcriptions (the list of shifted absolute transcriptions per block)
+        # to extract_media_timings.
+        media_timings = self.extract_media_timings(reel.blocks, final_transcriptions)
+
+        return segments, final_subtitles, media_timings, current_time
 
     def transcription_to_ass(
         self, transcription: TranscriptionVerbose, style: SubtitleStyle
@@ -388,64 +449,53 @@ class EditTemplate(Provider):
         dialogue_idx = 0
 
         for block in blocks:
-            if block.type != "dialogue":
-                continue
+            # Only process blocks that actually have subtitles to maintain sync with absolute_subtitles list
+            if block.assets and block.assets.subtitles:
+                if dialogue_idx >= len(absolute_subtitles):
+                    break
 
-            # Get the corresponding transcription for this dialogue
-            if dialogue_idx >= len(absolute_subtitles):
-                break
+                absolute_trans = absolute_subtitles[dialogue_idx]
+                dialogue_idx += 1
 
-            absolute_trans = absolute_subtitles[dialogue_idx]
-
-            # Check if this block has media
-            if block.media is not None:
-                trigger = block.media.trigger
-                media_type = block.media.type
-
-                # Get start and end word indices
-                start_word_idx = trigger.start_word_index
-                end_word_idx = trigger.end_word_index
-
-                # Validate indices
-                if start_word_idx >= len(absolute_trans.words) or end_word_idx >= len(
-                    absolute_trans.words
-                ):
-                    print(
-                        f"Warning: Word indices out of range for dialogue {dialogue_idx}"
-                    )
-                    dialogue_idx += 1
+                # Check if this block has media
+                if not getattr(block, "media", None):
                     continue
 
-                # Get absolute timing from the words
-                start_time = absolute_trans.words[start_word_idx].start
-                end_time = absolute_trans.words[end_word_idx].end
+                for media_item in block.media:
+                    if not media_item.trigger:
+                        continue
 
-                # Get the filepath based on media type
-                filepath = None
-                if (
-                    media_type == "image"
-                    and block.assets
-                    and block.assets.image_filepath
-                ):
-                    filepath = block.assets.image_filepath
-                elif (
-                    media_type == "latex"
-                    and block.assets
-                    and block.assets.latex_filepath
-                ):
-                    filepath = block.assets.latex_filepath
+                    trigger = media_item.trigger
 
-                if filepath:
-                    media_timings.append(
-                        MediaTiming(
-                            filepath=filepath,
-                            start_time=start_time,
-                            end_time=end_time,
-                            media_type=media_type,
+                    # Get start and end word indices
+                    start_word_idx = trigger.start_word_index
+                    end_word_idx = trigger.end_word_index
+
+                    # Validate indices
+                    if start_word_idx >= len(
+                        absolute_trans.words
+                    ) or end_word_idx >= len(absolute_trans.words):
+                        print(
+                            f"Warning: Word indices out of range for dialogue {dialogue_idx}"
                         )
-                    )
+                        continue
 
-            dialogue_idx += 1
+                    # Get absolute timing from the words
+                    start_time = absolute_trans.words[start_word_idx].start
+                    end_time = absolute_trans.words[end_word_idx].end
+
+                    # Get the filepath from the map
+                    filepath = block.assets.media_map.get(media_item.id)
+
+                    if filepath:
+                        media_timings.append(
+                            MediaTiming(
+                                filepath=filepath,
+                                start_time=start_time,
+                                end_time=end_time,
+                                media_type=media_item.type,
+                            )
+                        )
 
         return media_timings
 
@@ -554,6 +604,27 @@ class Animator:
         return p
 
     @staticmethod
+    def rounded_corners(node: FilterNode, radius: int) -> FilterNode:
+        if radius <= 0:
+            return node
+
+        # Ensure alpha format
+        node = node.filter("format", "yuva420p")
+        node = node.filter("colorchannelmixer", aa=1.0)
+
+        # GEQ filter for rounded corners
+        # Formula: alpha = 0 if outside rounded corner, 255 inside.
+        expr = (
+            f"if(gt(abs(W/2-X),W/2-{radius})*gt(abs(H/2-Y),H/2-{radius}),"
+            f"if(lte(hypot({radius}-(W/2-abs(W/2-X)),{radius}-(H/2-abs(H/2-Y))),{radius}),255,0),255)"
+        )
+
+        # Use quotes for expressions to handle commas safely and preserve all channels
+        return node.filter(
+            "geq", lum="'p(X,Y)'", cb="'p(X,Y)'", cr="'p(X,Y)'", a=f"'{expr}'"
+        )
+
+    @staticmethod
     def slide_horizontal(
         start_time: float,
         end_time: float,
@@ -611,6 +682,7 @@ class Animator:
         """Applies fade-in and fade-out to the alpha channel"""
         if is_static:
             node = node.filter("loop", loop=-1, size=1, start=0)
+            node = node.filter("trim", duration=end_time + 1.0)
             node = node.filter("setpts", "N/FRAME_RATE/TB")
             node = node.filter("format", "yuva420p")
 
@@ -628,4 +700,8 @@ class Animator:
         p_out = Animator._get_easing(t_out, easing)
 
         expr = f"if(lt(t, {start_time}+{duration}), {p_in}, if(gt(t, {end_time}-{duration}), 1-{p_out}, 1))"
-        return node.filter("geq", a=f"alpha(X,Y)*({expr})")
+
+        full_expr = f"alpha(X,Y)*({expr})"
+        return node.filter(
+            "geq", lum="'p(X,Y)'", cb="'p(X,Y)'", cr="'p(X,Y)'", a=f"'{full_expr}'"
+        )

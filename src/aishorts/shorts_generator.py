@@ -3,6 +3,7 @@ import logging
 import os
 import pickle
 from datetime import datetime
+from enum import IntEnum
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.tts.voice_generator import VoiceGenerator
 from aishorts.modules.lipsync.lipsync_generator import LipsyncGenerator
@@ -10,17 +11,24 @@ from aishorts.modules.video_edit.video_generator import VideoGenerator
 from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
 from aishorts.modules.video_edit.video_edit import VideoTemplate
 from aishorts.modules.avatar import Avatar
-from aishorts.modules.video_edit.video_edit_templates import *
 from aishorts.modules.video_edit.video_edit_templates import EditTemplate
 from aishorts.modules.script.script import AssetType
 from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
 from aishorts.modules.latex.latex_generator import LatexGenerator
+from aishorts.modules.manim.manim_generator import ManimGenerator
 from aishorts.modules.script.script import ReelSeries
 from aishorts.modules.question.question_generator import QuestionGenerator
 from aishorts.modules.lipsync.lipsync_providers import populate_reel_static_faces
 from pathlib import Path
+from aishorts.modules.song.song_generator import SongGenerator
+
+
+class PipelineStage(IntEnum):
+    SCRIPT = 0
+    PRIMARY = 1
+    SECONDARY = 2
 
 
 class ScriptConfig(BaseModel):
@@ -47,6 +55,16 @@ class LatexConfig(BaseModel):
     provider_config: dict = Field(default_factory=dict)
 
 
+class ManimConfig(BaseModel):
+    base_instructions: str | None = Field(
+        default_factory=lambda: read_text(
+            "aishorts.resources", "manim_instructions_default.txt"
+        )
+    )
+    provider: str = "local"
+    provider_config: dict = Field(default_factory=dict)
+
+
 class SubtitleConfig(BaseModel):
     provider: str = "elevenlabs"
     provider_config: dict = Field(default_factory=dict)
@@ -57,6 +75,11 @@ class QuestionConfig(BaseModel):
     provider_config: dict = Field(default_factory=dict)
 
 
+class SongConfig(BaseModel):
+    provider: str = "minimax"
+    provider_config: dict = Field(default_factory=dict)
+
+
 class ShortsConfig(BaseModel):
     avatars: list[Avatar]
     video_template: VideoTemplate
@@ -64,10 +87,16 @@ class ShortsConfig(BaseModel):
     subtitle_config: SubtitleConfig = Field(default_factory=SubtitleConfig)
     images_config: ImagesConfig = Field(default_factory=ImagesConfig)
     latex_config: LatexConfig = Field(default_factory=LatexConfig)
+    manim_config: ManimConfig = Field(default_factory=ManimConfig)
     question_config: QuestionConfig = Field(default_factory=QuestionConfig)
+    song_config: SongConfig = Field(default_factory=SongConfig)
 
 
 class ShortsGenerator:
+    """
+    Not required to assign all api keys, just the ones that are used in the generation.
+    """
+
     def __init__(
         self,
         shorts_config: ShortsConfig,
@@ -78,18 +107,17 @@ class ShortsGenerator:
         llm_api_key: str | None = None,
         image_api_key: str | None = None,
         ffmpeg_api_key: str | None = None,
+        minimax_api_key: str | None = None,
     ):
+        # --- API Keys ---
         self.tts_f5tts_api_key = tts_f5tts_api_key
-        self.tts_lemonfox_api_key = tts_lemonfox_api_key
-        self.lipsync_float_api_key = lipsync_float_api_key
-        self.subtitles_api_key = subtitles_api_key
-        self.llm_api_key = llm_api_key
         self.tts_lemonfox_api_key = tts_lemonfox_api_key
         self.lipsync_float_api_key = lipsync_float_api_key
         self.subtitles_api_key = subtitles_api_key
         self.llm_api_key = llm_api_key
         self.image_api_key = image_api_key
         self.ffmpeg_api_key = ffmpeg_api_key
+        self.minimax_api_key = minimax_api_key
 
         self._setup_logging()
         self.update_config(shorts_config)
@@ -103,7 +131,11 @@ class ShortsGenerator:
             self.video_template.edit_template.lower()
         ).required_assets
 
-        # Setup all the modules
+        self.allowed_blocks = EditTemplate.get(
+            self.video_template.edit_template.lower()
+        ).allowed_blocks
+
+        # --- Setup all the modules ---
 
         self.image_gen = ImageGenerator(
             provider=shorts_config.images_config.provider,
@@ -122,13 +154,21 @@ class ShortsGenerator:
             **shorts_config.latex_config.provider_config,
         )
 
+        self.manim_gen = ManimGenerator(
+            provider=shorts_config.manim_config.provider,
+            base_instructions=shorts_config.manim_config.base_instructions,
+            **shorts_config.manim_config.provider_config,
+        )
+
         self.script_gen = ScriptGenerator(
             base_instructions=shorts_config.script_config.base_instructions,
             avatars=self.avatars,
             generate_latex=AssetType.LATEX in self.required_assets,
             generate_image=AssetType.IMAGES in self.required_assets,
+            generate_manim=AssetType.MANIM in self.required_assets,
             generate_question=AssetType.QUESTION in self.required_assets,
             provider=shorts_config.script_config.provider,
+            allowed_blocks=self.allowed_blocks,
             api_key=self.llm_api_key,
             **shorts_config.script_config.provider_config,
         )
@@ -162,8 +202,31 @@ class ShortsGenerator:
 
         self.video_gen = VideoGenerator(
             video_template=shorts_config.video_template,
-            api_key=self.ffmpeg_api_key,
+            # api_key=self.ffmpeg_api_key,
         )
+
+        self.song_gen = SongGenerator(
+            provider=shorts_config.song_config.provider,
+            minimax_api_key=self.minimax_api_key,
+            style_prompt=self.template_config.style_prompt,
+            **shorts_config.song_config.provider_config,
+        )
+
+        # -- Group generators for pipeline execution --
+
+        self.primary_generators = {
+            AssetType.VOICE: self.voice_gen,
+            AssetType.IMAGES: self.image_gen,
+            AssetType.LATEX: self.latex_gen,
+            AssetType.MANIM: self.manim_gen,
+            AssetType.SONG: self.song_gen,
+        }
+
+        self.secondary_generators = {
+            AssetType.LIPSYNC: self.lipsync_gen,
+            AssetType.SUBTITLES: self.subtitle_gen,
+            AssetType.QUESTION: self.question_gen,
+        }
 
     def _setup_logging(self):
         self.logger = logging.getLogger("ShortsGenerator")
@@ -185,88 +248,117 @@ class ShortsGenerator:
             sh.setFormatter(logging.Formatter("%(message)s"))
             self.logger.addHandler(sh)
 
-    def _save_debug_state(self, reel_series: ReelSeries, stage: str):
+    def _save_debug_state(self, reel_series: ReelSeries, stage: PipelineStage):
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = f"logs/assets_{stage}_{timestamp}.pkl"
+            filepath = f"logs/{stage.name.lower()}_stage_{timestamp}.pkl"
             with open(filepath, "wb") as f:
                 pickle.dump(reel_series, f)
             self.logger.info(f"Saved checkpoint: {filepath}")
         except Exception as e:
             self.logger.error(f"Failed to save checkpoint: {e}")
 
+    def _load_checkpoint(self, path: str) -> tuple[ReelSeries, PipelineStage]:
+        """Loads the pickle and determines the stage from the filename."""
+        self.logger.info(f"Resuming from checkpoint: {path}")
+        with open(path, "rb") as f:
+            reel_series = pickle.load(f)
+
+        filename = os.path.basename(path)
+
+        # Assuming format "{stage}_stage_{timestamp}.pkl"
+        parts = filename.split("_")
+        try:
+            stage = PipelineStage[parts[0].upper()]
+        except KeyError:
+            self.logger.warning(
+                f"Unknown stage '{parts[0]}' in filename. Defaulting to SCRIPT."
+            )
+            stage = PipelineStage.SCRIPT
+
+        return reel_series, stage
+
+    async def _populate_reels(self, reel_series: ReelSeries, generators: dict):
+        """Helper to run generators concurrently for all reels."""
+
+        async def process_reel(reel):
+            tasks = []
+            for asset_type, generator in generators.items():
+                if asset_type in self.required_assets:
+                    tasks.append(generator.populate_reel(reel))
+            if tasks:
+                await asyncio.gather(*tasks)
+
+        await asyncio.gather(*[process_reel(reel) for reel in reel_series.reels])
+
     async def generate_shorts_async(
         self,
         amount: int = 1,
         files: list[str] | None = None,
         user_input: str | None = None,
+        resume_from: str | None = None,
+        mock_script: str | None = None,
     ) -> list[str]:
 
-        # Script
-        self.logger.info("Generating scripts...")
+        current_stage = PipelineStage.SCRIPT
         reel_series = None
-        if AssetType.SCRIPT in self.required_assets:
-            # reel_series = await self.script_gen.generate_script(
-            #    num_reels=amount, files=files, user_input=user_input
-            # )
-            reel_json = Path("tests/test_configs/mock_script_short.json").read_text()
-            reel_series = ReelSeries.model_validate_json(reel_json)
 
-            self._save_debug_state(reel_series, "script")
+        # --- 1. Load Checkpoint Logic ---
+        if resume_from:
+            if not os.path.exists(resume_from):
+                raise FileNotFoundError(f"Checkpoint file not found: {resume_from}")
+
+            reel_series, loaded_stage = self._load_checkpoint(resume_from)
+
+            # We start *after* the loaded stage
+            current_stage = loaded_stage + 1
+            self.logger.info(f"Resuming pipeline AFTER stage: '{loaded_stage.name}'")
+
+        # --- 2. Script Stage ---
+
+        if current_stage <= PipelineStage.SCRIPT:
+            self.logger.info("Generating scripts...")
+            if AssetType.SCRIPT in self.required_assets:
+
+                if mock_script:
+                    reel_json = Path(mock_script).read_text()
+                    reel_series = ReelSeries.model_validate_json(reel_json)
+                else:
+                    reel_series = await self.script_gen.generate_script(
+                        num_reels=amount, files=files, user_input=user_input
+                    )
+
+                self._save_debug_state(reel_series, PipelineStage.SCRIPT)
 
         if not reel_series:
             self.logger.warning("No script generated or loaded. Exiting.")
             return []
 
-        # static faces
+        # --- 3. Static Faces ---
+        # fast enough to run anytime
+
         if AssetType.STATICFACE in self.required_assets:
             for reel in reel_series.reels:
                 populate_reel_static_faces(reel, self.avatars)
 
-        # TTS, Images, LaTex
-        self.logger.info("Generating voiceover, images, latex...")
+        # --- 4. Primary Stage ---
 
-        async def process_reel_media(reel):
-            tasks = []
-            if AssetType.VOICE in self.required_assets:
-                tasks.append(self.voice_gen.populate_reel(reel))
-            if AssetType.IMAGES in self.required_assets:
-                tasks.append(self.image_gen.populate_reel(reel))
-            if AssetType.LATEX in self.required_assets:
-                tasks.append(self.latex_gen.populate_reel(reel))
+        if current_stage <= PipelineStage.PRIMARY:
+            self.logger.info("Generating voiceover, images, latex, manim...")
+            await self._populate_reels(reel_series, self.primary_generators)
+            self._save_debug_state(reel_series, PipelineStage.PRIMARY)
 
-            if tasks:
-                await asyncio.gather(*tasks)
-            return reel
+        # --- 5. Secondary Stage ---
 
-        await asyncio.gather(*[process_reel_media(reel) for reel in reel_series.reels])
-        self._save_debug_state(reel_series, "media")
+        if current_stage <= PipelineStage.SECONDARY:
+            self.logger.info("Generating lipsync video, subtitles, and questions...")
+            await self._populate_reels(reel_series, self.secondary_generators)
+            self._save_debug_state(reel_series, PipelineStage.SECONDARY)
 
-        # Lipsync, Subtitles, Questions
-        self.logger.info("Generating lipsync video, subtitles, and questions...")
+        # --- 6. Final Video ---
 
-        async def process_reel_secondary(reel):
-            tasks = []
-            if AssetType.LIPSYNC in self.required_assets:
-                tasks.append(self.lipsync_gen.populate_reel(reel))
-            if AssetType.SUBTITLES in self.required_assets:
-                tasks.append(self.subtitle_gen.populate_reel(reel))
-            if AssetType.QUESTION in self.required_assets:
-                tasks.append(self.question_gen.populate_reel(reel))
-
-            if tasks:
-                await asyncio.gather(*tasks)
-            return reel
-
-        await asyncio.gather(
-            *[process_reel_secondary(reel) for reel in reel_series.reels]
-        )
-        self._save_debug_state(reel_series, "secondary_assets")
-
-        # Video Edit
         self.logger.info("Generating final video...")
         results = []
-
         for reel in reel_series.reels:
             results.append(self.video_gen.compose(reel=reel))
 
@@ -277,11 +369,15 @@ class ShortsGenerator:
         amount: int = 1,
         files: list[str] | None = None,
         user_input: str | None = None,
+        resume_from: str | None = None,
+        mock_script: str | None = None,
     ) -> list[str]:
         asyncio.run(
             self.generate_shorts_async(
                 amount=amount,
                 files=files,
                 user_input=user_input,
+                resume_from=resume_from,
+                mock_script=mock_script,
             ),
         )

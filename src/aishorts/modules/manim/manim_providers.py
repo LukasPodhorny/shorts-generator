@@ -48,7 +48,7 @@ class LocalManim(ManimProvider):
             # -o: output filename
             cmd = [
                 "manim",
-                "-qm",
+                "-qh",  # High quality (1080p)
                 "--media_dir",
                 tmp_dir,
                 "-o",

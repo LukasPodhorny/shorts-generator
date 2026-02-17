@@ -4,11 +4,10 @@ from aishorts.modules.video_edit.video_edit import (
     FFmpegCommand,
     FilterGraph,
     Animator,
-    MediaTiming,
 )
 from aishorts.modules.script.script import Reel
 from aishorts.modules.script.script import AssetType
-from openai.types.audio import TranscriptionVerbose, TranscriptionWord
+from aishorts.modules.script.script import BlockType
 import os
 
 
@@ -22,9 +21,12 @@ class GameplayTemplate(EditTemplate):
         AssetType.LIPSYNC,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
+        AssetType.MANIM,
         AssetType.LATEX,
         AssetType.QUESTION,
     ]
+
+    allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
     def __init__(self, template_config: TemplateConfig):
         self.bg_video = template_config.bg_video
@@ -33,73 +35,38 @@ class GameplayTemplate(EditTemplate):
         self.chromakey_color = template_config.chromakey_color
         self.chromakey_similarity = template_config.chromakey_similarity
         self.chromakey_blend = template_config.chromakey_blend
+        self.manim_width = template_config.manim_width
+        self.manim_style = template_config.manim_style
+
+    def _get_block_segment(self, block):
+        video_path = None
+        audio_path = None
+        seg_type = "none"
+
+        if block.type == "dialogue" and block.assets and block.assets.lipsync_filepath:
+            seg_type = "video"
+            video_path = block.assets.lipsync_filepath
+        elif (
+            block.type == "question" and block.assets and block.assets.question_filepath
+        ):
+            seg_type = "question"
+            video_path = block.assets.question_filepath
+            audio_path = block.assets.voice_filepath
+
+        if seg_type != "none":
+            duration = self.get_video_duration(video_path)
+            return {
+                "type": seg_type,
+                "video": video_path,
+                "audio": audio_path,
+                "duration": duration,
+            }
+        return None
 
     def compose(self, reel: Reel) -> FFmpegCommand:
-        # Collect assets from blocks
-        segments = []
-        final_transcriptions = []
-        media_timings = []
-        current_time = 0.0
-
-        for block in reel.blocks:
-            seg_type = "none"
-            video_path = None
-            audio_path = None
-
-            if block.type == "dialogue":
-                if block.assets and block.assets.lipsync_filepath:
-                    seg_type = "video"
-                    video_path = block.assets.lipsync_filepath
-
-            elif block.type == "question":
-                if block.assets and block.assets.question_filepath:
-                    seg_type = "question"
-                    video_path = block.assets.question_filepath
-                    audio_path = block.assets.voice_filepath
-
-            # Calculate Duration
-            duration = 0.0
-            if video_path:
-                duration = self.get_video_duration(video_path)
-
-            if seg_type != "none":
-                segments.append(
-                    {
-                        "type": seg_type,
-                        "video": video_path,
-                        "audio": audio_path,
-                        "duration": duration,
-                    }
-                )
-
-            # Handle Subtitles & Media
-            if block.assets and block.assets.subtitles:
-                trans = block.assets.subtitles
-                shifted_words = [
-                    TranscriptionWord(
-                        word=w.word,
-                        start=w.start + current_time,
-                        end=w.end + current_time,
-                    )
-                    for w in trans.words
-                ]
-                final_transcriptions.append(
-                    TranscriptionVerbose(
-                        duration=trans.duration,
-                        language=trans.language,
-                        text=trans.text,
-                        words=shifted_words,
-                    )
-                )
-
-            # We can't use extract_media_timings easily here because it relies on absolute_subtitles list matching blocks
-            # So we manually extract media timings here
-            # (Implementation omitted for brevity in GameplayTemplate as user focused on AlphaGameplayTemplate,
-            # but ideally this should be mirrored. For now, keeping original flow for GameplayTemplate but with fixed timing calculation above is tricky without full refactor.)
-            # To keep it simple and safe, I will apply the full fix to AlphaGameplayTemplate below.
-            current_time += duration
-
-        final_subtitles = self.merge_transcriptions(final_transcriptions)
+        segments, final_subtitles, media_timings, current_time = (
+            self.collect_segments_and_timings(reel)
+        )
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -117,6 +84,7 @@ class GameplayTemplate(EditTemplate):
         for i, seg in enumerate(segments):
             if seg["type"] == "video":
                 v, a = graph.add_input(seg["video"], f"seg_{i}")
+                v = v.filter("fps", fps=30)
                 # Scale to square
                 v = v.filter("scale", "1080:1080")
 
@@ -182,17 +150,43 @@ class GameplayTemplate(EditTemplate):
 
             media_v, _ = graph.add_input(media.filepath, f"media_{i}")
 
+            display_end_time = media.end_time
+
+            if media.media_type == "manim":
+                # Manim is a video, scale to fit width and shift time
+                manim_duration = self.get_video_duration(media.filepath)
+                display_end_time = media.start_time + manim_duration
+
+                # Ensure alpha channel exists for mp4
+                media_v = media_v.filter("format", "yuva420p")
+                media_v = media_v.filter("fps", fps=30)
+
+                media_v = media_v.filter("scale", f"{self.manim_width}:-1")
+
+                if self.manim_style and self.manim_style.corner_radius > 0:
+                    media_v = Animator.rounded_corners(
+                        media_v, self.manim_style.corner_radius
+                    )
+                media_v = media_v.filter(
+                    "setpts", f"PTS-STARTPTS+{media.start_time}/TB"
+                )
+                is_static = False
+            else:
+                # Images/Latex are static
+                is_static = True
+
             media_v = Animator.fade(
                 media_v,
                 start_time=media.start_time,
-                end_time=media.end_time,
+                end_time=display_end_time,
                 duration=0.4,
-                easing="ease_ease_in_out_quart",
+                is_static=is_static,
+                easing="ease_in_out_quart",
             )
 
             x_expr = Animator.slide_horizontal(
                 start_time=media.start_time,
-                end_time=media.end_time,
+                end_time=display_end_time,
                 duration=0.4,
                 enter_from="left",
                 exit_to="right",
@@ -201,11 +195,14 @@ class GameplayTemplate(EditTemplate):
 
             main_v = graph.add_raw(
                 [main_v, media_v],
-                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})':shortest=1",
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{display_end_time})':eof_action=pass",
             )
 
         # 5. Subtitles
         main_v = main_v.filter("ass", f"'{subs_path}'")
+
+        # Force final duration to match script
+        main_v = main_v.filter("trim", duration=current_time)
 
         # 6. Audio Mixing
         final_audio = lip_concat_a
@@ -243,9 +240,12 @@ class AlphaGameplayTemplate(EditTemplate):
         AssetType.LIPSYNC,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
+        AssetType.MANIM,
         AssetType.LATEX,
         AssetType.QUESTION,
     ]
+
+    allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
     def __init__(self, template_config: TemplateConfig):
         self.bg_video = template_config.bg_video
@@ -254,95 +254,38 @@ class AlphaGameplayTemplate(EditTemplate):
         self.chromakey_color = template_config.chromakey_color
         self.chromakey_similarity = template_config.chromakey_similarity
         self.chromakey_blend = template_config.chromakey_blend
+        self.manim_width = template_config.manim_width
+        self.manim_style = template_config.manim_style
+
+    def _get_block_segment(self, block):
+        video_path = None
+        audio_path = None
+        seg_type = "none"
+
+        if block.type == "dialogue" and block.assets and block.assets.lipsync_filepath:
+            seg_type = "video"
+            video_path = block.assets.lipsync_filepath
+        elif (
+            block.type == "question" and block.assets and block.assets.question_filepath
+        ):
+            seg_type = "question"
+            video_path = block.assets.question_filepath
+            audio_path = block.assets.voice_filepath
+
+        if seg_type != "none":
+            duration = self.get_video_duration(video_path)
+            return {
+                "type": seg_type,
+                "video": video_path,
+                "audio": audio_path,
+                "duration": duration,
+            }
+        return None
 
     def compose(self, reel: Reel) -> FFmpegCommand:
-        # Collect assets from blocks
-        segments = []
-        final_transcriptions = []
-        media_timings = []
-        current_time = 0.0
-
-        for block in reel.blocks:
-            seg_type = "none"
-            video_path = None
-            overlay_path = None
-            audio_path = None
-
-            if block.type == "dialogue":
-                if block.assets and block.assets.lipsync_filepath:
-                    seg_type = "video"
-                    video_path = block.assets.lipsync_filepath
-
-            elif block.type == "question":
-                if block.assets and block.assets.question_filepath:
-                    seg_type = "question"
-                    video_path = block.assets.question_filepath
-                    audio_path = block.assets.voice_filepath
-
-            # Calculate Duration
-            duration = 0.0
-            if video_path:
-                duration = self.get_video_duration(video_path)
-
-            if seg_type != "none":
-                segments.append(
-                    {
-                        "type": seg_type,
-                        "video": video_path,
-                        "audio": audio_path,
-                        "duration": duration,
-                    }
-                )
-
-            # Handle Subtitles & Media
-            if block.assets and block.assets.subtitles:
-                trans = block.assets.subtitles
-                shifted_words = [
-                    TranscriptionWord(
-                        word=w.word,
-                        start=w.start + current_time,
-                        end=w.end + current_time,
-                    )
-                    for w in trans.words
-                ]
-                final_transcriptions.append(
-                    TranscriptionVerbose(
-                        duration=trans.duration,
-                        language=trans.language,
-                        text=trans.text,
-                        words=shifted_words,
-                    )
-                )
-
-                # Extract Media Timings relative to this block
-                if block.media and block.media.trigger:
-                    trigger = block.media.trigger
-                    words = trans.words
-                    if trigger.start_word_index < len(
-                        words
-                    ) and trigger.end_word_index < len(words):
-                        rel_start = words[trigger.start_word_index].start
-                        rel_end = words[trigger.end_word_index].end
-
-                        m_path = None
-                        if block.media.type == "image":
-                            m_path = block.assets.image_filepath
-                        elif block.media.type == "latex":
-                            m_path = block.assets.latex_filepath
-
-                        if m_path:
-                            media_timings.append(
-                                MediaTiming(
-                                    filepath=m_path,
-                                    start_time=current_time + rel_start,
-                                    end_time=current_time + rel_end,
-                                    media_type=block.media.type,
-                                )
-                            )
-
-            current_time += duration
-
-        final_subtitles = self.merge_transcriptions(final_transcriptions)
+        segments, final_subtitles, media_timings, current_time = (
+            self.collect_segments_and_timings(reel)
+        )
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -360,6 +303,7 @@ class AlphaGameplayTemplate(EditTemplate):
         for i, seg in enumerate(segments):
             if seg["type"] == "video":
                 v, a = graph.add_input(seg["video"], f"seg_{i}")
+                v = v.filter("fps", fps=30)
 
                 # Alpha specific: Chromakey
                 v = v.filter(
@@ -439,16 +383,42 @@ class AlphaGameplayTemplate(EditTemplate):
 
             media_v, _ = graph.add_input(media.filepath, f"media_{i}")
 
+            display_end_time = media.end_time
+
+            if media.media_type == "manim":
+                # Manim is a video, scale to fit width and shift time
+                manim_duration = self.get_video_duration(media.filepath)
+                display_end_time = media.start_time + manim_duration
+
+                # Ensure alpha channel exists for mp4
+                media_v = media_v.filter("format", "yuva420p")
+                media_v = media_v.filter("fps", fps=30)
+
+                media_v = media_v.filter("scale", f"{self.manim_width}:-1")
+
+                if self.manim_style and self.manim_style.corner_radius > 0:
+                    media_v = Animator.rounded_corners(
+                        media_v, self.manim_style.corner_radius
+                    )
+                media_v = media_v.filter(
+                    "setpts", f"PTS-STARTPTS+{media.start_time}/TB"
+                )
+                is_static = False
+            else:
+                # Images/Latex are static
+                is_static = True
+
             media_v = Animator.fade(
                 media_v,
                 start_time=media.start_time,
-                end_time=media.end_time,
+                end_time=display_end_time,
                 duration=0.4,
+                is_static=is_static,
             )
 
             x_expr = Animator.slide_horizontal(
                 start_time=media.start_time,
-                end_time=media.end_time,
+                end_time=display_end_time,
                 duration=0.4,
                 enter_from="left",
                 exit_to="right",
@@ -456,11 +426,14 @@ class AlphaGameplayTemplate(EditTemplate):
 
             main_v = graph.add_raw(
                 [main_v, media_v],
-                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{media.end_time})':shortest=1",
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{display_end_time})':eof_action=pass",
             )
 
         # 5. Subtitles
         main_v = main_v.filter("ass", f"'{subs_path}'")
+
+        # Force final duration to match script
+        main_v = main_v.filter("trim", duration=current_time)
 
         # 6. Audio Mixing
         final_audio = lip_concat_a
@@ -498,84 +471,59 @@ class StaticGameplayTemplate(EditTemplate):
         AssetType.STATICFACE,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
+        AssetType.MANIM,
         AssetType.LATEX,
         AssetType.QUESTION,
     ]
+
+    allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
     def __init__(self, template_config: TemplateConfig):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
+        self.manim_width = template_config.manim_width
+        self.manim_style = template_config.manim_style
+
+    def _get_block_segment(self, block):
+        video_path = None
+        audio_path = None
+        seg_type = "none"
+        duration = 0.0
+
+        if (
+            block.type == "dialogue"
+            and block.assets
+            and block.assets.staticface_filepath
+            and block.assets.voice_filepath
+        ):
+            seg_type = "static_face"
+            video_path = block.assets.staticface_filepath
+            audio_path = block.assets.voice_filepath
+            duration = self.get_video_duration(
+                audio_path
+            )  # Duration based on audio for static face
+        elif (
+            block.type == "question" and block.assets and block.assets.question_filepath
+        ):
+            seg_type = "question"
+            video_path = block.assets.question_filepath
+            audio_path = block.assets.voice_filepath
+            duration = self.get_video_duration(video_path)
+
+        if seg_type != "none":
+            return {
+                "type": seg_type,
+                "video": video_path,
+                "audio": audio_path,
+                "duration": duration,
+            }
+        return None
 
     def compose(self, reel: Reel) -> FFmpegCommand:
-        # Collect assets from blocks
-        segments = []
-        final_transcriptions = []
-        media_timings = []
-        current_time = 0.0
-
-        for block in reel.blocks:
-            seg_type = "none"
-            video_path = None
-            audio_path = None
-
-            if block.type == "dialogue":
-                if (
-                    block.assets
-                    and block.assets.staticface_filepath
-                    and block.assets.voice_filepath
-                ):
-                    seg_type = "static_face"
-                    video_path = block.assets.staticface_filepath
-                    audio_path = block.assets.voice_filepath
-
-            elif block.type == "question":
-                if block.assets and block.assets.question_filepath:
-                    seg_type = "question"
-                    video_path = block.assets.question_filepath
-                    audio_path = block.assets.voice_filepath
-
-            # Calculate Duration based on AUDIO for static faces
-            duration = 0.0
-            if seg_type == "static_face" and audio_path:
-                duration = self.get_video_duration(audio_path)
-            elif seg_type == "question" and video_path:
-                duration = self.get_video_duration(video_path)
-
-            if seg_type != "none":
-                segments.append(
-                    {
-                        "type": seg_type,
-                        "video": video_path,
-                        "audio": audio_path,
-                        "duration": duration,
-                    }
-                )
-
-            # Handle Subtitles & Media
-            if block.assets and block.assets.subtitles:
-                trans = block.assets.subtitles
-                shifted_words = [
-                    TranscriptionWord(
-                        word=w.word,
-                        start=w.start + current_time,
-                        end=w.end + current_time,
-                    )
-                    for w in trans.words
-                ]
-                final_transcriptions.append(
-                    TranscriptionVerbose(
-                        duration=trans.duration,
-                        language=trans.language,
-                        text=trans.text,
-                        words=shifted_words,
-                    )
-                )
-                # (Media timing extraction logic omitted for brevity, same as AlphaGameplay)
-
-            current_time += duration
-
-        final_subtitles = self.merge_transcriptions(final_transcriptions)
+        segments, final_subtitles, media_timings, current_time = (
+            self.collect_segments_and_timings(reel)
+        )
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -648,6 +596,54 @@ class StaticGameplayTemplate(EditTemplate):
         main_v = graph.add_raw(
             [bg_v, lip_concat_v], "overlay=0:0:shortest=1", "stacked"
         )
+
+        # Media Overlays
+        for i, media in enumerate(media_timings):
+            if not os.path.isfile(media.filepath):
+                continue
+
+            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+
+            display_end_time = media.end_time
+
+            if media.media_type == "manim":
+                manim_duration = self.get_video_duration(media.filepath)
+                display_end_time = media.start_time + manim_duration
+
+                # Ensure alpha channel exists for mp4
+                media_v = media_v.filter("format", "yuva420p")
+
+                media_v = media_v.filter("scale", f"{self.manim_width}:-1")
+
+                if self.manim_style and self.manim_style.corner_radius > 0:
+                    media_v = Animator.rounded_corners(
+                        media_v, self.manim_style.corner_radius
+                    )
+                media_v = media_v.filter("setpts", f"PTS+{media.start_time}/TB")
+                is_static = False
+            else:
+                is_static = True
+
+            media_v = Animator.fade(
+                media_v,
+                start_time=media.start_time,
+                end_time=display_end_time,
+                duration=0.4,
+                is_static=is_static,
+            )
+            x_expr = Animator.slide_horizontal(
+                start_time=media.start_time,
+                end_time=display_end_time,
+                duration=0.4,
+                enter_from="left",
+                exit_to="right",
+            )
+
+            main_v = graph.add_raw(
+                [main_v, media_v],
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{display_end_time})':eof_action=pass",
+            )
+
         main_v = main_v.filter("ass", f"'{subs_path}'")
 
         final_audio = lip_concat_a
@@ -661,6 +657,140 @@ class StaticGameplayTemplate(EditTemplate):
             final_audio = graph.add_raw(
                 [final_audio, music_a], "amix=inputs=2:normalize=0", "audio_mix"
             )
+
+        return graph.build(
+            video_out=main_v,
+            audio_out=final_audio,
+            extra_args=["-preset", "fast", "-c:a", "aac", "-r", "30"],
+        )
+
+
+class SongTemplate(EditTemplate):
+    provider_name = "song"
+
+    required_assets = [
+        AssetType.SCRIPT,
+        AssetType.SONG,
+        AssetType.SUBTITLES,
+        AssetType.IMAGES,
+        AssetType.MANIM,
+        AssetType.LATEX,
+    ]
+
+    allowed_blocks = [BlockType.SONG]
+
+    def __init__(self, template_config: TemplateConfig):
+        self.bg_video = template_config.bg_video
+        self.subtitle_style = template_config.subtitle_style
+        self.manim_width = template_config.manim_width
+        self.manim_style = template_config.manim_style
+
+    def _get_block_segment(self, block):
+        if (
+            AssetType.SONG in block.valid_assets
+            and block.assets
+            and block.assets.song_filepath
+        ):
+            duration = self.get_video_duration(block.assets.song_filepath)
+            return {
+                "type": "song",
+                "audio": block.assets.song_filepath,
+                "duration": duration,
+            }
+        return None
+
+    def compose(self, reel: Reel) -> FFmpegCommand:
+        segments, final_subtitles, media_timings, current_time = (
+            self.collect_segments_and_timings(reel)
+        )
+
+        if current_time <= 0:
+            raise ValueError(
+                "Video duration is 0. Ensure the script contains valid Song blocks and song generation succeeded."
+            )
+
+        # Generate subtitles file
+        subs_path = self.transcription_to_ass(
+            transcription=final_subtitles,
+            style=self.subtitle_style,
+        ).download()
+
+        # --- Build Filter Graph ---
+        graph = FilterGraph()
+
+        # 1. Process Audio (Songs)
+        audio_nodes = []
+        for i, seg in enumerate(segments):
+            if seg["type"] == "song":
+                _, a = graph.add_input(seg["audio"], f"seg_{i}_a")
+                audio_nodes.append(a)
+
+        if audio_nodes:
+            final_audio = graph.add_raw(
+                audio_nodes, f"concat=n={len(audio_nodes)}:v=0:a=1", "audio_concat"
+            )
+        else:
+            final_audio = graph.add_raw(
+                [], "anullsrc=channel_layout=stereo:sample_rate=44100", "silence"
+            )
+
+        # 2. Process Background
+        bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        bg_v = bg_v.filter("trim", end=current_time).filter("setpts", "PTS-STARTPTS")
+        bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
+        bg_v = bg_v.filter("crop", "1080:1920")
+
+        main_v = bg_v
+
+        # 3. Media Overlays
+        for i, media in enumerate(media_timings):
+            if not os.path.isfile(media.filepath):
+                continue
+
+            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+            display_end_time = media.end_time
+
+            if media.media_type == "manim":
+                manim_duration = self.get_video_duration(media.filepath)
+                display_end_time = media.start_time + manim_duration
+                media_v = media_v.filter("format", "yuva420p")
+                media_v = media_v.filter("fps", fps=30)
+                media_v = media_v.filter("scale", f"{self.manim_width}:-1")
+                if self.manim_style and self.manim_style.corner_radius > 0:
+                    media_v = Animator.rounded_corners(
+                        media_v, self.manim_style.corner_radius
+                    )
+                media_v = media_v.filter(
+                    "setpts", f"PTS-STARTPTS+{media.start_time}/TB"
+                )
+                is_static = False
+            else:
+                is_static = True
+
+            media_v = Animator.fade(
+                media_v,
+                start_time=media.start_time,
+                end_time=display_end_time,
+                duration=0.4,
+                is_static=is_static,
+                easing="ease_in_out_quart",
+            )
+            x_expr = Animator.slide_horizontal(
+                start_time=media.start_time,
+                end_time=display_end_time,
+                duration=0.4,
+                enter_from="left",
+                exit_to="right",
+                easing="ease_in_out_quart",
+            )
+            main_v = graph.add_raw(
+                [main_v, media_v],
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{display_end_time})':eof_action=pass",
+            )
+
+        # 4. Subtitles & Final Trim
+        main_v = main_v.filter("ass", f"'{subs_path}'")
+        main_v = main_v.filter("trim", duration=current_time)
 
         return graph.build(
             video_out=main_v,

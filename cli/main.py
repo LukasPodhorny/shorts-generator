@@ -1,5 +1,6 @@
 import warnings
 import logging
+from aishorts.shorts_generator import ScriptConfig
 
 warnings.filterwarnings("ignore", category=UserWarning)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -21,12 +22,14 @@ from aishorts.utils.pydantic_helper import load_pydantic, load_pydantic_dict
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=False)
+    parser.add_argument("--resume_from", type=str, required=False)
+    parser.add_argument("--mock_script", type=str, required=False)
     parser.add_argument("--files", type=str, nargs="+", required=False)
     parser.add_argument(
         "--avatars",
         type=str,
         nargs="+",
-        required=True,
+        required=False,
     )
     parser.add_argument("--amount", type=int, required=False)
     parser.add_argument("--template", type=str, required=True)
@@ -42,17 +45,25 @@ def main():
     avatars = load_pydantic_dict("cli/configs/avatars.json", Avatar)
 
     video_template = video_templates[args.template]
-    selected_avatars = [avatars[name] for name in args.avatars]
+
+    selected_avatars = [avatars[name] for name in args.avatars] if args.avatars else []
 
     shorts_config = ShortsConfig(
         avatars=selected_avatars,
         video_template=video_template,
         subtitle_config=SubtitleConfig(provider=args.subtitle_provider),
+        script_config=ScriptConfig(
+            provider="gemini", provider_config={"model": "gemini-3-pro-preview"}
+        ),
     )
 
     shorts_generator = ShortsGenerator(shorts_config=shorts_config)
     shorts_generator.generate_shorts(
-        amount=args.amount, files=args.files, user_input=args.input
+        amount=args.amount,
+        files=args.files,
+        user_input=args.input,
+        resume_from=args.resume_from,
+        mock_script=args.mock_script,
     )
 
 

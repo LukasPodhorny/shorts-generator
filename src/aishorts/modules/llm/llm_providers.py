@@ -11,7 +11,7 @@ from google import genai
 class LLMProvider(Provider):
 
     @abstractmethod
-    async def generate_script(
+    async def generate_structure(
         self,
         instructions: str,
         files: list[str] | None = None,
@@ -107,11 +107,13 @@ class ChatGPT(LLMProvider):
 
         return messages
 
-    async def generate_script(
+    async def generate_structure(
         self,
         instructions: str,
         files: list[str] | None = None,
         user_input: str | None = None,
+        response_schema=None,
+        **kwargs,
     ) -> ReelSeries:
         if not files and not user_input:
             raise ValueError("Either 'files' or 'user_input' must be provided")
@@ -127,7 +129,7 @@ class ChatGPT(LLMProvider):
                 model=self.model,
                 input=messages,
                 max_output_tokens=self.max_output_tokens,
-                text_format=ReelSeries,
+                text_format=response_schema,
             )
 
             return response.output_parsed
@@ -162,7 +164,7 @@ class Gemini(LLMProvider):
 
     def __init__(
         self,
-        model: str = "gemini-3-flash-preview",
+        model: str = "gemini-3-pro-preview",
         max_output_tokens: int = 50_000,
         api_key: str | None = None,
         **kwargs,
@@ -195,11 +197,12 @@ class Gemini(LLMProvider):
                 except Exception:
                     pass
 
-    async def generate_script(
+    async def generate_structure(
         self,
         instructions: str,
         files: list[str] | None = None,
         user_input: str | None = None,
+        response_schema=None,
         **kwargs,
     ) -> ReelSeries:
         from google.genai import types
@@ -218,7 +221,7 @@ class Gemini(LLMProvider):
                 contents=content,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=ReelSeries,
+                    response_schema=response_schema,
                     max_output_tokens=self.max_output_tokens,
                     system_instruction=instructions,
                 ),

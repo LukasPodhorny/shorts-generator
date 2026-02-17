@@ -4,6 +4,7 @@ from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.image_utils import ImageStyle, style_image
 import asyncio
 from aishorts.modules.provider import MediaFile
+from aishorts.modules.script.script import AssetType
 
 
 class ImageGenerator:
@@ -74,8 +75,14 @@ class ImageGenerator:
         # Collect results from the reel for styling
         paths_to_style = []
         for block in reel.blocks:
-            if block.assets.image_filepath:
-                paths_to_style.append(block.assets.image_filepath)
+            if AssetType.LATEX in block.valid_assets:
+                # We only want to style images, so we iterate the media items to check type
+                for media_item in block.media:
+                    if (
+                        media_item.type == "image"
+                        and media_item.id in block.assets.media_map
+                    ):
+                        paths_to_style.append(block.assets.media_map[media_item.id])
 
         await asyncio.gather(*[_style_task(p) for p in paths_to_style])
 

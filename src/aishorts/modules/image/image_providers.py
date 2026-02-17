@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import os
 from aishorts.utils.r2_handler import download_from_url, CloudflareR2
 from aishorts.modules.script.script import Reel, AssetType
+from typing import Any
 
 
 @dataclass
@@ -37,9 +38,9 @@ class Unsplash(ImageProvider):
         query: str,
         max_width: int,
         max_height: int,
-    ) -> tuple[str, str | None] | None:
+    ) -> list[tuple[str, str | None]]:
         """Search for an image URL without downloading it."""
-        params = {"query": query, "per_page": 1, "client_id": self.api_key}
+        params = {"query": query, "per_page": 10, "client_id": self.api_key}
 
         for attempt in range(3):
             try:
@@ -52,37 +53,44 @@ class Unsplash(ImageProvider):
                     if not results:
                         # No results found, don't retry.
                         print(f"No Unsplash results for query: '{query}'")
-                        return None
+                        return []
 
-                    img = results[0]
-                    raw_url = img["urls"]["raw"]
-                    # Request PNG format from Unsplash (Imgix)
-                    raw_url += (
-                        "&" if "?" in raw_url else "?"
-                    ) + f"fm=png&w={max_width}&h={max_height}&fit=max"
+                    candidates = []
+                    for img in results:
+                        raw_url = img["urls"]["raw"]
+                        # Request PNG format from Unsplash (Imgix)
+                        raw_url += (
+                            "&" if "?" in raw_url else "?"
+                        ) + f"fm=png&w={max_width}&h={max_height}&fit=max"
+                        candidates.append(
+                            (
+                                raw_url,
+                                img.get("alt_description") or img.get("description"),
+                            )
+                        )
 
-                    return raw_url, img.get("alt_description") or img.get("description")
+                    return candidates
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 print(
                     f"Attempt {attempt + 1}/3 failed for query '{query}'. Retrying... Error: {e}"
                 )
                 if attempt == 2:
                     print(f"Error fetching query '{query}' after 3 attempts.")
-                    return None
+                    return []
                 await asyncio.sleep(2**attempt)  # 1, 2 seconds backoff
 
             except Exception as e:
                 # Catch any other unexpected errors and don't retry
                 print(f"An unexpected error occurred fetching query '{query}': {e}")
-                return None
-        return None
+                return []
+        return []
 
     async def get_images(
         self,
         queries: list[str],
         max_width: int,
         max_height: int,
-        ids: list[int] | None = None,
+        ids: list[Any] | None = None,
     ) -> list[ImageResult | None]:
         """Fetch images for all queries concurrently"""
         if ids is None:
@@ -97,7 +105,20 @@ class Unsplash(ImageProvider):
                 self._search_query(session, query, max_width, max_height)
                 for query in queries
             ]
-            search_results = await asyncio.gather(*search_tasks)
+            search_results_lists = await asyncio.gather(*search_tasks)
+
+        # Deduplicate images
+        seen_urls = set()
+        search_results = []
+
+        for candidates in search_results_lists:
+            selected = None
+            for url, alt in candidates:
+                if url not in seen_urls:
+                    selected = (url, alt)
+                    seen_urls.add(url)
+                    break
+            search_results.append(selected)
 
         # Phase 2: Download images (high bandwidth)
         # We use the semaphore here to prevent network saturation
@@ -113,7 +134,7 @@ class Unsplash(ImageProvider):
                 return ImageResult(media=MediaFile(id=id, url=url, path=path), alt=alt)
 
         download_tasks = []
-        for (url_data), id in zip(search_results, ids):
+        for url_data, id in zip(search_results, ids):
             if url_data:
                 url, alt = url_data
                 download_tasks.append(_bounded_download(url, alt, id))
@@ -137,9 +158,10 @@ class Unsplash(ImageProvider):
 
         for i, block in enumerate(reel.blocks):
             if AssetType.IMAGES in block.valid_assets and block.media:
-                if block.media.type == "image":
-                    queries.append(block.media.keywords)
-                    ids.append(i)
+                for media_item in block.media:
+                    if media_item.type == "image":
+                        queries.append(media_item.keywords)
+                        ids.append((i, media_item.id))
 
         results = await self.get_images(
             queries=queries, max_width=max_width, max_height=max_height, ids=ids
@@ -147,6 +169,7 @@ class Unsplash(ImageProvider):
 
         for res in results:
             if res:
-                block = reel.blocks[res.media.id]
-                block.assets.image_filepath = res.media.path
-                block.assets.image_url = res.media.url
+                block_idx, media_id = res.media.id
+                block = reel.blocks[block_idx]
+                block.assets.media_map[media_id] = res.media.path
+                block.assets.media_url_map[media_id] = res.media.url

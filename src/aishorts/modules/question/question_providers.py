@@ -9,6 +9,7 @@ from aishorts.modules.motion_graphic.motion_graphic import (
 from typing import Type
 import uuid
 from pydub import AudioSegment
+import asyncio
 
 
 class QuestionProvider(Provider):
@@ -48,7 +49,9 @@ class MotionGraphicQuestionProvider(QuestionProvider):
                     block.assets.voice_filepath
                 ):
                     try:
-                        audio = AudioSegment.from_file(block.assets.voice_filepath)
+                        audio = await asyncio.to_thread(
+                            AudioSegment.from_file, block.assets.voice_filepath
+                        )
                         typing_duration = len(audio) / 1000.0
                     except Exception as e:
                         print(f"Failed to get audio duration for question block: {e}")

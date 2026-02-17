@@ -1,8 +1,10 @@
 from aishorts.modules.avatar import Avatar
-from aishorts.modules.script.llm_providers import *
-from aishorts.modules.script.llm_providers import LLMProvider
+from aishorts.modules.llm.llm_providers import *
+from aishorts.modules.llm.llm_providers import LLMProvider
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.modules.script.script import ReelSeries
+from aishorts.modules.llm.llm_generator import LLMGenerator
+from aishorts.modules.script.script import BlockType
 
 
 class ScriptGenerator:
@@ -27,6 +29,12 @@ class ScriptGenerator:
         - media/latex settings
         """
 
+        def _bool_rule(boolean: bool, enabled_text: str, disabled_text: str):
+            if boolean:
+                return enabled_text
+            else:
+                return disabled_text
+
         # ------------------------------
         # Build avatar instruction text
         # ------------------------------
@@ -39,30 +47,25 @@ class ScriptGenerator:
         # Build media settings text
         # ------------------------------
         media_rules = ["MEDIA SETTINGS:"]
-        if self.generate_image:
-            media_rules.append(
-                "- Images: ENABLED (you may generate image media objects)."
-            )
-        else:
-            media_rules.append(
-                "- Images: DISABLED (never produce image media objects)."
-            )
-
-        if self.generate_latex:
-            media_rules.append(
-                "- LaTeX: ENABLED (you may generate latex media objects)."
-            )
-        else:
-            media_rules.append("- LaTeX: DISABLED (never produce latex media objects).")
-
-        if self.generate_question:
-            media_rules.append(
-                "- Question Blocks: ENABLED (you may generate question blocks)."
-            )
-        else:
-            media_rules.append(
-                "- Question Blocks: DISABLED (never generate question blocks)."
-            )
+        media_rules.extend(
+            [
+                _bool_rule(
+                    self.generate_image,
+                    "- Images: ENABLED (you may generate image media objects).",
+                    "- Images: ENABLED (you may generate image media objects).",
+                ),
+                _bool_rule(
+                    self.generate_latex,
+                    "- LaTeX: ENABLED (you may generate latex media objects).",
+                    "- LaTeX: DISABLED (never produce latex media objects).",
+                ),
+                _bool_rule(
+                    self.generate_manim,
+                    "- Manim: ENABLED (you may generate manim media objects with a prompt describing the animation).",
+                    "- Manim: DISABLED (never produce manim media objects).",
+                ),
+            ]
+        )
 
         media_block = "\n".join(media_rules)
 
@@ -71,18 +74,25 @@ class ScriptGenerator:
         # ------------------------------
         blocks_rules = ["ALLOWED BLOCKS:"]
 
-        blocks_rules.append(
-            '- "dialogue" blocks: ENABLED (you may generate "dialogue" blocks).'
+        blocks_rules.extend(
+            [
+                _bool_rule(
+                    BlockType.DIALOGUE in self.allowed_blocks,
+                    f"- {BlockType.DIALOGUE.value} ENABLED",
+                    f"- {BlockType.DIALOGUE.value} DISABLED",
+                ),
+                _bool_rule(
+                    BlockType.QUESTION in self.allowed_blocks,
+                    f"- {BlockType.QUESTION.value} ENABLED",
+                    f"- {BlockType.QUESTION.value} DISABLED",
+                ),
+                _bool_rule(
+                    BlockType.SONG in self.allowed_blocks,
+                    f"- {BlockType.SONG.value} ENABLED (Generate a song with 'style_prompt', 'text', and optional 'media' triggers).",
+                    f"- {BlockType.SONG.value} DISABLED",
+                ),
+            ]
         )
-
-        if self.generate_question:
-            blocks_rules.append(
-                '- "question" blocks: ENABLED (you may generate "question" blocks).'
-            )
-        else:
-            blocks_rules.append(
-                '- "question" blocks: DISABLED (never generate "question" blocks).'
-            )
 
         blocks_block = "\n".join(blocks_rules)
 
@@ -113,15 +123,17 @@ class ScriptGenerator:
         avatars: list[Avatar] = None,
         generate_latex: bool = True,
         generate_image: bool = True,
-        generate_question: bool = False,
+        generate_manim: bool = False,
         provider: str = "chatgpt",
+        allowed_blocks: list[BlockType] = None,
         **kwargs,
     ):
         self.base_instructions = base_instructions
         self.avatars = avatars
         self.generate_latex = generate_latex
         self.generate_image = generate_image
-        self.generate_question = generate_question
+        self.generate_manim = generate_manim
+        self.allowed_blocks = allowed_blocks
         self.provider = provider.lower()
 
         cls = LLMProvider.get(self.provider)
@@ -138,16 +150,8 @@ class ScriptGenerator:
         **kwargs,
     ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
-        func = self.llm.generate_script
+        func = self.llm.generate_structure
 
-        return await await_or_thread(func, instructions, files, user_input, **kwargs)
-
-    async def generate_response(
-        self,
-        instructions: str | None = None,
-        files: list[str] | None = None,
-        user_input: str | None = None,
-        **kwargs,
-    ) -> str:
-        func = self.llm.generate_response
-        return await await_or_thread(func, instructions, files, user_input, **kwargs)
+        return await await_or_thread(
+            func, instructions, files, user_input, ReelSeries, **kwargs
+        )

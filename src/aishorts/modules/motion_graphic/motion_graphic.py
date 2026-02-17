@@ -44,7 +44,7 @@ class MotionGraphicRenderer:
         page = await browser.new_page(
             viewport={"width": self.config.width, "height": self.config.height}
         )
-        await page.set_content(html_content)
+        await page.set_content(html_content, timeout=60000)
 
         while True:
             try:
@@ -94,23 +94,24 @@ class MotionGraphicRenderer:
             await browser.close()
 
         print("Stitching frames...")
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-framerate",
-                str(self.config.fps),
-                "-i",
-                f"{job_output_dir}/frame_%04d.png",
-                "-c:v",
-                "prores_ks",
-                "-profile:v",
-                "4444",
-                "-pix_fmt",
-                "yuva444p10le",
-                output_filename,
-            ]
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            str(self.config.fps),
+            "-i",
+            f"{job_output_dir}/frame_%04d.png",
+            "-c:v",
+            "prores_ks",
+            "-profile:v",
+            "4444",
+            "-pix_fmt",
+            "yuva444p10le",
+            output_filename,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        await process.wait()
 
         # Cleanup frames
         if os.path.exists(job_output_dir):

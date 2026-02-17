@@ -58,5 +58,35 @@
                 "shadow_opacity": 0.7
             }
         }
+    },
+    "song_template": {
+        "edit_template": "song",
+        "template_config": {
+            "bg_video": "assets/bg_video/gameplay.mp4",
+            "subtitle_style": {
+                "font_size": 135,
+                "karaoke_enabled": true,
+                "max_chars_per_line": 20,
+                "remove_chars": ""
+            },
+            "image_style": {
+                "corner_radius": 40,
+                "shadow_blur": 10,
+                "shadow_offset": [
+                    0,
+                    15
+                ],
+                "shadow_opacity": 0.7
+            },
+            "latex_style": {
+                "corner_radius": 40,
+                "shadow_blur": 10,
+                "shadow_offset": [
+                    0,
+                    15
+                ],
+                "shadow_opacity": 0.7
+            }
+        }
     }
 }
