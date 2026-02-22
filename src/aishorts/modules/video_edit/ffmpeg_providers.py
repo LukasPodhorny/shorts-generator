@@ -1,3 +1,4 @@
+import asyncio
 import os
 from dataclasses import dataclass
 import os
@@ -27,7 +28,7 @@ class FFmpegProvider(Provider):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     @abstractmethod
-    def render(self, cmd: FFmpegCommand, **kwargs) -> FFmpegResult:
+    async def render(self, cmd: FFmpegCommand, **kwargs) -> FFmpegResult:
         pass
 
     @staticmethod
@@ -111,7 +112,7 @@ class FFmpegAPI(FFmpegProvider):
             )
             put_resp.raise_for_status()
 
-    def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
         if not self.api_key:
             raise ValueError(
                 "FFmpeg API key is missing. Please set FFMPEG_API_KEY environment variable or pass api_key to constructor."
@@ -224,7 +225,7 @@ class LocalFFmpeg(FFmpegProvider):
     def __init__(self, **kwargs):
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
-    def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
         cmd.video_codec = self.video_codec
 
         output_path = os.path.join(self.OUTPUT_DIR, output_filename)
@@ -234,7 +235,16 @@ class LocalFFmpeg(FFmpegProvider):
         ffmpeg_command.extend(["-y", output_path])
 
         try:
-            result = subprocess.run(ffmpeg_command, check=True)
+            process = await asyncio.create_subprocess_exec(
+                *ffmpeg_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    process.returncode, ffmpeg_command, output=stdout, stderr=stderr
+                )
         except subprocess.CalledProcessError as e:
             # Print FFmpeg's actual error message
             print("\n" + "=" * 80)
@@ -244,7 +254,7 @@ class LocalFFmpeg(FFmpegProvider):
             print(" ".join(ffmpeg_command))
             print("\n" + "=" * 80)
             print("STDERR OUTPUT:")
-            print(e.stderr)
+            print(e.stderr.decode() if e.stderr else "No stderr captured")
             print("=" * 80 + "\n")
             raise
 

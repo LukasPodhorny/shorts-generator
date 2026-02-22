@@ -165,7 +165,7 @@ class Gemini(LLMProvider):
     def __init__(
         self,
         model: str = "gemini-3-pro-preview",
-        max_output_tokens: int = 50_000,
+        max_output_tokens: int = 10_000,
         api_key: str | None = None,
         **kwargs,
     ):
@@ -186,7 +186,7 @@ class Gemini(LLMProvider):
         uploaded = []
         try:
             for filepath in files:
-                file = await asyncio.to_thread(self.client.files.upload, path=filepath)
+                file = await asyncio.to_thread(self.client.files.upload, file=filepath)
                 uploaded.append(file)
             yield uploaded
 

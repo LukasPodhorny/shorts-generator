@@ -149,3 +149,40 @@ class ReelSeries(BaseModel):
     reels: List[Reel] = Field(
         description="Ordered list of reels, each covering a chapter/segment of the topic"
     )
+
+
+class Reel(BaseModel):
+    """Represents a single reel/chapter in the series"""
+
+    title: str = Field(
+        description="Title of this reel/chapter (e.g., 'Chapter 1: Light Absorption')"
+    )
+    description: Optional[str] = Field(
+        None, description="Brief description of what this reel covers"
+    )
+    blocks: List[Block] = Field(
+        description="The dialogue blocks that make up this reel"
+    )
+
+
+class ReelSeries(BaseModel):
+    """Container for multiple related reels that together explain a topic"""
+
+    topic: str = Field(
+        description="Overall topic being explained (e.g., 'Photosynthesis')"
+    )
+    reels: List[Reel] = Field(
+        description="Ordered list of reels, each covering a chapter/segment of the topic"
+    )
+
+
+class ReelOutput(BaseModel):
+    title: str
+    description: Optional[str]
+    local_path: str
+    presigned_url: str
+
+
+class ReelSeriesOutput(BaseModel):
+    topic: str
+    reels: List[ReelOutput]

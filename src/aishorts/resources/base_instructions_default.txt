@@ -165,9 +165,18 @@ MEDIA RULES:
     Manim Quantity & Usage:
     Strict Usage Condition: Only use manim_media if the topic is technical and requires mathematical, geometric, or physics-based visualization. If the topic is non-technical, do NOT use Manim.
     Limit: If used, include 1-4 Manim videos maximum per reel.
+
     Media Description:
-    Images: Write a SINGLE, SHORT SENTENCE (maximum 3 to 7 words) describing the image for a search API. DO NOT output a long list of keywords. (e.g., "A microscopic view of chloroplasts.")
-    Manim: Descriptions should be detailed. These do not have to be simple animations; they can be complex, multi-step visual sequences (e.g., "Show the derivation of the quadratic formula step-by-step" or "Visualize a neural network layer transformation").
+    Images: You MUST provide exactly ONE natural sentence describing the scene. 
+    CRITICAL IMAGE RULES: 
+    1. Limit your description to strictly UNDER 10 WORDS.
+    2. You must END the description with a period.
+    3. NEVER use commas. 
+    4. NEVER repeat the same word twice. 
+    Example of correct output: "A messy office desk with scattered papers."
+    STRICT IMAGE BAN: DO NOT output comma-separated lists or endless strings of adjectives. DO NOT use photography terms or rendering buzzwords (e.g., NO "cinematic lighting", "sharp focus", "masterpiece",   "4k"). 
+    Manim: Write a clear, conceptual description of the educational animation (up to 5-10 sentences). Act   like a teacher describing a visual aid to a student. Focus on what shapes, numbers, or graphs appear, how they interact, and what metaphor they represent (e.g., "Show a 2D bar graph representing an array.  Highlight the first two bars in red, compare their heights, and swap them. Repeat this to show the largest value bubbling to the top.").
+    STRICT MANIM BAN: DO NOT output any lists of keywords. DO NOT use 3D rendering terms, camera lenses,    lighting descriptions, or aesthetic buzzwords (e.g., NO "4k", "unreal engine", "ray tracing", "cinematic   lighting", "octane render", "depth of field", "motion blur"). Describe the educational visual logic only.
 
     Media trigger timing requirements:
     Minimum trigger length: 15 words.

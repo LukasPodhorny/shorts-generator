@@ -18,11 +18,12 @@ from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
 from aishorts.modules.latex.latex_generator import LatexGenerator
 from aishorts.modules.manim.manim_generator import ManimGenerator
-from aishorts.modules.script.script import ReelSeries
+from aishorts.modules.script.script import ReelSeries, ReelSeriesOutput, ReelOutput
 from aishorts.modules.question.question_generator import QuestionGenerator
 from aishorts.modules.lipsync.lipsync_providers import populate_reel_static_faces
 from pathlib import Path
 from aishorts.modules.song.song_generator import SongGenerator
+from aishorts.utils.r2_handler import CloudflareR2
 
 
 class PipelineStage(IntEnum):
@@ -298,7 +299,7 @@ class ShortsGenerator:
         user_input: str | None = None,
         resume_from: str | None = None,
         mock_script: str | None = None,
-    ) -> list[str]:
+    ) -> ReelSeriesOutput:
 
         current_stage = PipelineStage.SCRIPT
         reel_series = None
@@ -332,7 +333,7 @@ class ShortsGenerator:
 
         if not reel_series:
             self.logger.warning("No script generated or loaded. Exiting.")
-            return []
+            return ReelSeriesOutput(topic="Error", reels=[])
 
         # --- 3. Static Faces ---
         # fast enough to run anytime
@@ -358,11 +359,33 @@ class ShortsGenerator:
         # --- 6. Final Video ---
 
         self.logger.info("Generating final video...")
-        results = []
-        for reel in reel_series.reels:
-            results.append(self.video_gen.compose(reel=reel))
 
-        return results
+        # Initialize R2 Handler
+        r2 = CloudflareR2()
+
+        reel_outputs = []
+        for reel in reel_series.reels:
+            # Compose Video
+            result = await self.video_gen.compose(reel=reel)
+            file_path_str = (
+                result.filepath if hasattr(result, "filepath") else str(result)
+            )
+
+            # Upload to R2
+            filename = os.path.basename(file_path_str)
+            key = f"generated/{filename}"
+            presigned_url = r2.upload_file(file_path_str, key)
+
+            reel_outputs.append(
+                ReelOutput(
+                    title=reel.title,
+                    description=reel.description,
+                    local_path=file_path_str,
+                    presigned_url=presigned_url,
+                )
+            )
+
+        return ReelSeriesOutput(topic=reel_series.topic, reels=reel_outputs)
 
     def generate_shorts(
         self,
@@ -371,7 +394,7 @@ class ShortsGenerator:
         user_input: str | None = None,
         resume_from: str | None = None,
         mock_script: str | None = None,
-    ) -> list[str]:
+    ) -> ReelSeriesOutput:
         asyncio.run(
             self.generate_shorts_async(
                 amount=amount,

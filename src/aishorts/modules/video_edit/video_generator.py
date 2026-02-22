@@ -25,6 +25,6 @@ class VideoGenerator:
 
         self.render = render_cls(**kwargs)
 
-    def compose(self, reel: Reel, **kwargs) -> str:
+    async def compose(self, reel: Reel, **kwargs) -> str:
         cmd = self.edit.compose(reel=reel, **kwargs)
-        return self.render.render(cmd, f"{uuid.uuid4()}.mp4")
+        return await self.render.render(cmd, f"{uuid.uuid4()}.mp4")
