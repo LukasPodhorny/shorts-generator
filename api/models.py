@@ -1,10 +1,18 @@
 from typing import Optional, List
 from datetime import datetime
-from sqlmodel import SQLModel, Field, Relationship, Column, JSON
+from enum import Enum
+from sqlmodel import SQLModel, Field, Relationship, Column, JSON, String
 from aishorts.modules.avatar import Avatar as PydanticAvatar
 from aishorts.modules.video_edit.video_edit import (
     VideoTemplate as PydanticVideoTemplate,
 )
+
+
+class JobStatus(str, Enum):
+    QUEUED = "Queued"
+    PROCESSING = "Processing"
+    DONE = "Done"
+    FAILED = "Failed"
 
 
 class User(SQLModel, table=True):
@@ -43,11 +51,11 @@ class ReelSeries(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: str = Field(foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    status: str = Field(default="Queued")  # Queued, Processing, Done, Failed
+    status: JobStatus = Field(default=JobStatus.QUEUED, sa_column=Column(String))
     topic: Optional[str] = None
 
     user: User = Relationship(back_populates="series")
-    reels: List["Reel"] = Relationship(back_populates="series")
+    reels: List["Reel"] = Relationship(back_populates="series", cascade_delete=True)
 
 
 class Reel(SQLModel, table=True):
@@ -58,7 +66,7 @@ class Reel(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     series_id: int = Field(foreign_key="reelseries.id")
     sequence_number: int
-    status: str = Field(default="Queued")
+    status: JobStatus = Field(default=JobStatus.QUEUED, sa_column=Column(String))
     cloudflare_r2_url: Optional[str] = None
     local_path: Optional[str] = None
     title: Optional[str] = None
@@ -71,7 +79,7 @@ class Reel(SQLModel, table=True):
 class ReelRead(SQLModel):
     id: int
     sequence_number: int
-    status: str
+    status: JobStatus
     cloudflare_r2_url: Optional[str] = None
     local_path: Optional[str] = None
     title: Optional[str] = None
@@ -82,7 +90,7 @@ class ReelSeriesRead(SQLModel):
     id: int
     user_id: str
     created_at: datetime
-    status: str
+    status: JobStatus
     topic: Optional[str] = None
     reels: List[ReelRead]
 
@@ -102,7 +110,8 @@ class AddCreditsRequest(SQLModel):
 
 class UploadResponse(SQLModel):
     filename: str
-    local_path: str
+    url: str
+    key: str
 
 
 class GenerateResponse(SQLModel):

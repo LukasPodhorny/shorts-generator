@@ -37,7 +37,7 @@ class MediaBase(BaseModel):
 class ImageMedia(MediaBase):
     type: Literal["image"]
     keywords: str = Field(
-        description="Search keywords for the image API. STRICT LIMIT: Keep to 3-7 words maximum.",
+        description="A single, complete sentence describing the visual scene. STRICT LIMIT: Under 10 words.",
         max_length=150,
     )
 

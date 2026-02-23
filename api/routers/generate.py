@@ -7,10 +7,9 @@ from api.models import (
     ReelSeries,
     Reel,
     GenerateRequest,
-    AddCreditsRequest,
     ReelSeriesRead,
     GenerateResponse,
-    AddCreditsResponse,
+    JobStatus,
 )
 from api.tasks import process_reel_task
 
@@ -49,14 +48,14 @@ async def start_generation(
     session.add(user)
 
     # 4. Create DB Entries
-    series = ReelSeries(user_id=user.id, status="Queued")
+    series = ReelSeries(user_id=user.id, status=JobStatus.QUEUED)
     session.add(series)
     session.commit()
     session.refresh(series)
 
     # Create placeholder reels
     for i in range(request.amount):
-        reel = Reel(series_id=series.id, sequence_number=i + 1, status="Queued")
+        reel = Reel(series_id=series.id, sequence_number=i + 1, status=JobStatus.QUEUED)
         session.add(reel)
 
     session.commit()
@@ -86,34 +85,65 @@ async def check_status(
 async def list_user_series(
     user_token: dict = Depends(get_current_user),
     session: Session = Depends(get_session),
+    offset: int = 0,
+    limit: int = 10,
 ) -> list[ReelSeriesRead]:
     uid = user_token["uid"]
     statement = (
         select(ReelSeries)
         .where(ReelSeries.user_id == uid)
         .order_by(ReelSeries.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     return session.exec(statement).all()
 
 
-@router.post("/add-credits", response_model=AddCreditsResponse)
-async def add_credits(
-    request: AddCreditsRequest,
+@router.get("/series/{series_id}", response_model=ReelSeriesRead)
+async def list_user_series(
+    series_id: int,
     user_token: dict = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> AddCreditsResponse:
+) -> ReelSeriesRead:
     uid = user_token["uid"]
-    email = user_token.get("email")
+    statement = (
+        select(ReelSeries)
+        .where(ReelSeries.user_id == uid)
+        .where(ReelSeries.id == series_id)
+    )
+    series = session.exec(statement).first()
 
-    user = session.get(User, uid)
-    if not user:
-        # Create user if not exists (first login logic)
-        user = User(id=uid, email=email, credits=10)
-        session.add(user)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
 
-    user.credits += request.amount
-    session.add(user)
+    return series
+
+
+@router.delete("/series/{series_id}")
+async def delete_user_series(  # Changed name from list_user_series
+    series_id: int,
+    user_token: dict = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    uid = user_token["uid"]
+    statement = (
+        select(ReelSeries)
+        .where(ReelSeries.user_id == uid)
+        .where(ReelSeries.id == series_id)
+    )
+
+    # 1. Fetch the series safely
+    series_to_delete = session.exec(statement).first()
+
+    # 2. Check if it actually exists before trying to delete
+    if not series_to_delete:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Series not found or you don't have permission to delete it.",
+        )
+
+    # 3. Safely delete and commit
+    session.delete(series_to_delete)
     session.commit()
-    session.refresh(user)
 
-    return AddCreditsResponse(message="Credits added", total_credits=user.credits)
+    return {"ok": True}

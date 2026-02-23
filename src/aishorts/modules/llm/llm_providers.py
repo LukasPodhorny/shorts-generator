@@ -6,6 +6,34 @@ from abc import abstractmethod
 import asyncio
 import os
 from google import genai
+import aiohttp
+import aiofiles
+import uuid
+import tempfile
+from urllib.parse import urlparse
+
+
+async def _ensure_local_file(
+    file_ref: str, session: aiohttp.ClientSession
+) -> tuple[str, bool]:
+    """
+    Helper to ensure a file reference is a local path.
+    If it's a URL, it downloads it to a temp file.
+    Returns (file_path, is_temporary).
+    """
+    if file_ref.startswith(("http://", "https://")):
+        parsed = urlparse(file_ref)
+        ext = os.path.splitext(parsed.path)[1] or ".bin"
+        temp_name = f"temp_llm_{uuid.uuid4()}{ext}"
+        temp_path = os.path.join(tempfile.gettempdir(), temp_name)
+
+        async with session.get(file_ref) as resp:
+            resp.raise_for_status()
+            async with aiofiles.open(temp_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(8192):
+                    await f.write(chunk)
+        return temp_path, True
+    return file_ref, False
 
 
 class LLMProvider(Provider):
@@ -51,19 +79,39 @@ class ChatGPT(LLMProvider):
             yield []
             return
 
-        uploaded = []
-        try:
-            # Upload files asynchronously
-            for filepath in files:
-                with open(filepath, "rb") as f:
-                    file = await self.client.files.create(file=f, purpose="user_data")
-                    uploaded.append(file)
+        uploaded_files = []
+        temp_paths = []
 
-            yield uploaded
+        async with aiohttp.ClientSession() as session:
+            try:
+                for file_ref in files:
+                    # 1. Ensure we have a local file (download if URL)
+                    filepath, is_temp = await _ensure_local_file(file_ref, session)
+                    if is_temp:
+                        temp_paths.append(filepath)
 
-        finally:
-            for file in uploaded:
-                asyncio.create_task(self.client.files.delete(file.id))
+                    # 2. Upload to OpenAI
+                    with open(filepath, "rb") as f:
+                        file = await self.client.files.create(
+                            file=f, purpose="user_data"
+                        )
+                        uploaded_files.append(file)
+
+                yield uploaded_files
+
+            finally:
+                # Cleanup OpenAI files
+                cleanup_tasks = [self.client.files.delete(f.id) for f in uploaded_files]
+                if cleanup_tasks:
+                    await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+
+                # Cleanup local temp files
+                for p in temp_paths:
+                    try:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except Exception:
+                        pass
 
             """
             # Cleanup files asynchronously
@@ -165,7 +213,7 @@ class Gemini(LLMProvider):
     def __init__(
         self,
         model: str = "gemini-3-pro-preview",
-        max_output_tokens: int = 10_000,
+        max_output_tokens: int = 50_000,
         api_key: str | None = None,
         **kwargs,
     ):
@@ -183,19 +231,43 @@ class Gemini(LLMProvider):
             yield []
             return
 
-        uploaded = []
-        try:
-            for filepath in files:
-                file = await asyncio.to_thread(self.client.files.upload, file=filepath)
-                uploaded.append(file)
-            yield uploaded
+        uploaded_files = []
+        temp_paths = []
 
-        finally:
-            for file in uploaded:
-                try:
-                    await asyncio.to_thread(self.client.files.delete, name=file.name)
-                except Exception:
-                    pass
+        async with aiohttp.ClientSession() as session:
+            try:
+                for file_ref in files:
+                    # 1. Ensure we have a local file (download if URL)
+                    filepath, is_temp = await _ensure_local_file(file_ref, session)
+                    if is_temp:
+                        temp_paths.append(filepath)
+
+                    # 2. Upload to Gemini File API
+                    # Note: Gemini Python SDK 'files.upload' takes a path string
+                    file = await asyncio.to_thread(
+                        self.client.files.upload, file=filepath
+                    )
+                    uploaded_files.append(file)
+
+                yield uploaded_files
+
+            finally:
+                # Cleanup Gemini files
+                for file in uploaded_files:
+                    try:
+                        await asyncio.to_thread(
+                            self.client.files.delete, name=file.name
+                        )
+                    except Exception:
+                        pass
+
+                # Cleanup local temp files
+                for p in temp_paths:
+                    try:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except Exception:
+                        pass
 
     async def generate_structure(
         self,
