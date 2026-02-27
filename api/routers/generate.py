@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, Request
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
+import asyncio
 from api.database import get_session
 from api.auth import get_current_user
 from api.models import (
@@ -81,6 +83,53 @@ async def check_status(
     return series
 
 
+@router.get("/status/{series_id}/stream")
+async def stream_check_status(
+    series_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Streams the status of a generation series using Server-Sent Events."""
+    if not session.get(ReelSeries, series_id):
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    async def event_generator():
+        """
+        Yields Server-Sent Events with the current status of the series.
+        An event is sent only when the status or related data changes.
+        """
+        last_state_json = None
+        while True:
+            # Check if the client has disconnected
+            if await request.is_disconnected():
+                break
+
+            # Re-query the database to get the latest series state
+            # This ensures we get updates committed by the background task
+            series = session.exec(
+                select(ReelSeries).where(ReelSeries.id == series_id)
+            ).first()
+
+            if not series:
+                break  # Series was deleted mid-stream
+
+            series_read = ReelSeriesRead.from_orm(series)
+            current_state_json = series_read.json()
+
+            # Send data only if the state has changed
+            if current_state_json != last_state_json:
+                yield f"data: {current_state_json}\n\n"
+                last_state_json = current_state_json
+
+            # If the job is complete, send the final status and exit the loop
+            if series.status in [JobStatus.DONE, JobStatus.FAILED]:
+                break
+
+            await asyncio.sleep(2)  # Poll every 2 seconds
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.get("/series", response_model=list[ReelSeriesRead])
 async def list_user_series(
     user_token: dict = Depends(get_current_user),
@@ -100,7 +149,7 @@ async def list_user_series(
 
 
 @router.get("/series/{series_id}", response_model=ReelSeriesRead)
-async def list_user_series(
+async def get_series(
     series_id: int,
     user_token: dict = Depends(get_current_user),
     session: Session = Depends(get_session),

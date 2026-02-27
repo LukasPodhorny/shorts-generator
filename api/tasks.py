@@ -8,6 +8,8 @@ from api.models import ReelSeries, Reel, Avatar, VideoTemplate, JobStatus
 # Import core library
 from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig
 from aishorts.shorts_generator import ScriptConfig
+from typing import Optional
+
 
 logger = logging.getLogger(__name__)
 

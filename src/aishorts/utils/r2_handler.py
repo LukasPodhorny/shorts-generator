@@ -6,7 +6,6 @@ import aiohttp
 from pydantic import BaseModel
 import asyncio
 import aiofiles
-from typing import Callable, Any, Awaitable, TypeVar
 
 
 class BucketConfiguration(BaseModel):

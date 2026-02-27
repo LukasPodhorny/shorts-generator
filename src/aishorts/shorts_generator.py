@@ -374,7 +374,7 @@ class ShortsGenerator:
             # Upload to R2
             filename = os.path.basename(file_path_str)
             key = f"generated/{filename}"
-            presigned_url = r2.upload_file(file_path_str, key)
+            presigned_url = await asyncio.to_thread(r2.upload_file, file_path_str, key)
 
             reel_outputs.append(
                 ReelOutput(

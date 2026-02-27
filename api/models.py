@@ -15,12 +15,23 @@ class JobStatus(str, Enum):
     FAILED = "Failed"
 
 
-class User(SQLModel, table=True):
+class UserBase(SQLModel):
+    id: str
+    email: Optional[str] = None
+    credits: int
+
+
+class UserRead(UserBase):
+    pass
+
+
+class User(UserBase, table=True):
     id: str = Field(primary_key=True)  # Firebase UID
     email: Optional[str] = None
     credits: int = Field(default=10)
 
     series: List["ReelSeries"] = Relationship(back_populates="user")
+    uploads: List["UploadedFile"] = Relationship(back_populates="user")
 
 
 class Avatar(SQLModel, table=True):
@@ -50,7 +61,7 @@ class ReelSeries(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: str = Field(foreign_key="user.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now)
     status: JobStatus = Field(default=JobStatus.QUEUED, sa_column=Column(String))
     topic: Optional[str] = None
 
@@ -75,6 +86,21 @@ class Reel(SQLModel, table=True):
     series: ReelSeries = Relationship(back_populates="reels")
 
 
+class UploadedFileBase(SQLModel):
+    filename: str
+    url: str
+    key: str
+    content_type: str
+
+
+class UploadedFile(UploadedFileBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(foreign_key="user.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    user: User = Relationship(back_populates="uploads")
+
+
 # Response Models
 class ReelRead(SQLModel):
     id: int
@@ -95,6 +121,11 @@ class ReelSeriesRead(SQLModel):
     reels: List[ReelRead]
 
 
+class UploadedFileRead(UploadedFileBase):
+    id: int
+    created_at: datetime
+
+
 # Request Model for API
 class GenerateRequest(SQLModel):
     template_name: str
@@ -106,12 +137,6 @@ class GenerateRequest(SQLModel):
 
 class AddCreditsRequest(SQLModel):
     amount: int
-
-
-class UploadResponse(SQLModel):
-    filename: str
-    url: str
-    key: str
 
 
 class GenerateResponse(SQLModel):
