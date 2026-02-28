@@ -22,7 +22,10 @@ class UserBase(SQLModel):
 
 
 class UserRead(UserBase):
-    pass
+    stripe_customer_id: Optional[str] = None
+    subscription_status: Optional[str] = None
+    plan_id: Optional[str] = None
+    current_period_end: Optional[datetime] = None
 
 
 class User(UserBase, table=True):
@@ -30,8 +33,21 @@ class User(UserBase, table=True):
     email: Optional[str] = None
     credits: int = Field(default=10)
 
+    stripe_customer_id: Optional[str] = Field(default=None, index=True)
+    stripe_subscription_id: Optional[str] = Field(default=None, index=True)
+    subscription_status: Optional[str] = None
+    plan_id: Optional[str] = None
+    current_period_end: Optional[datetime] = None
+
     series: List["ReelSeries"] = Relationship(back_populates="user")
     uploads: List["UploadedFile"] = Relationship(back_populates="user")
+
+
+class SubscriptionPlan(SQLModel, table=True):
+    stripe_price_id: str = Field(primary_key=True)
+    name: str
+    credits: int
+    description: Optional[str] = None
 
 
 class Avatar(SQLModel, table=True):
@@ -148,3 +164,11 @@ class GenerateResponse(SQLModel):
 class AddCreditsResponse(SQLModel):
     message: str
     total_credits: int
+
+
+class CreateCheckoutRequest(SQLModel):
+    price_id: str
+
+
+class CreateCheckoutResponse(SQLModel):
+    url: str
