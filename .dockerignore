@@ -1,0 +1,45 @@
+# Dependencies
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.env
+.venv
+env/
+ENV/
+
+# Local databases and logs
+*.db
+*.sqlite3
+logs/
+tmp.log
+
+# Uploads / Outputs
+uploads/
+output/
+output_videos/
+animated_frames/
+assets/
+
+# IDEs
+.vscode/
+.idea/

@@ -15,6 +15,11 @@ class JobStatus(str, Enum):
     FAILED = "Failed"
 
 
+class UserRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+
 class UserBase(SQLModel):
     id: str
     email: Optional[str] = None
@@ -26,12 +31,14 @@ class UserRead(UserBase):
     subscription_status: Optional[str] = None
     plan_id: Optional[str] = None
     current_period_end: Optional[datetime] = None
+    role: UserRole = UserRole.USER
 
 
 class User(UserBase, table=True):
     id: str = Field(primary_key=True)  # Firebase UID
     email: Optional[str] = None
     credits: int = Field(default=10)
+    role: UserRole = Field(default=UserRole.USER, sa_column=Column(String))
 
     stripe_customer_id: Optional[str] = Field(default=None, index=True)
     stripe_subscription_id: Optional[str] = Field(default=None, index=True)
@@ -60,6 +67,11 @@ class Avatar(SQLModel, table=True):
         return PydanticAvatar(**self.data)
 
 
+class AvatarCreate(SQLModel):
+    name: str
+    data: dict
+
+
 class VideoTemplate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
@@ -68,6 +80,11 @@ class VideoTemplate(SQLModel, table=True):
 
     def to_pydantic(self) -> PydanticVideoTemplate:
         return PydanticVideoTemplate(**self.data)
+
+
+class VideoTemplateCreate(SQLModel):
+    name: str
+    data: dict
 
 
 class ReelSeries(SQLModel, table=True):

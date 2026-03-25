@@ -17,6 +17,7 @@ new_columns = [
     ("subscription_status", "TEXT"),
     ("plan_id", "TEXT"),
     ("current_period_end", "TIMESTAMP"),
+    ("role", "TEXT"),
 ]
 
 print("Starting migration...")
@@ -27,6 +28,13 @@ for col_name, col_type in new_columns:
         print(f"✅ Added column: {col_name}")
     except sqlite3.OperationalError as e:
         print(f"⚠️  Skipped {col_name}: {e}")
+
+# Set default role for existing users
+try:
+    cursor.execute("UPDATE user SET role = 'user' WHERE role IS NULL")
+    print("✅ Set default role 'user' for existing records")
+except Exception as e:
+    print(f"⚠️  Error setting default role: {e}")
 
 # Create indexes for the new fields
 indexes = ["stripe_customer_id", "stripe_subscription_id"]

@@ -4,6 +4,9 @@ from firebase_admin import auth, credentials
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
+from sqlmodel import Session
+from api.database import get_session
+from api.models import User, UserRole
 
 load_dotenv()
 
@@ -34,3 +37,21 @@ def get_current_user(
             detail=f"Invalid authentication credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def get_current_admin_user(
+    token: dict = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> User:
+    """
+    Verifies that the user exists in the DB and has the ADMIN role.
+    """
+    uid = token.get("uid")
+    user = session.get(User, uid)
+
+    if not user or user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return user
