@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database.db")
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 # check_same_thread=False is needed only for SQLite
 connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}

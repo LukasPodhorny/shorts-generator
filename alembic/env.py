@@ -22,6 +22,8 @@ from dotenv import load_dotenv
 load_dotenv()
 database_url = os.getenv("DATABASE_URL")
 if database_url:
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
     # If using asyncpg or other async driver, Alembic might need it differently,
     # but for psycopg2 it works synchronously with engine_from_config.
     config.set_main_option("sqlalchemy.url", database_url)
