@@ -228,3 +228,4 @@ animated_frames/
 uploads/
 *.db
 firebase_credentials.json
+backup.txt
