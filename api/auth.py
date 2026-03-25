@@ -1,4 +1,5 @@
 import os
+import json
 import firebase_admin
 from firebase_admin import auth, credentials
 from fastapi import Depends, HTTPException, status
@@ -13,9 +14,16 @@ load_dotenv()
 # Initialize Firebase Admin
 # Ensure GOOGLE_APPLICATION_CREDENTIALS is set in your env or pass a dict to Certificate
 if not firebase_admin._apps:
-    cred = credentials.Certificate(
-        os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase_credentials.json")
-    )
+    firebase_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
+    if firebase_json_str:
+        # Running on Railway: Parse the JSON string from the environment variable
+        cred_dict = json.loads(firebase_json_str)
+        cred = credentials.Certificate(cred_dict)
+    else:
+        # Running locally: Load from the local generic JSON file
+        cred = credentials.Certificate(
+            os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase_credentials.json")
+        )
     firebase_admin.initialize_app(cred)
 
 security = HTTPBearer()
