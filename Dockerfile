@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
+# Install the aishorts package from the local src/ directory
+RUN pip install .
+
 # Expose port (Railway dynamically injects $PORT, but 8000 is our default)
 EXPOSE 8000
 
