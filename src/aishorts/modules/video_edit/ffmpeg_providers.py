@@ -213,10 +213,10 @@ class ModalFFmpeg(FFmpegProvider):
     async def _prepare_inputs(self, cmd: FFmpegCommand) -> List[Union[str, Dict]]:
         processed_inputs = []
         for input_item in cmd.inputs:
-            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http")):
+            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
                 remote_key = f"uploads/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
-                presigned_url = self.r2.create_presigned_url(remote_key)
+                presigned_url = self.r2.generate_presigned_url("get_object", remote_key)
                 processed_inputs.append(presigned_url)
             elif isinstance(input_item, dict):
                 processed_inputs.append(input_item)
@@ -224,14 +224,37 @@ class ModalFFmpeg(FFmpegProvider):
                 processed_inputs.append(str(input_item))
         return processed_inputs
 
+    def _prepare_args(self, args: List[str]) -> List[str]:
+        processed_args = []
+        for arg in args:
+            new_arg = arg
+            # Scan for local file paths in the argument string (e.g. for the 'ass' filter)
+            # This is a bit of a hack, but it works for common cases!
+            import re
+            # Matches strings starting with /tmp/ or /home/ and ending with .ass, .srt, .vtt
+            # You can add more formats if needed!
+            path_pattern = r'(/[^"\'\s]+\.(?:ass|srt|vtt|png|jpg|jpeg))'
+            matches = re.findall(path_pattern, arg)
+            
+            for local_path in matches:
+                if os.path.exists(local_path):
+                    remote_key = f"uploads/args/{os.path.basename(local_path)}"
+                    self.r2.upload_file(local_path, remote_key)
+                    presigned_url = self.r2.generate_presigned_url("get_object", remote_key)
+                    new_arg = new_arg.replace(local_path, presigned_url)
+                    
+            processed_args.append(new_arg)
+        return processed_args
+
     async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
         prepared_inputs = await self._prepare_inputs(cmd)
+        prepared_args = self._prepare_args(cmd.args)
         output_key = f"videos/output/{output_filename}"
 
         payload = {
             "input": {
                 "inputs": prepared_inputs,
-                "args": cmd.args,
+                "args": prepared_args,
                 "video_codec": cmd.video_codec or "h264_nvenc",
                 "output_key": output_key
             }
