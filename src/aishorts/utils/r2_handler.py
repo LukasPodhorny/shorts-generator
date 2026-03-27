@@ -66,18 +66,25 @@ class CloudflareR2:
 
 
 async def download_from_url(
-    url: str, path: str = "", ext: str | None = None, timeout: int = 600
+    url: str,
+    path: str = "",
+    ext: str | None = None,
+    timeout: int = 600,
+    full_path: str | None = None,
 ) -> str:
     """
-    Downloads a file from a URL into outputs/{uuid}.{ext}
+    Downloads a file from a URL into outputs/{uuid}.{ext} (or full_path if provided)
     and returns the local file path.
     """
-    # Extract filename extension from the URL
-    url_path = urlparse(url).path
-    ext = ext or os.path.splitext(url_path)[1] or ".bin"
+    if full_path:
+        filepath = full_path
+    else:
+        # Extract filename extension from the URL
+        url_path = urlparse(url).path
+        ext = ext or os.path.splitext(url_path)[1] or ".bin"
 
-    # Create unique filename
-    filepath = CloudflareR2.get_random_filepath(path, ext)
+        # Create unique filename
+        filepath = CloudflareR2.get_random_filepath(path, ext)
 
     # Download
     timeout = aiohttp.ClientTimeout(total=timeout)

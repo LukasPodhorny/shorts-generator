@@ -315,6 +315,14 @@ class ShortsGenerator:
             current_stage = loaded_stage + 1
             self.logger.info(f"Resuming pipeline AFTER stage: '{loaded_stage.name}'")
 
+            # Warning for Railway/ephemeral environments
+            if current_stage > PipelineStage.SCRIPT and not os.path.exists("output"):
+                self.logger.warning(
+                    "Output directory not found. If you are on an ephemeral environment (like Railway), "
+                    "some assets may be missing. The video generator will attempt to re-download "
+                    "available assets from URLs."
+                )
+
         # --- 2. Script Stage ---
 
         if current_stage <= PipelineStage.SCRIPT:

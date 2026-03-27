@@ -333,6 +333,14 @@ class EditTemplate(Provider):
 
     def get_video_duration(self, video_path: str) -> float:
         """Get video duration in seconds using ffprobe"""
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(
+                f"File not found for duration check: '{video_path}'. "
+                "If you are resuming on a new environment (like Railway), "
+                "ensure that the 'output/' directory from previous stages is available "
+                "or that you haven't excluded it from your deployment."
+            )
+
         cmd = [
             "ffprobe",
             "-v",
@@ -343,8 +351,12 @@ class EditTemplate(Provider):
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(result.stdout.strip())
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return float(result.stdout.strip())
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+            raise RuntimeError(f"ffprobe failed for {video_path}: {error_msg}") from e
 
     def convert_to_absolute_timing(
         self, subtitles: List[TranscriptionVerbose]
