@@ -216,7 +216,7 @@ class ModalFFmpeg(FFmpegProvider):
             if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
                 remote_key = f"uploads/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
-                presigned_url = self.r2.generate_presigned_url("get_object", remote_key)
+                presigned_url = self.r2.create_presigned_url(remote_key)
                 processed_inputs.append(presigned_url)
             elif isinstance(input_item, dict):
                 processed_inputs.append(input_item)
@@ -240,7 +240,7 @@ class ModalFFmpeg(FFmpegProvider):
                 if os.path.exists(local_path):
                     remote_key = f"uploads/args/{os.path.basename(local_path)}"
                     self.r2.upload_file(local_path, remote_key)
-                    presigned_url = self.r2.generate_presigned_url("get_object", remote_key)
+                    presigned_url = self.r2.create_presigned_url(remote_key)
                     new_arg = new_arg.replace(local_path, presigned_url)
                     
             processed_args.append(new_arg)
