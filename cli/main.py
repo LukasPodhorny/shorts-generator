@@ -16,7 +16,10 @@ from aishorts import (
     SubtitleConfig,
 )
 import argparse
+from dotenv import load_dotenv
 from aishorts.utils.pydantic_helper import load_pydantic, load_pydantic_dict
+
+load_dotenv()
 
 
 def main():

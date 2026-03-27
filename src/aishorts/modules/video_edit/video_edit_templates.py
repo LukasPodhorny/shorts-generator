@@ -242,7 +242,7 @@ class AlphaGameplayTemplate(EditTemplate):
         AssetType.IMAGES,
         AssetType.MANIM,
         AssetType.LATEX,
-        AssetType.QUESTION,
+        #AssetType.QUESTION,
     ]
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
@@ -473,7 +473,7 @@ class StaticGameplayTemplate(EditTemplate):
         AssetType.IMAGES,
         AssetType.MANIM,
         AssetType.LATEX,
-        AssetType.QUESTION,
+        #AssetType.QUESTION,
     ]
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]

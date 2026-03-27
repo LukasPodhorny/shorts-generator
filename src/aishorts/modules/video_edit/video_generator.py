@@ -8,7 +8,7 @@ import uuid
 class VideoGenerator:
 
     def __init__(
-        self, video_template: VideoTemplate, provider: str = "local_ffmpeg", **kwargs
+        self, video_template: VideoTemplate, provider: str = "modal_ffmpeg", **kwargs
     ):
         self.template_config = video_template.template_config
         edit_template = video_template.edit_template.lower()

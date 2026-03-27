@@ -1,8 +1,9 @@
 import asyncio
 import os
 from dataclasses import dataclass
-import os
-from typing import Optional
+from typing import Optional, List, Union, Dict
+from pathlib import Path
+import aiohttp
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
 import subprocess
@@ -12,6 +13,7 @@ from aishorts.utils.r2_handler import CloudflareR2
 from aishorts.modules.video_edit.video_edit import FFmpegCommand
 import mimetypes
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from aishorts.utils.runpod_caller import EndpointCaller
 
 
 @dataclass
@@ -61,161 +63,6 @@ class FFmpegProvider(Provider):
             return False
 
 
-class FFmpegAPI(FFmpegProvider):
-    provider_name = "ffmpegapi"
-    API_URL = "https://api.ffmpeg-api.com/ffmpeg/process"
-    video_codec = "h264_nvenc"
-
-    def __init__(self, api_key: Optional[str] = None, **kwargs):
-        self.api_key = api_key or os.getenv("FFMPEG_API_KEY")
-        self.r2 = CloudflareR2()
-
-    def _get_upload_info(self, path: str, directory_id: Optional[str] = None) -> dict:
-        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
-        file_name = os.path.basename(path)
-
-        payload = {"file_name": file_name}
-        if directory_id:
-            payload["dir_id"] = directory_id
-
-        # 1. Get upload URL
-        resp = requests.post(
-            "https://api.ffmpeg-api.com/file",
-            json=payload,
-            headers=headers,
-        )
-        if resp.status_code != 200:
-            raise RuntimeError(
-                f"Failed to get upload URL ({resp.status_code}): {resp.text}"
-            )
-
-        data = resp.json()
-
-        # Try to extract upload URL and file path
-        # Handling potential nested structure "upload.url" and "file.file_path"
-        upload_url = data.get("upload", {}).get("url") or data.get("url")
-        file_path = data.get("file", {}).get("file_path") or data.get("file_path")
-
-        if not upload_url or not file_path:
-            raise RuntimeError(f"Invalid response from /file endpoint: {data}")
-
-        return {"upload_url": upload_url, "file_path": file_path}
-
-    def _upload_file_content(self, path: str, upload_url: str):
-        mime_type, _ = mimetypes.guess_type(path)
-        if not mime_type:
-            mime_type = "application/octet-stream"
-
-        with open(path, "rb") as f:
-            put_resp = requests.put(
-                upload_url, data=f, headers={"Content-Type": mime_type}
-            )
-            put_resp.raise_for_status()
-
-    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
-        if not self.api_key:
-            raise ValueError(
-                "FFmpeg API key is missing. Please set FFMPEG_API_KEY environment variable or pass api_key to constructor."
-            )
-
-        # 1. Register and Upload inputs
-        input_file_paths = []
-        directory_id = None
-        upload_tasks = []
-
-        if cmd.inputs:
-            # Register all files first to get URLs and ensure same directory
-            for i, path in enumerate(cmd.inputs):
-                info = self._get_upload_info(str(path), directory_id)
-                input_file_paths.append(info["file_path"])
-                upload_tasks.append((str(path), info["upload_url"]))
-
-                # Capture directory_id from the first file
-                if i == 0 and "/" in info["file_path"]:
-                    directory_id = info["file_path"].split("/")[0]
-
-        # Upload in parallel
-        print(f"Uploading {len(upload_tasks)} files in parallel...")
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(self._upload_file_content, path, url)
-                for path, url in upload_tasks
-            ]
-            for future in as_completed(futures):
-                future.result()  # Raise exceptions if any
-
-        print("All uploads completed.")
-
-        # 2. Parse args
-        filter_complex = None
-        maps = []
-        options = []
-
-        if cmd.video_codec:
-            options.extend(["-c:v", cmd.video_codec])
-        elif self.video_codec:
-            options.extend(["-c:v", self.video_codec])
-
-        i = 0
-        while i < len(cmd.args):
-            arg = cmd.args[i]
-            if arg in ("-filter_complex", "-lavfi"):
-                i += 1
-                if i < len(cmd.args):
-                    filter_complex = cmd.args[i]
-            elif arg == "-map":
-                i += 1
-                if i < len(cmd.args):
-                    maps.append(cmd.args[i])
-            elif arg == "-y":
-                pass
-            else:
-                options.append(arg)
-            i += 1
-
-        # 3. Construct Payload
-        payload = {
-            "task": {
-                "inputs": [{"file_path": fp} for fp in input_file_paths],
-                "outputs": [
-                    {"file": output_filename, "options": options, "maps": maps}
-                ],
-            }
-        }
-
-        print(payload)
-
-        if filter_complex:
-            payload["task"]["filter_complex"] = filter_complex
-
-        # 4. Call API
-        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
-
-        response = requests.post(self.API_URL, json=payload, headers=headers)
-
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"FFmpeg API failed ({response.status_code}): {response.text}"
-            )
-
-        result_json = response.json()
-        download_url = result_json.get("output_url")
-
-        if not download_url:
-            raise RuntimeError(f"No output URL in response: {result_json}")
-
-        # 5. Download Output
-        output_path = os.path.join(self.OUTPUT_DIR, output_filename)
-
-        with requests.get(download_url, stream=True) as r:
-            r.raise_for_status()
-            with open(output_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-        return FFmpegResult(download_url=download_url, filepath=output_path)
-
-
 class LocalFFmpeg(FFmpegProvider):
     provider_name = "local_ffmpeg"
     video_codec = video_codec = (
@@ -259,3 +106,155 @@ class LocalFFmpeg(FFmpegProvider):
             raise
 
         return FFmpegResult(download_url=f"file://{output_path}", filepath=output_path)
+
+
+class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
+    provider_name = "runpod_ffmpeg"
+
+    def __init__(
+        self,
+        endpoint_id: str | None = None,
+        runpod_api_key: str | None = None,
+        timeout: int = 1800,  # Videos might take longer to render than TTS
+        **kwargs,
+    ):
+        self.endpoint_id = endpoint_id or os.getenv("FFMPEG_ENDPOINT_ID")
+        super().__init__(
+            endpoint_id=self.endpoint_id, 
+            timeout=timeout, 
+            api_key=runpod_api_key
+        )
+        
+        # Instantiate your Cloudflare R2 handler if needed for uploads/downloads
+        self.r2 = CloudflareR2()
+
+    async def _prepare_inputs(self, cmd: FFmpegCommand) -> List[Union[str, Dict]]:
+        """
+        Processes cmd.inputs. If they are local Path objects, uploads them to R2 
+        and gets a presigned URL. If they are already URLs, keeps them as is.
+        """
+        processed_inputs = []
+        
+        # You might want to upload concurrency if there are multiple local files
+        for input_item in cmd.inputs:
+            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http")):
+                # Assuming your CloudflareR2 handler has an upload method that returns a URL
+                # Adjust based on your actual CloudflareR2 implementation
+                remote_key = f"uploads/{os.path.basename(str(input_item))}"
+                self.r2.upload_file(str(input_item), remote_key)
+                
+                # Get a presigned GET URL for Runpod to download
+                presigned_url = self.r2.create_presigned_url(remote_key)
+                processed_inputs.append(presigned_url)
+                
+            elif isinstance(input_item, dict):
+                # If you already pass {"url": "...", "cache_key": "..."} handles caching
+                processed_inputs.append(input_item)
+            else:
+                # Already a URL string
+                processed_inputs.append(str(input_item))
+                
+        return processed_inputs
+
+    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+        # 1. Prepare inputs (upload local files to R2 if necessary)
+        prepared_inputs = await self._prepare_inputs(cmd)
+
+        # 2. Tell the Runpod worker where to upload the final video (R2 Key)
+        output_key = f"videos/output/{output_filename}"
+
+        # 3. Construct the payload for Runpod
+        payload = {
+            "input": {
+                "inputs": prepared_inputs,
+                "args": cmd.args,
+                # Force h264_nvenc since Runpod has NVIDIA GPUs
+                "video_codec": cmd.video_codec or "h264_nvenc",
+                "output_key": output_key
+            }
+        }
+
+        # 4. Call the Runpod Endpoint using your EndpointCaller
+        # run_async handles the polling and returns the "output" part of the Runpod JSON response
+        print(f"[{self.provider_name}] Sending render job to Runpod...")
+        result = await self.run_async(payload)
+        
+        # 5. Handle the result
+        if "error" in result:
+            raise Exception(f"Runpod FFmpeg failed: {result['error']}\nLogs: {result.get('logs')}")
+
+        download_url = result.get("download_url")
+        
+        # Since Runpod uploaded the file to R2, we can just return the URL!
+        # If your app needs the file locally right away, you could download it here:
+        # local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
+        
+        # But if you just need the URL/path:
+        return FFmpegResult(
+            download_url=download_url,
+            filepath=download_url # or local_filepath if you downloaded it
+        )
+
+class ModalFFmpeg(FFmpegProvider):
+    provider_name = "modal_ffmpeg"
+
+    def __init__(
+        self,
+        endpoint_url: str | None = None, # Your deployed Modal Web Endpoint URL
+        modal_api_key: str | None = None,
+        **kwargs,
+    ):
+        # Format usually looks like: https://yourusername--pdftoreel-ffmpeg-ffmpeg-endpoint.modal.run
+        self.endpoint_url = endpoint_url or os.getenv("MODAL_FFMPEG_ENDPOINT_URL")
+        self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
+        
+        self.r2 = CloudflareR2()
+
+    async def _prepare_inputs(self, cmd: FFmpegCommand) -> List[Union[str, Dict]]:
+        processed_inputs = []
+        for input_item in cmd.inputs:
+            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http")):
+                remote_key = f"uploads/{os.path.basename(str(input_item))}"
+                self.r2.upload_file(str(input_item), remote_key)
+                presigned_url = self.r2.create_presigned_url(remote_key)
+                processed_inputs.append(presigned_url)
+            elif isinstance(input_item, dict):
+                processed_inputs.append(input_item)
+            else:
+                processed_inputs.append(str(input_item))
+        return processed_inputs
+
+    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+        prepared_inputs = await self._prepare_inputs(cmd)
+        output_key = f"videos/output/{output_filename}"
+
+        payload = {
+            "input": {
+                "inputs": prepared_inputs,
+                "args": cmd.args,
+                "video_codec": cmd.video_codec or "h264_nvenc",
+                "output_key": output_key
+            }
+        }
+        
+        if self.modal_api_key:
+            payload["api_key"] = self.modal_api_key
+
+        print(f"[{self.provider_name}] Sending render job to Modal.com...")
+        
+        # Unlike Runpod EndpointCaller, Modal Web Endpoints are purely synchronous HTTP responses!
+        # You just POST and await the JSON response without polling /status.
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.endpoint_url, json=payload, timeout=1800) as response:
+                if not response.ok:
+                    text = await response.text()
+                    raise Exception(f"Modal FFmpeg failed with {response.status}: {text}")
+                
+                result = await response.json()
+
+        download_url = result.get("download_url")
+        
+        return FFmpegResult(
+            download_url=download_url,
+            filepath=download_url
+        )
