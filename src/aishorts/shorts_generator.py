@@ -63,7 +63,7 @@ class ManimConfig(BaseModel):
             "aishorts.resources", "manim_instructions_default.txt"
         )
     )
-    provider: str = "local"
+    provider: str = "modal_manim"
     provider_config: dict = Field(default_factory=dict)
 
 

@@ -10,7 +10,7 @@ from aishorts.modules.video_edit.video_edit import AssetType
 class ManimGenerator:
     def __init__(
         self,
-        provider: str = "local",
+        provider: str = "modal_manim",
         llm_provider: str = "gemini",
         base_instructions: str = None,
         **kwargs,
@@ -82,3 +82,5 @@ class ManimGenerator:
 
                         # Store the result in the block assets
                         block.assets.media_map[media_item.id] = result.media.path
+                        if result.media.url:
+                            block.assets.media_url_map[media_item.id] = result.media.url
