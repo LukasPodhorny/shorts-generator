@@ -95,7 +95,7 @@ class CloudflareR2:
 
 
 async def download_from_url(
-    url: str,
+    url: str | dict,
     path: str = "",
     ext: str | None = None,
     timeout: int = 600,
@@ -103,13 +103,20 @@ async def download_from_url(
 ) -> str:
     """
     Downloads a file from a URL into outputs/{uuid}.{ext} (or full_path if provided)
-    and returns the local file path.
+    and returns the local file path. Handles dict-based URLs with 'url' and 'cache_key'.
     """
+    # Extract actual URL string if it's a dict
+    url_str = url
+    if isinstance(url, dict):
+        url_str = url.get("url")
+        if not url_str:
+            raise ValueError("URL dictionary missing 'url' key")
+
     if full_path:
         filepath = full_path
     else:
         # Extract filename extension from the URL
-        url_path = urlparse(url).path
+        url_path = urlparse(url_str).path
         ext = ext or os.path.splitext(url_path)[1] or ".bin"
 
         # Create unique filename
@@ -120,7 +127,7 @@ async def download_from_url(
     for attempt in range(3):
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as response:
+                async with session.get(url_str) as response:
                     response.raise_for_status()
                     async with aiofiles.open(filepath, "wb") as f:
                         async for chunk in response.content.iter_chunked(8192):

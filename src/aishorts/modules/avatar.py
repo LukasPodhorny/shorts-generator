@@ -1,12 +1,12 @@
-from dataclasses import dataclass
+from typing import Union, Dict, Optional, List
 from pydantic import BaseModel
 
 
 class Voice(BaseModel):
     provider: str
-    voice_id: str | None = None
-    sample_url: str | None = None
-    sample_transcript: str | None = None
+    voice_id: Optional[str] = None
+    sample_url: Optional[Union[str, Dict]] = None
+    sample_transcript: Optional[str] = None
 
 
 class Avatar(BaseModel):
@@ -14,9 +14,10 @@ class Avatar(BaseModel):
     instructions: str
     voice: Voice
     lipsync_provider: str
-    face_url: str | None = None
-    face_video_url: str | None = None
-    static_face_path: str | None = None
-    pads: list[str] | None = None
-    a_cfg_scale: int | None = 2
-    e_cfg_scale: int | None = 1
+    face_url: Optional[Union[str, Dict]] = None
+    face_video_url: Optional[Union[str, Dict]] = None
+    static_face_path: Optional[str] = None
+    static_face_url: Optional[Union[str, Dict]] = None
+    pads: Optional[List[str]] = None
+    a_cfg_scale: Optional[int] = 2
+    e_cfg_scale: Optional[int] = 1

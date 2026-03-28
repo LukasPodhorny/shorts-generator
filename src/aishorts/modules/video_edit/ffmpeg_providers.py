@@ -78,7 +78,14 @@ class LocalFFmpeg(FFmpegProvider):
 
         output_path = os.path.join(self.OUTPUT_DIR, output_filename)
 
-        resolved_inputs = [str(path) for path in cmd.inputs]
+        # Handle dict inputs (URLs) for local FFmpeg
+        resolved_inputs = []
+        for inp in cmd.inputs:
+            if isinstance(inp, dict):
+                resolved_inputs.append(inp.get("url", ""))
+            else:
+                resolved_inputs.append(str(inp))
+
         ffmpeg_command = cmd.to_command_list(resolved_inputs)
         ffmpeg_command.extend(["-y", output_path])
 

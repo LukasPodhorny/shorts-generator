@@ -35,6 +35,9 @@ dependencies = [
 ]
 
 
+[project.scripts]
+aishorts-upload = "aishorts.utils.upload_asset:main"
+
 [project.optional-dependencies]
 dev = ["pytest"]
 

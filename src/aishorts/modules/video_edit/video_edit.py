@@ -1,16 +1,13 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
-from openai.types.audio import TranscriptionVerbose
+from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 import subprocess
 from pydantic import BaseModel, Field
 import uuid
 from aishorts.modules.provider import Provider
 from abc import abstractmethod
-from typing import List
-from dataclasses import dataclass, field
+from typing import List, Union, Dict, Optional, Any
 from pathlib import Path
-from typing import List
-from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from aishorts.utils.image_utils import ImageStyle
 from aishorts.modules.script.script import Reel, Block, AssetType
 
@@ -33,13 +30,13 @@ class FFmpegCommand:
     """
 
     # The actual inputs in order - these get replaced by provider
-    inputs: List[Path]
+    inputs: List[Union[Path, str, dict]]
 
     # The filter graph and other args (already have correct indices)
     args: List[str]
 
     # Video codec for optimatization
-    video_codec: str = None
+    video_codec: Optional[str] = None
 
     # Optional: metadata about what each input is (for debugging/logging)
     input_labels: List[str] = field(default_factory=list)
@@ -55,7 +52,7 @@ class FFmpegCommand:
 
         # Add all inputs
         for input_path in resolved_inputs:
-            cmd.extend(["-i", input_path])
+            cmd.extend(["-i", str(input_path)])
 
         # Add the rest of the arguments
         cmd.extend(self.args)
@@ -87,20 +84,20 @@ class SubtitleStyle(BaseModel):
 
 
 class TemplateConfig(BaseModel):
-    bg_video: str | None = None
-    music: str | None = None
-    subtitle_style: SubtitleStyle | None = Field(default_factory=SubtitleStyle)
-    chromakey_color: str | None = "0x00FF00"
-    chromakey_similarity: float | None = 0.17
-    chromakey_blend: float | None = 0.2
-    image_style: ImageStyle | None = Field(default_factory=ImageStyle)
-    max_image_width: int | None = 800
-    max_image_height: int | None = 600
-    latex_style: ImageStyle | None = Field(default_factory=ImageStyle)
-    latex_width: int | None = 600
-    latex_height: int | None = 300
-    manim_width: int | None = 900
-    manim_style: ImageStyle | None = Field(
+    bg_video: Union[str, dict, None] = None
+    music: Union[str, dict, None] = None
+    subtitle_style: Optional[SubtitleStyle] = Field(default_factory=SubtitleStyle)
+    chromakey_color: Optional[str] = "0x00FF00"
+    chromakey_similarity: Optional[float] = 0.17
+    chromakey_blend: Optional[float] = 0.2
+    image_style: Optional[ImageStyle] = Field(default_factory=ImageStyle)
+    max_image_width: Optional[int] = 800
+    max_image_height: Optional[int] = 600
+    latex_style: Optional[ImageStyle] = Field(default_factory=ImageStyle)
+    latex_width: Optional[int] = 600
+    latex_height: Optional[int] = 300
+    manim_width: Optional[int] = 900
+    manim_style: Optional[ImageStyle] = Field(
         default_factory=lambda: ImageStyle(corner_radius=40)
     )
     question_graphic: str = "MotionGraphicQuestion"
@@ -146,7 +143,7 @@ class EditTemplate(Provider):
         pass
 
     @abstractmethod
-    def _get_block_segment(self, block: Block) -> dict | None:
+    def _get_block_segment(self, block: Block) -> Optional[dict]:
         """
         Returns a dictionary with keys: 'type', 'video', 'audio', 'duration'
         or None if the block produces no video segment.
@@ -443,8 +440,8 @@ class EditTemplate(Provider):
 
     def extract_media_timings(
         self,
-        blocks: list[Block],  # List of Block objects from your Reel
-        absolute_subtitles: list[TranscriptionVerbose],
+        blocks: List[Block],  # List of Block objects from your Reel
+        absolute_subtitles: List[TranscriptionVerbose],
     ) -> List[MediaTiming]:
         """
         Extract absolute timing information for all media elements (images and latex)
@@ -531,23 +528,27 @@ class FilterGraph:
     """Helper to build FFmpeg filter graphs without manual index management"""
 
     def __init__(self):
-        self.inputs: List[Path] = []
+        self.inputs: List[Union[Path, str, dict]] = []
         self.input_labels: List[str] = []
         self.chains: List[str] = []
         self._counter = 0
 
     def add_input(
-        self, path: str | Path, label: str = None
+        self, path: Union[str, Path, dict], label: str = None
     ) -> tuple[FilterNode, FilterNode]:
         """Adds an input and returns (video_node, audio_node)"""
         idx = len(self.inputs)
-        self.inputs.append(Path(path))
+        # Store dicts as-is, convert strings/paths to Path objects
+        if isinstance(path, dict):
+            self.inputs.append(path)
+        else:
+            self.inputs.append(Path(path))
+            
         self.input_labels.append(label or f"input_{idx}")
         return FilterNode(self, f"{idx}:v"), FilterNode(self, f"{idx}:a")
 
     def add_filter(
-        self, inputs: List[FilterNode], name: str, *args, **kwargs
-    ) -> FilterNode:
+        self, inputs: List[FilterNode], name: str, *args, **kwargs) -> FilterNode:
         """Adds a filter command"""
         # Format arguments: filter=arg1:arg2:key=value
         arg_list = [str(a) for a in args]
@@ -711,7 +712,7 @@ class Animator:
         t_out = f"min(max((t-{exit_start})/{duration},0),1)"
         p_out = Animator._get_easing(t_out, easing)
 
-        expr = f"if(lt(t, {start_time}+{duration}), {p_in}, if(gt(t, {end_time}-{duration}), 1-{p_out}, 1))"
+        expr = f"if(lt(t, {start_time}+{duration}), {p_in}, if(gt(t, {end_time}-{duration}), {p_out}, 1))"
 
         full_expr = f"alpha(X,Y)*({expr})"
         return node.filter(

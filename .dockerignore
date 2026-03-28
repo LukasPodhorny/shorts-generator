@@ -39,6 +39,9 @@ output/
 output_videos/
 animated_frames/
 
+# Large assets
+assets/bg_video/
+
 # IDEs
 .vscode/
 .idea/

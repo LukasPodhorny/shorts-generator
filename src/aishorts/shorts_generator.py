@@ -450,6 +450,7 @@ class ShortsGenerator:
                 for path in [
                     assets.voice_filepath,
                     assets.lipsync_filepath,
+                    assets.staticface_filepath,
                     assets.question_filepath,
                     assets.song_filepath,
                 ]:

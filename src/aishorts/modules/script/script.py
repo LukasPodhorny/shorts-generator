@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, ClassVar, Any, Dict
+from typing import List, Optional, Literal, ClassVar, Any, Dict, Union
 from pydantic.json_schema import SkipJsonSchema
 from enum import Enum
 import uuid
@@ -52,26 +52,26 @@ class ManimMedia(MediaBase):
     prompt: str
 
 
-Media = ImageMedia | LatexMedia | ManimMedia
+Media = Union[ImageMedia, LatexMedia, ManimMedia]
 
 
 class BlockAssets(BaseModel):
     """Generated assets associated with a block"""
 
     voice_filepath: Optional[str] = None
-    voice_url: Optional[str] = None
+    voice_url: Optional[Union[str, dict]] = None
     lipsync_filepath: Optional[str] = None
-    lipsync_url: Optional[str] = None
+    lipsync_url: Optional[Union[str, dict]] = None
     staticface_filepath: Optional[str] = None
-    staticface_url: Optional[str] = None
+    staticface_url: Optional[Union[str, dict]] = None
     subtitles: Optional[Any] = None
     question_filepath: Optional[str] = None
     song_filepath: Optional[str] = None
-    song_url: Optional[str] = None
+    song_url: Optional[Union[str, dict]] = None
 
     # Maps MediaBase.id -> filepath/url
     media_map: Dict[str, str] = Field(default_factory=dict)
-    media_url_map: Dict[str, str] = Field(default_factory=dict)
+    media_url_map: Dict[str, Union[str, dict]] = Field(default_factory=dict)
 
 
 class DialogueBlock(BaseModel):
@@ -122,33 +122,7 @@ class SongBlock(BaseModel):
 
 
 # A Block can now be one of several types, distinguished by the `type` field.
-# Pydantic uses this "discriminated union" to automatically parse the correct data model.
-Block = DialogueBlock | QuestionBlock | SongBlock
-
-
-class Reel(BaseModel):
-    """Represents a single reel/chapter in the series"""
-
-    title: str = Field(
-        description="Title of this reel/chapter (e.g., 'Chapter 1: Light Absorption')"
-    )
-    description: Optional[str] = Field(
-        None, description="Brief description of what this reel covers"
-    )
-    blocks: List[Block] = Field(
-        description="The dialogue blocks that make up this reel"
-    )
-
-
-class ReelSeries(BaseModel):
-    """Container for multiple related reels that together explain a topic"""
-
-    topic: str = Field(
-        description="Overall topic being explained (e.g., 'Photosynthesis')"
-    )
-    reels: List[Reel] = Field(
-        description="Ordered list of reels, each covering a chapter/segment of the topic"
-    )
+Block = Union[DialogueBlock, QuestionBlock, SongBlock]
 
 
 class Reel(BaseModel):
@@ -186,3 +160,11 @@ class ReelOutput(BaseModel):
 class ReelSeriesOutput(BaseModel):
     topic: str
     reels: List[ReelOutput]
+
+
+# Rebuild models to resolve Union types for Pydantic V2
+Reel.model_rebuild()
+ReelSeries.model_rebuild()
+DialogueBlock.model_rebuild()
+QuestionBlock.model_rebuild()
+SongBlock.model_rebuild()

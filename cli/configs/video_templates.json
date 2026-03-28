@@ -2,7 +2,10 @@
     "basic_gameplay": {
         "edit_template": "alpha_gameplay",
         "template_config": {
-            "bg_video": "assets/bg_video/gameplay.mp4",
+            "bg_video": {
+                "url": "https://media.pdftoreel.com/assets/bg_video/gameplay.mp4",
+                "cache_key": "gameplay_v1.mp4"
+            },
             "subtitle_style": {
                 "font_size": 135,
                 "karaoke_enabled": true,
@@ -32,7 +35,10 @@
     "static_gameplay": {
         "edit_template": "static_gameplay",
         "template_config": {
-            "bg_video": "assets/bg_video/gameplay.mp4",
+            "bg_video": {
+                "url": "https://media.pdftoreel.com/assets/bg_video/gameplay.mp4",
+                "cache_key": "gameplay_v1.mp4"
+            },
             "subtitle_style": {
                 "font_size": 135,
                 "karaoke_enabled": true,
@@ -62,7 +68,10 @@
     "song_template": {
         "edit_template": "song",
         "template_config": {
-            "bg_video": "assets/bg_video/gameplay.mp4",
+            "bg_video": {
+                "url": "https://media.pdftoreel.com/assets/bg_video/gameplay.mp4",
+                "cache_key": "gameplay_v1.mp4"
+            },
             "subtitle_style": {
                 "font_size": 135,
                 "karaoke_enabled": true,

@@ -217,7 +217,6 @@ __marimo__/
 
 
 output/
-assets/
 pytest.ini
 logs/
 .pkl
@@ -229,3 +228,6 @@ uploads/
 *.db
 firebase_credentials.json
 backup.txt
+
+# Large assets
+assets/bg_video/

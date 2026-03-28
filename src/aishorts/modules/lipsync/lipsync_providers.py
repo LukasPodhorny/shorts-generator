@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 from aishorts.modules.avatar import Avatar
 from aishorts.utils.runpod_caller import EndpointCaller
 from aishorts.utils.r2_handler import download_from_url
@@ -178,7 +179,23 @@ def populate_reel_static_faces(reel: Reel, avatars: list[Avatar]) -> None:
         if AssetType.STATICFACE in block.valid_assets:
             avatar = find_by(avatars, name=block.avatar)
             if avatar:
-                block.assets.staticface_filepath = avatar.static_face_path
+                if avatar.static_face_url:
+                    block.assets.staticface_url = avatar.static_face_url
+                    
+                    # Extract URL for path generation if it's a dict
+                    url_str = avatar.static_face_url
+                    if isinstance(url_str, dict):
+                        url_str = url_str.get("url", "")
+
+                    # If we have a URL but no path, generate one in output/static_faces
+                    if not avatar.static_face_path:
+                        filename = os.path.basename(urlparse(url_str).path) or f"static_{avatar.name}.png"
+                        block.assets.staticface_filepath = os.path.join("output/static_faces", filename)
+                    else:
+                        block.assets.staticface_filepath = avatar.static_face_path
+                elif avatar.static_face_path:
+                    # Fallback for local-only
+                    block.assets.staticface_filepath = avatar.static_face_path
 
 
 """

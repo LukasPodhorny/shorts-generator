@@ -18,13 +18,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy assets (excluding those in .dockerignore)
+COPY assets/ assets/
+
+# Install custom fonts (if any exist)
+RUN mkdir -p /usr/share/fonts/truetype/custom && \
+    (cp assets/fonts/*.ttf /usr/share/fonts/truetype/custom/ 2>/dev/null || true) && \
+    fc-cache -f -v
+
 # Copy the rest of the application
 COPY . .
-
-# Install custom fonts
-RUN mkdir -p /usr/share/fonts/truetype/custom && \
-    cp assets/fonts/*.ttf /usr/share/fonts/truetype/custom/ && \
-    fc-cache -f -v
 
 # Install the aishorts package from the local src/ directory
 RUN pip install .
