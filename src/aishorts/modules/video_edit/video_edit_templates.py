@@ -28,7 +28,7 @@ class GameplayTemplate(EditTemplate):
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
-    def __init__(self, template_config: TemplateConfig):
+    def __init__(self, template_config: TemplateConfig, **kwargs):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
@@ -63,7 +63,7 @@ class GameplayTemplate(EditTemplate):
             }
         return None
 
-    def compose(self, reel: Reel) -> FFmpegCommand:
+    def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         segments, final_subtitles, media_timings, current_time = (
             self.collect_segments_and_timings(reel)
         )
@@ -247,7 +247,7 @@ class AlphaGameplayTemplate(EditTemplate):
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
-    def __init__(self, template_config: TemplateConfig):
+    def __init__(self, template_config: TemplateConfig, **kwargs):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
@@ -282,7 +282,7 @@ class AlphaGameplayTemplate(EditTemplate):
             }
         return None
 
-    def compose(self, reel: Reel) -> FFmpegCommand:
+    def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         segments, final_subtitles, media_timings, current_time = (
             self.collect_segments_and_timings(reel)
         )
@@ -478,7 +478,7 @@ class StaticGameplayTemplate(EditTemplate):
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
-    def __init__(self, template_config: TemplateConfig):
+    def __init__(self, template_config: TemplateConfig, **kwargs):
         self.bg_video = template_config.bg_video
         self.music = template_config.music
         self.subtitle_style = template_config.subtitle_style
@@ -520,7 +520,7 @@ class StaticGameplayTemplate(EditTemplate):
             }
         return None
 
-    def compose(self, reel: Reel) -> FFmpegCommand:
+    def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         segments, final_subtitles, media_timings, current_time = (
             self.collect_segments_and_timings(reel)
         )
@@ -679,7 +679,7 @@ class SongTemplate(EditTemplate):
 
     allowed_blocks = [BlockType.SONG]
 
-    def __init__(self, template_config: TemplateConfig):
+    def __init__(self, template_config: TemplateConfig, **kwargs):
         self.bg_video = template_config.bg_video
         self.subtitle_style = template_config.subtitle_style
         self.manim_width = template_config.manim_width
@@ -699,7 +699,7 @@ class SongTemplate(EditTemplate):
             }
         return None
 
-    def compose(self, reel: Reel) -> FFmpegCommand:
+    def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         segments, final_subtitles, media_timings, current_time = (
             self.collect_segments_and_timings(reel)
         )

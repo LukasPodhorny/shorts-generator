@@ -61,9 +61,13 @@ class F5TTS(EndpointCaller, TTSProvider):
 
     def _prepare_text_input(self, text: str, id: int) -> dict:
         avatar = self.avatars[0]
+        
+        sample_url = avatar.voice.sample_url
+        if isinstance(sample_url, dict):
+            sample_url = sample_url.get("url")
 
         voice_data = {
-            "voice_reference": avatar.voice.sample_url,
+            "voice_reference": sample_url,
         }
 
         if avatar.voice.sample_transcript:
@@ -84,14 +88,17 @@ class F5TTS(EndpointCaller, TTSProvider):
 
     def _prepare_reel_input(self, reel: Reel) -> dict:
         # Build voices dict and valid_avatars set in one pass
-        voices = {
-            avatar.name: {
-                "voice_reference": avatar.voice.sample_url,
-                "ref_text": avatar.voice.sample_transcript,
-            }
-            for avatar in self.avatars
-            if avatar.voice.provider.lower() == "f5tts"
-        }
+        voices = {}
+        for avatar in self.avatars:
+            if avatar.voice.provider.lower() == "f5tts":
+                sample_url = avatar.voice.sample_url
+                if isinstance(sample_url, dict):
+                    sample_url = sample_url.get("url")
+                    
+                voices[avatar.name] = {
+                    "voice_reference": sample_url,
+                    "ref_text": avatar.voice.sample_transcript,
+                }
 
         valid_avatars = set(voices.keys())
 
@@ -133,7 +140,13 @@ class F5TTS(EndpointCaller, TTSProvider):
 
         results = await self.run_async(reel_input)
 
+        if not isinstance(results, list):
+            raise RuntimeError(f"F5TTS worker returned unexpected output: {results}")
+
         for i, dialogue in enumerate(results):
+            if not isinstance(dialogue, dict):
+                raise RuntimeError(f"F5TTS worker returned unexpected dialogue format: {dialogue}")
+            
             result_url = dialogue["audio_url"]
             filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
 
