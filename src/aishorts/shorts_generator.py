@@ -68,7 +68,7 @@ class ManimConfig(BaseModel):
 
 
 class SubtitleConfig(BaseModel):
-    provider: str = "elevenlabs"
+    provider: str = "modal_wav2vec_aligner"
     provider_config: dict = Field(default_factory=dict)
 
 
