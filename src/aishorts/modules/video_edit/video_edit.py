@@ -20,6 +20,7 @@ class MediaTiming:
     start_time: float
     end_time: float
     media_type: str
+    url: Optional[Union[str, dict]] = None
 
 
 @dataclass
@@ -495,14 +496,16 @@ class EditTemplate(Provider):
 
                     # Get the filepath from the map
                     filepath = block.assets.media_map.get(media_item.id)
+                    url = block.assets.media_url_map.get(media_item.id)
 
-                    if filepath:
+                    if filepath or url:
                         media_timings.append(
                             MediaTiming(
-                                filepath=filepath,
+                                filepath=filepath or "",
                                 start_time=start_time,
                                 end_time=end_time,
                                 media_type=media_item.type,
+                                url=url,
                             )
                         )
 

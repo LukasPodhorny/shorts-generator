@@ -141,20 +141,23 @@ class GameplayTemplate(EditTemplate):
         )
 
         # 4. Media Overlays
-        # Note: Media timings are currently empty in this specific block because I didn't fully port the extraction logic
-        # for GameplayTemplate. The user's main issue was AlphaGameplayTemplate.
         for i, media in enumerate(media_timings):
-            # temporary for testing
+            input_path = media.filepath
             if not os.path.isfile(media.filepath):
-                continue
+                if media.url:
+                    input_path = media.url if not isinstance(media.url, str) else {"url": media.url}
+                else:
+                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    continue
 
-            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+            media_v, _ = graph.add_input(input_path, f"media_{i}")
 
             display_end_time = media.end_time
 
             if media.media_type == "manim":
                 # Manim is a video, scale to fit width and shift time
-                manim_duration = self.get_video_duration(media.filepath)
+                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+
                 display_end_time = media.start_time + manim_duration
 
                 # Ensure alpha channel exists for mp4
@@ -377,17 +380,22 @@ class AlphaGameplayTemplate(EditTemplate):
 
         # 4. Media Overlays
         for i, media in enumerate(media_timings):
-            # temporary for testing
+            input_path = media.filepath
             if not os.path.isfile(media.filepath):
-                continue
+                if media.url:
+                    input_path = media.url if isinstance(media.url, dict) else {"url": media.url}
+                else:
+                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    continue
 
-            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+            media_v, _ = graph.add_input(input_path, f"media_{i}")
 
             display_end_time = media.end_time
 
             if media.media_type == "manim":
                 # Manim is a video, scale to fit width and shift time
-                manim_duration = self.get_video_duration(media.filepath)
+                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+
                 display_end_time = media.start_time + manim_duration
 
                 # Ensure alpha channel exists for mp4
@@ -599,15 +607,21 @@ class StaticGameplayTemplate(EditTemplate):
 
         # Media Overlays
         for i, media in enumerate(media_timings):
+            input_path = media.filepath
             if not os.path.isfile(media.filepath):
-                continue
+                if media.url:
+                    input_path = media.url if isinstance(media.url, dict) else {"url": media.url}
+                else:
+                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    continue
 
-            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+            media_v, _ = graph.add_input(input_path, f"media_{i}")
 
             display_end_time = media.end_time
 
             if media.media_type == "manim":
-                manim_duration = self.get_video_duration(media.filepath)
+                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+
                 display_end_time = media.start_time + manim_duration
 
                 # Ensure alpha channel exists for mp4
@@ -744,14 +758,20 @@ class SongTemplate(EditTemplate):
 
         # 3. Media Overlays
         for i, media in enumerate(media_timings):
+            input_path = media.filepath
             if not os.path.isfile(media.filepath):
-                continue
+                if media.url:
+                    input_path = media.url if isinstance(media.url, dict) else {"url": media.url}
+                else:
+                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    continue
 
-            media_v, _ = graph.add_input(media.filepath, f"media_{i}")
+            media_v, _ = graph.add_input(input_path, f"media_{i}")
             display_end_time = media.end_time
 
             if media.media_type == "manim":
-                manim_duration = self.get_video_duration(media.filepath)
+                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+
                 display_end_time = media.start_time + manim_duration
                 media_v = media_v.filter("format", "yuva420p")
                 media_v = media_v.filter("fps", fps=30)
