@@ -9,7 +9,7 @@ from abc import abstractmethod
 import subprocess
 import tempfile
 import requests
-from aishorts.utils.r2_handler import CloudflareR2
+from aishorts.utils.r2_handler import CloudflareR2, download_from_url
 from aishorts.modules.video_edit.video_edit import FFmpegCommand
 import mimetypes
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,6 +22,7 @@ class FFmpegResult:
 
     download_url: str
     filepath: str
+    key: Optional[str] = None
 
 
 class FFmpegProvider(Provider):
@@ -72,7 +73,7 @@ class LocalFFmpeg(FFmpegProvider):
     def __init__(self, **kwargs):
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
-    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
         cmd.video_codec = self.video_codec
 
         output_path = os.path.join(self.OUTPUT_DIR, output_filename)
@@ -127,8 +128,9 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         
         # Instantiate your Cloudflare R2 handler if needed for uploads/downloads
         self.r2 = CloudflareR2()
+        self.session_id = kwargs.get("session_id", "default")
 
-    async def _prepare_inputs(self, cmd: FFmpegCommand) -> List[Union[str, Dict]]:
+    async def _prepare_inputs(self, cmd: FFmpegCommand, session_id: str) -> List[Union[str, Dict]]:
         """
         Processes cmd.inputs. If they are local Path objects, uploads them to R2 
         and gets a presigned URL. If they are already URLs, keeps them as is.
@@ -137,10 +139,10 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         
         # You might want to upload concurrency if there are multiple local files
         for input_item in cmd.inputs:
-            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http")):
+            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
                 # Assuming your CloudflareR2 handler has an upload method that returns a URL
                 # Adjust based on your actual CloudflareR2 implementation
-                remote_key = f"uploads/{os.path.basename(str(input_item))}"
+                remote_key = f"uploads/{session_id}/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
                 
                 # Get a presigned GET URL for Runpod to download
@@ -156,9 +158,10 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
                 
         return processed_inputs
 
-    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
+    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
         # 1. Prepare inputs (upload local files to R2 if necessary)
-        prepared_inputs = await self._prepare_inputs(cmd)
+        session_id = kwargs.get("session_id", self.session_id)
+        prepared_inputs = await self._prepare_inputs(cmd, session_id=session_id)
 
         # 2. Tell the Runpod worker where to upload the final video (R2 Key)
         output_key = f"videos/output/{output_filename}"
@@ -185,14 +188,13 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
 
         download_url = result.get("download_url")
         
-        # Since Runpod uploaded the file to R2, we can just return the URL!
-        # If your app needs the file locally right away, you could download it here:
-        # local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
+        # Download locally as required by the user
+        local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
         
-        # But if you just need the URL/path:
         return FFmpegResult(
             download_url=download_url,
-            filepath=download_url # or local_filepath if you downloaded it
+            filepath=local_filepath,
+            key=output_key
         )
 
 class ModalFFmpeg(FFmpegProvider):
@@ -209,12 +211,13 @@ class ModalFFmpeg(FFmpegProvider):
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
         
         self.r2 = CloudflareR2()
+        self.session_id = kwargs.get("session_id", "default")
 
-    async def _prepare_inputs(self, cmd: FFmpegCommand) -> List[Union[str, Dict]]:
+    async def _prepare_inputs(self, cmd: FFmpegCommand, session_id: str) -> List[Union[str, Dict]]:
         processed_inputs = []
         for input_item in cmd.inputs:
             if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
-                remote_key = f"uploads/{os.path.basename(str(input_item))}"
+                remote_key = f"uploads/{session_id}/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
                 presigned_url = self.r2.create_presigned_url(remote_key)
                 processed_inputs.append(presigned_url)
@@ -224,7 +227,7 @@ class ModalFFmpeg(FFmpegProvider):
                 processed_inputs.append(str(input_item))
         return processed_inputs
 
-    def _prepare_args(self, args: List[str]) -> List[str]:
+    def _prepare_args(self, args: List[str], session_id: str) -> List[str]:
         processed_args = []
         for arg in args:
             new_arg = arg
@@ -238,7 +241,7 @@ class ModalFFmpeg(FFmpegProvider):
             
             for local_path in matches:
                 if os.path.exists(local_path):
-                    remote_key = f"uploads/args/{os.path.basename(local_path)}"
+                    remote_key = f"uploads/{session_id}/args/{os.path.basename(local_path)}"
                     self.r2.upload_file(local_path, remote_key)
                     presigned_url = self.r2.create_presigned_url(remote_key)
                     new_arg = new_arg.replace(local_path, presigned_url)
@@ -246,9 +249,10 @@ class ModalFFmpeg(FFmpegProvider):
             processed_args.append(new_arg)
         return processed_args
 
-    async def render(self, cmd: FFmpegCommand, output_filename: str) -> FFmpegResult:
-        prepared_inputs = await self._prepare_inputs(cmd)
-        prepared_args = self._prepare_args(cmd.args)
+    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
+        session_id = kwargs.get("session_id", self.session_id)
+        prepared_inputs = await self._prepare_inputs(cmd, session_id=session_id)
+        prepared_args = self._prepare_args(cmd.args, session_id=session_id)
         output_key = f"videos/output/{output_filename}"
 
         payload = {
@@ -276,8 +280,12 @@ class ModalFFmpeg(FFmpegProvider):
                 result = await response.json()
 
         download_url = result.get("download_url")
-        
+
+        # Download locally as required by the user
+        local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
+
         return FFmpegResult(
             download_url=download_url,
-            filepath=download_url
+            filepath=local_filepath,
+            key=output_key
         )

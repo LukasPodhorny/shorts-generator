@@ -17,7 +17,7 @@ class SubtitleGenerator:
             Used by WhisperSubtitles, ElevenLabsSubtitles backend only.
     """
 
-    def __init__(self, provider: str = "elevenlabs", **kwargs):
+    def __init__(self, provider: str = "modal_wav2vec_aligner", **kwargs):
         self.provider = provider.lower()
 
         cls = SubtitlesProvider.get(self.provider)

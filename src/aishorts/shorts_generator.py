@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import pickle
+import uuid
 from datetime import datetime
 from enum import IntEnum
 from aishorts.modules.script.script_generator import ScriptGenerator
@@ -299,10 +300,16 @@ class ShortsGenerator:
         user_input: str | None = None,
         resume_from: str | None = None,
         mock_script: str | None = None,
+        keep_assets: bool = False,
     ) -> ReelSeriesOutput:
 
         current_stage = PipelineStage.SCRIPT
         reel_series = None
+        
+        # Generate a unique session ID for this run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_id = f"run_{timestamp}_{uuid.uuid4().hex[:8]}"
+        self.logger.info(f"Starting generation session: {session_id}")
 
         # --- 1. Load Checkpoint Logic ---
         if resume_from:
@@ -372,17 +379,27 @@ class ShortsGenerator:
         r2 = CloudflareR2()
 
         reel_outputs = []
+        intermediate_keys = []
         for reel in reel_series.reels:
             # Compose Video
-            result = await self.video_gen.compose(reel=reel)
-            file_path_str = (
-                result.filepath if hasattr(result, "filepath") else str(result)
-            )
-
-            # Upload to R2
+            result = await self.video_gen.compose(reel=reel, session_id=session_id)
+            
+            # If result is already on R2 (from a remote provider), use copy instead of upload
+            file_path_str = result.filepath
             filename = os.path.basename(file_path_str)
-            key = f"generated/{filename}"
-            presigned_url = await asyncio.to_thread(r2.upload_file, file_path_str, key)
+            dest_key = f"generated/{filename}"
+
+            if result.key:
+                # Track the intermediate key for cleanup
+                intermediate_keys.append(result.key)
+                
+                # Server-side copy to final location
+                self.logger.info(f"Copying final video on R2 from {result.key} to {dest_key}")
+                presigned_url = await asyncio.to_thread(r2.copy_file, result.key, dest_key)
+            else:
+                # Upload local file
+                self.logger.info(f"Uploading final video to R2: {dest_key}")
+                presigned_url = await asyncio.to_thread(r2.upload_file, file_path_str, dest_key)
 
             reel_outputs.append(
                 ReelOutput(
@@ -393,7 +410,106 @@ class ShortsGenerator:
                 )
             )
 
+        # --- 7. Cleanup ---
+        await self._cleanup_assets(
+            reel_series=reel_series,
+            reel_outputs=reel_outputs,
+            intermediate_keys=intermediate_keys,
+            session_id=session_id,
+            keep_assets=keep_assets,
+        )
+
         return ReelSeriesOutput(topic=reel_series.topic, reels=reel_outputs)
+
+    async def _cleanup_assets(
+        self,
+        reel_series: ReelSeries,
+        reel_outputs: list[ReelOutput],
+        intermediate_keys: list[str],
+        session_id: str,
+        keep_assets: bool = False,
+    ):
+        if keep_assets:
+            self.logger.info("Keep assets flag set. Skipping cleanup.")
+            return
+
+        self.logger.info("Cleaning up intermediate assets...")
+        r2 = CloudflareR2()
+
+        local_to_delete = set()
+        r2_to_delete = set(intermediate_keys)
+
+        # 1. Collect from reel_series blocks
+        for reel in reel_series.reels:
+            for block in reel.blocks:
+                assets = block.assets
+                if not assets:
+                    continue
+
+                # Collect local files (only if they are in the 'output' directory)
+                for path in [
+                    assets.voice_filepath,
+                    assets.lipsync_filepath,
+                    assets.question_filepath,
+                    assets.song_filepath,
+                ]:
+                    if path and os.path.exists(path) and "output" in path:
+                        local_to_delete.add(path)
+
+                # Collect R2 keys
+                for url in [assets.voice_url, assets.lipsync_url, assets.song_url]:
+                    if url and url.startswith("http"):
+                        try:
+                            key = CloudflareR2.get_key_from_url(url)
+                            if not key.startswith("generated/"):
+                                r2_to_delete.add(key)
+                        except:
+                            pass
+
+                # Media Map (Images, LaTeX, Manim)
+                for media_id, path in assets.media_map.items():
+                    if path and os.path.exists(path) and "output" in path:
+                        local_to_delete.add(path)
+                    url = assets.media_url_map.get(media_id)
+                    if url and url.startswith("http"):
+                        try:
+                            key = CloudflareR2.get_key_from_url(url)
+                            if not key.startswith("generated/"):
+                                r2_to_delete.add(key)
+                        except:
+                            pass
+
+        # 2. Protection: Do NOT delete final outputs (even if they were in the output dirs)
+        final_local_paths = {ro.local_path for ro in reel_outputs}
+        final_r2_keys = {
+            CloudflareR2.get_key_from_url(ro.presigned_url) for ro in reel_outputs
+        }
+
+        local_to_delete -= final_local_paths
+        r2_to_delete -= final_r2_keys
+
+        # 3. Delete local files
+        for path in local_to_delete:
+            try:
+                os.remove(path)
+                # self.logger.debug(f"Deleted local file: {path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete local file {path}: {e}")
+
+        # 4. Delete R2 objects
+        for key in r2_to_delete:
+            try:
+                await asyncio.to_thread(r2.delete_file, key)
+                # self.logger.debug(f"Deleted R2 object: {key}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete R2 key {key}: {e}")
+
+        # 5. Finally, clean up the session uploads prefix (for on-the-fly uploads from providers)
+        try:
+            uploads_prefix = f"uploads/{session_id}/"
+            await asyncio.to_thread(r2.delete_prefix, uploads_prefix)
+        except Exception as e:
+            self.logger.warning(f"Failed to clean up uploads prefix: {e}")
 
     def generate_shorts(
         self,
@@ -402,13 +518,15 @@ class ShortsGenerator:
         user_input: str | None = None,
         resume_from: str | None = None,
         mock_script: str | None = None,
+        keep_assets: bool = False,
     ) -> ReelSeriesOutput:
-        asyncio.run(
+        return asyncio.run(
             self.generate_shorts_async(
                 amount=amount,
                 files=files,
                 user_input=user_input,
                 resume_from=resume_from,
                 mock_script=mock_script,
+                keep_assets=keep_assets,
             ),
         )

@@ -14,6 +14,7 @@ class BucketConfiguration(BaseModel):
     aws_secret_acces_key: str | None = None
     bucket: str | None = None
     output_dir: str | None = None
+    public_domain: str | None = None
 
 
 class CloudflareR2:
@@ -33,11 +34,14 @@ class CloudflareR2:
         self.output_dir = bucket_configuration.output_dir or os.getenv(
             "CLOUDFLARE_OUTPUT_DIR", "outputs"
         )
+        self.public_domain = bucket_configuration.public_domain or os.getenv(
+            "R2_PUBLIC_DOMAIN"
+        )
 
     def upload_file(self, file_path: str, key: str) -> str:
-        """Uploads file and returns its presigned URL."""
+        """Uploads file and returns its public URL."""
         self.client.upload_file(file_path, self.bucket, key)
-        return self.create_presigned_url(key)
+        return self.get_public_url(key)
 
     def create_presigned_url(self, key: str, expires_in=604800) -> str:
         """Generates a temporary download link."""
@@ -47,9 +51,34 @@ class CloudflareR2:
             ExpiresIn=expires_in,
         )
 
+    def get_public_url(self, key: str) -> str:
+        """Returns the public URL for a key. Falls back to presigned URL if public domain is not set."""
+        if self.public_domain:
+            return f"https://{self.public_domain}/{key}"
+        return self.create_presigned_url(key)
+
+    def copy_file(self, source_key: str, dest_key: str) -> str:
+        """Copies an object within the bucket and returns its public URL."""
+        self.client.copy_object(
+            Bucket=self.bucket,
+            CopySource={"Bucket": self.bucket, "Key": source_key},
+            Key=dest_key,
+        )
+        return self.get_public_url(dest_key)
+
     def delete_file(self, key: str):
         """Deletes an object from the bucket."""
         self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def delete_prefix(self, prefix: str):
+        """Deletes all objects with a given prefix."""
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            if "Contents" in page:
+                delete_keys = {
+                    "Objects": [{"Key": obj["Key"]} for obj in page["Contents"]]
+                }
+                self.client.delete_objects(Bucket=self.bucket, Delete=delete_keys)
 
     @staticmethod
     def get_key_from_url(url: str) -> str:

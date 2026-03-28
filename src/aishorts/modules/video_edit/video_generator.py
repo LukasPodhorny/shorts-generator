@@ -4,7 +4,7 @@ import asyncio
 from aishorts.modules.video_edit.video_edit import VideoTemplate
 from aishorts.modules.script.script import Reel, AssetType
 from aishorts.modules.video_edit.video_edit_templates import EditTemplate
-from aishorts.modules.video_edit.ffmpeg_providers import FFmpegProvider
+from aishorts.modules.video_edit.ffmpeg_providers import FFmpegProvider, FFmpegResult
 from aishorts.utils.r2_handler import download_from_url
 
 
@@ -91,8 +91,8 @@ class VideoGenerator:
         if download_tasks:
             await asyncio.gather(*download_tasks)
 
-    async def compose(self, reel: Reel, **kwargs) -> str:
+    async def compose(self, reel: Reel, **kwargs) -> FFmpegResult:
         await self._ensure_assets_local(reel)
         cmd = self.edit.compose(reel=reel, **kwargs)
 
-        return await self.render.render(cmd, f"{uuid.uuid4()}.mp4")
+        return await self.render.render(cmd, f"{uuid.uuid4()}.mp4", **kwargs)
