@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y \
     texlive-latex-base \
     texlive-fonts-recommended \
     texlive-latex-extra \
+    texlive-science \
+    fontconfig \
+    poppler-utils \
     imagemagick \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,6 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
+
+# Install custom fonts
+RUN mkdir -p /usr/share/fonts/truetype/custom && \
+    cp assets/fonts/*.ttf /usr/share/fonts/truetype/custom/ && \
+    fc-cache -f -v
 
 # Install the aishorts package from the local src/ directory
 RUN pip install .
