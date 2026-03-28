@@ -81,9 +81,25 @@ class CloudflareR2:
                 self.client.delete_objects(Bucket=self.bucket, Delete=delete_keys)
 
     @staticmethod
-    def get_key_from_url(url: str) -> str:
+    def get_key_from_url(url: Union[str, dict], bucket_name: Optional[str] = None) -> str:
+        """
+        Extracts the R2 key from a URL string or dictionary.
+        Strips the leading slash and optionally the bucket name if it's the first part of the path.
+        """
+        if isinstance(url, dict):
+            url = url.get("url", "")
+            
+        if not url or not isinstance(url, str):
+            return ""
+
         parsed = urlparse(url)
-        return parsed.path.lstrip("/")
+        path = parsed.path.lstrip("/")
+        
+        # If the path starts with the bucket name (common in S3-style URLs), strip it
+        if bucket_name and path.startswith(f"{bucket_name}/"):
+            path = path[len(bucket_name)+1:]
+            
+        return path
 
     @staticmethod
     def get_random_filepath(base_path: str, ext: str):

@@ -458,32 +458,44 @@ class ShortsGenerator:
                         local_to_delete.add(path)
 
                 # Collect R2 keys
-                for url in [assets.voice_url, assets.lipsync_url, assets.song_url]:
-                    if url and url.startswith("http"):
-                        try:
-                            key = CloudflareR2.get_key_from_url(url)
-                            if not key.startswith("generated/"):
-                                r2_to_delete.add(key)
-                        except:
-                            pass
+                urls_to_check = [
+                    assets.voice_url,
+                    assets.lipsync_url,
+                    assets.staticface_url,
+                    assets.song_url,
+                ]
+                
+                for url in urls_to_check:
+                    if url:
+                        # Extract string if it's a dict
+                        url_str = url.get("url") if isinstance(url, dict) else url
+                        if url_str and str(url_str).startswith("http"):
+                            try:
+                                key = CloudflareR2.get_key_from_url(url, r2.bucket)
+                                if key and not key.startswith("generated/"):
+                                    r2_to_delete.add(key)
+                            except:
+                                pass
 
                 # Media Map (Images, LaTeX, Manim)
                 for media_id, path in assets.media_map.items():
                     if path and os.path.exists(path) and "output" in path:
                         local_to_delete.add(path)
                     url = assets.media_url_map.get(media_id)
-                    if url and url.startswith("http"):
-                        try:
-                            key = CloudflareR2.get_key_from_url(url)
-                            if not key.startswith("generated/"):
-                                r2_to_delete.add(key)
-                        except:
-                            pass
+                    if url:
+                        url_str = url.get("url") if isinstance(url, dict) else url
+                        if url_str and str(url_str).startswith("http"):
+                            try:
+                                key = CloudflareR2.get_key_from_url(url, r2.bucket)
+                                if key and not key.startswith("generated/"):
+                                    r2_to_delete.add(key)
+                            except:
+                                pass
 
         # 2. Protection: Do NOT delete final outputs (even if they were in the output dirs)
         final_local_paths = {ro.local_path for ro in reel_outputs}
         final_r2_keys = {
-            CloudflareR2.get_key_from_url(ro.presigned_url) for ro in reel_outputs
+            CloudflareR2.get_key_from_url(ro.presigned_url, r2.bucket) for ro in reel_outputs
         }
 
         local_to_delete -= final_local_paths
