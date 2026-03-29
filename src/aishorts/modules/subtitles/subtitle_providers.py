@@ -152,12 +152,14 @@ class ModalWav2VecAligner(SubtitlesProvider):
         modal_api_key: Optional[str] = None,
         r2_provider=None,
         max_concurrent: int = 5,
+        min_silence_duration: float = 0.5,
         **kwargs,
     ):
         """Initialize the Wav2Vec Aligner provider."""
         self.endpoint_url = endpoint_url or os.getenv("MODAL_WAV2VEC_ENDPOINT_URL")
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
         self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.min_silence_duration = min_silence_duration
         
         # Use existing R2 handler or initialize the standard one
         self.r2 = r2_provider or CloudflareR2()
@@ -201,14 +203,28 @@ class ModalWav2VecAligner(SubtitlesProvider):
                     result = await response.json()
 
             # Map Modal segments to the standard TranscriptionWord format
-            words = [
-                TranscriptionWord(
-                    word=seg["word"],
-                    start=seg["start"],
-                    end=seg["end"]
+            # and bridge gaps shorter than min_silence_duration
+            words = []
+            segments = result.get("segments", [])
+            for i, seg in enumerate(segments):
+                word_text = seg["word"]
+                start = seg["start"]
+                end = seg["end"]
+
+                # If there's a next segment, check if we should bridge the gap
+                if i < len(segments) - 1:
+                    next_start = segments[i + 1]["start"]
+                    gap = next_start - end
+                    if gap < self.min_silence_duration:
+                        end = next_start
+
+                words.append(
+                    TranscriptionWord(
+                        word=word_text,
+                        start=start,
+                        end=end
+                    )
                 )
-                for seg in result.get("segments", [])
-            ]
 
             return TranscriptionVerbose(
                 duration=get_wav_length(audio_file),

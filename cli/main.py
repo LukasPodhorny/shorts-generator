@@ -38,7 +38,7 @@ def main():
     parser.add_argument("--template", type=str, required=True)
     parser.add_argument("--llm_provider", default="chatgpt", type=str)
     parser.add_argument("--model", default="gpt-5", type=str)
-    parser.add_argument("--subtitle_provider", default="elevenlabs", type=str)
+    parser.add_argument("--subtitle_provider", default="modal_wav2vec_aligner", type=str) # remember to change this back to elevenlabs
     parser.add_argument(
         "--keep_assets",
         action="store_true",
