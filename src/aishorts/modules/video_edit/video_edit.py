@@ -486,7 +486,7 @@ class EditTemplate(Provider):
                         absolute_trans.words
                     ) or end_word_idx >= len(absolute_trans.words):
                         print(
-                            f"Warning: Word indices out of range for dialogue {dialogue_idx}"
+                            f"Warning: Word indices [{start_word_idx}, {end_word_idx}] out of range for dialogue {dialogue_idx} (words: {len(absolute_trans.words)})"
                         )
                         continue
 
@@ -499,16 +499,17 @@ class EditTemplate(Provider):
                     url = block.assets.media_url_map.get(media_item.id)
 
                     if filepath or url:
-                        media_timings.append(
-                            MediaTiming(
-                                filepath=filepath or "",
-                                start_time=start_time,
-                                end_time=end_time,
-                                media_type=media_item.type,
-                                url=url,
-                            )
+                        timing = MediaTiming(
+                            filepath=filepath or "",
+                            start_time=start_time,
+                            end_time=end_time,
+                            media_type=media_item.type,
+                            url=url,
                         )
+                        media_timings.append(timing)
+                        print(f"Extracted media timing: {timing.media_type} at {timing.start_time:.2f}s - {timing.end_time:.2f}s")
 
+        print(f"Total media timings extracted: {len(media_timings)}")
         return media_timings
 
 
@@ -715,7 +716,8 @@ class Animator:
         t_out = f"min(max((t-{exit_start})/{duration},0),1)"
         p_out = Animator._get_easing(t_out, easing)
 
-        expr = f"if(lt(t, {start_time}+{duration}), {p_in}, if(gt(t, {end_time}-{duration}), {p_out}, 1))"
+        # For fade out, alpha should go from 1 to 0. p_out goes from 0 to 1.
+        expr = f"if(lt(t, {start_time}+{duration}), {p_in}, if(gt(t, {end_time}-{duration}), 1-{p_out}, 1))"
 
         full_expr = f"alpha(X,Y)*({expr})"
         return node.filter(

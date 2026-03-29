@@ -12,9 +12,14 @@ from pydub import AudioSegment
 import asyncio
 
 
+from aishorts.utils.r2_handler import CloudflareR2
+
 class QuestionProvider(Provider):
     OUTPUT_DIR = os.getenv("QUESTION_OUTPUT_DIR") or "output/question"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    def __init__(self, **kwargs):
+        self.r2 = CloudflareR2()
 
     @abstractmethod
     async def populate_reel(self, reel: Reel, **kwargs) -> None:
@@ -31,7 +36,9 @@ class MotionGraphicQuestionProvider(QuestionProvider):
         typing_duration: float = 3.0,
         thinking_duration: float = 5.0,
         answer_duration: float = 2.0,
+        **kwargs,
     ):
+        super().__init__(**kwargs)
         self.graphic_class = graphic_class
         self.renderer = renderer or MotionGraphicRenderer()
         self.typing_duration = typing_duration
@@ -69,4 +76,9 @@ class MotionGraphicQuestionProvider(QuestionProvider):
 
                 await self.renderer.render(graphic, output_path)
 
+                # Upload to R2
+                remote_key = f"question/{os.path.basename(output_path)}"
+                url = await asyncio.to_thread(self.r2.upload_file, output_path, remote_key)
+
                 block.assets.question_filepath = output_path
+                block.assets.question_url = url

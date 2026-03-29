@@ -43,18 +43,38 @@ class GameplayTemplate(EditTemplate):
         audio_path = None
         seg_type = "none"
 
-        if block.type == "dialogue" and block.assets and block.assets.lipsync_filepath:
-            seg_type = "video"
-            video_path = block.assets.lipsync_filepath
+        if block.type == "dialogue" and block.assets:
+            if block.assets.lipsync_filepath:
+                seg_type = "video"
+                video_path = block.assets.lipsync_filepath
+                if not os.path.exists(video_path) and block.assets.lipsync_url:
+                    video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
+            
         elif (
-            block.type == "question" and block.assets and block.assets.question_filepath
+            block.type == "question" and block.assets
         ):
-            seg_type = "question"
-            video_path = block.assets.question_filepath
-            audio_path = block.assets.voice_filepath
+            if block.assets.question_filepath:
+                seg_type = "question"
+                video_path = block.assets.question_filepath
+                if not os.path.exists(video_path) and block.assets.lipsync_url: # Note: question might use lipsync_url if it's a video
+                     video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
 
-        if seg_type != "none":
-            duration = self.get_video_duration(video_path)
+                audio_path = block.assets.voice_filepath
+                if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+
+        if seg_type != "none" and video_path:
+            # We can't get duration of a remote URL easily here without downloading, 
+            # but collect_segments_and_timings uses it. 
+            # If it's a dict, we assume the provider handles it or we've already downloaded it.
+            try:
+                duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
+                # Fallback duration if missing
+                if duration == 0 and block.assets and block.assets.subtitles:
+                    duration = block.assets.subtitles.duration
+            except:
+                duration = 0.0
+
             return {
                 "type": seg_type,
                 "video": video_path,
@@ -130,6 +150,7 @@ class GameplayTemplate(EditTemplate):
 
         # 2. Process Background
         bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        bg_v = bg_v.filter("fps", fps=30)
         bg_v = bg_v.filter("trim", end=current_time).filter("setpts", "PTS-STARTPTS")
         bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
         bg_v = bg_v.filter("crop", "1080:1920")
@@ -265,18 +286,38 @@ class AlphaGameplayTemplate(EditTemplate):
         audio_path = None
         seg_type = "none"
 
-        if block.type == "dialogue" and block.assets and block.assets.lipsync_filepath:
-            seg_type = "video"
-            video_path = block.assets.lipsync_filepath
+        if block.type == "dialogue" and block.assets:
+            if block.assets.lipsync_filepath:
+                seg_type = "video"
+                video_path = block.assets.lipsync_filepath
+                if not os.path.exists(video_path) and block.assets.lipsync_url:
+                    video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
+            
         elif (
-            block.type == "question" and block.assets and block.assets.question_filepath
+            block.type == "question" and block.assets
         ):
-            seg_type = "question"
-            video_path = block.assets.question_filepath
-            audio_path = block.assets.voice_filepath
+            if block.assets.question_filepath:
+                seg_type = "question"
+                video_path = block.assets.question_filepath
+                if not os.path.exists(video_path) and block.assets.lipsync_url: # Note: question might use lipsync_url if it's a video
+                     video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
 
-        if seg_type != "none":
-            duration = self.get_video_duration(video_path)
+                audio_path = block.assets.voice_filepath
+                if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+
+        if seg_type != "none" and video_path:
+            # We can't get duration of a remote URL easily here without downloading, 
+            # but collect_segments_and_timings uses it. 
+            # If it's a dict, we assume the provider handles it or we've already downloaded it.
+            try:
+                duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
+                # Fallback duration if missing
+                if duration == 0 and block.assets and block.assets.subtitles:
+                    duration = block.assets.subtitles.duration
+            except:
+                duration = 0.0
+
             return {
                 "type": seg_type,
                 "video": video_path,
@@ -368,6 +409,7 @@ class AlphaGameplayTemplate(EditTemplate):
 
         # 2. Process Background
         bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        bg_v = bg_v.filter("fps", fps=30)
         bg_v = bg_v.filter("trim", end=current_time).filter("setpts", "PTS-STARTPTS")
         bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
         bg_v = bg_v.filter("crop", "1080:1920")
@@ -499,25 +541,44 @@ class StaticGameplayTemplate(EditTemplate):
         seg_type = "none"
         duration = 0.0
 
-        if (
-            block.type == "dialogue"
-            and block.assets
-            and block.assets.staticface_filepath
-            and block.assets.voice_filepath
-        ):
-            seg_type = "static_face"
-            video_path = block.assets.staticface_filepath
-            audio_path = block.assets.voice_filepath
-            duration = self.get_video_duration(
-                audio_path
-            )  # Duration based on audio for static face
-        elif (
-            block.type == "question" and block.assets and block.assets.question_filepath
-        ):
-            seg_type = "question"
-            video_path = block.assets.question_filepath
-            audio_path = block.assets.voice_filepath
-            duration = self.get_video_duration(video_path)
+        if block.type == "dialogue" and block.assets:
+            if block.assets.staticface_filepath and block.assets.voice_filepath:
+                seg_type = "static_face"
+                video_path = block.assets.staticface_filepath
+                audio_path = block.assets.voice_filepath
+                
+                # Check for URLs if files missing
+                if not os.path.exists(video_path) and block.assets.staticface_url:
+                    video_path = block.assets.staticface_url if isinstance(block.assets.staticface_url, dict) else {"url": block.assets.staticface_url}
+                if not os.path.exists(audio_path) and block.assets.voice_url:
+                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+
+                try:
+                    duration = self.get_video_duration(audio_path) if isinstance(audio_path, (str, Path)) and os.path.exists(audio_path) else 0.0
+                except:
+                    duration = 0.0
+                
+                if duration == 0 and block.assets.subtitles:
+                    duration = block.assets.subtitles.duration
+
+        elif block.type == "question" and block.assets:
+            if block.assets.question_filepath:
+                seg_type = "question"
+                video_path = block.assets.question_filepath
+                audio_path = block.assets.voice_filepath
+                
+                if not os.path.exists(video_path) and block.assets.lipsync_url:
+                    video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
+                if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+
+                try:
+                    duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
+                except:
+                    duration = 0.0
+                
+                if duration == 0 and block.assets.subtitles:
+                    duration = block.assets.subtitles.duration
 
         if seg_type != "none":
             return {
@@ -704,12 +765,26 @@ class SongTemplate(EditTemplate):
         if (
             AssetType.SONG in block.valid_assets
             and block.assets
-            and block.assets.song_filepath
         ):
-            duration = self.get_video_duration(block.assets.song_filepath)
+            audio_path = block.assets.song_filepath
+            if not audio_path:
+                return None
+                
+            # Check for URL fallback
+            if not os.path.exists(audio_path) and block.assets.song_url:
+                audio_path = block.assets.song_url if isinstance(block.assets.song_url, dict) else {"url": block.assets.song_url}
+
+            try:
+                duration = self.get_video_duration(audio_path) if isinstance(audio_path, (str, Path)) and os.path.exists(audio_path) else 0.0
+            except:
+                duration = 0.0
+                
+            if duration == 0 and block.assets.subtitles:
+                duration = block.assets.subtitles.duration
+
             return {
                 "type": "song",
-                "audio": block.assets.song_filepath,
+                "audio": audio_path,
                 "duration": duration,
             }
         return None
@@ -751,6 +826,7 @@ class SongTemplate(EditTemplate):
 
         # 2. Process Background
         bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        bg_v = bg_v.filter("fps", fps=30)
         bg_v = bg_v.filter("trim", end=current_time).filter("setpts", "PTS-STARTPTS")
         bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
         bg_v = bg_v.filter("crop", "1080:1920")

@@ -66,6 +66,7 @@ class BlockAssets(BaseModel):
     staticface_url: Optional[Union[str, dict]] = None
     subtitles: Optional[Any] = None
     question_filepath: Optional[str] = None
+    question_url: Optional[Union[str, dict]] = None
     song_filepath: Optional[str] = None
     song_url: Optional[Union[str, dict]] = None
 

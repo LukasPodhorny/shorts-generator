@@ -82,6 +82,11 @@ class SongConfig(BaseModel):
     provider_config: dict = Field(default_factory=dict)
 
 
+class FFmpegConfig(BaseModel):
+    provider: str = "local_ffmpeg"
+    provider_config: dict = Field(default_factory=dict)
+
+
 class ShortsConfig(BaseModel):
     avatars: list[Avatar]
     video_template: VideoTemplate
@@ -92,6 +97,7 @@ class ShortsConfig(BaseModel):
     manim_config: ManimConfig = Field(default_factory=ManimConfig)
     question_config: QuestionConfig = Field(default_factory=QuestionConfig)
     song_config: SongConfig = Field(default_factory=SongConfig)
+    ffmpeg_config: FFmpegConfig = Field(default_factory=FFmpegConfig)
 
 
 class ShortsGenerator:
@@ -204,7 +210,9 @@ class ShortsGenerator:
 
         self.video_gen = VideoGenerator(
             video_template=shorts_config.video_template,
-            # api_key=self.ffmpeg_api_key,
+            provider=shorts_config.ffmpeg_config.provider,
+            api_key=self.ffmpeg_api_key,
+            **shorts_config.ffmpeg_config.provider_config,
         )
 
         self.song_gen = SongGenerator(
