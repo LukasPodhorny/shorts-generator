@@ -16,6 +16,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
+from aishorts.utils.r2_handler import download_from_url, CloudflareR2
+
 @dataclass
 class Resolution:
     width: int
@@ -32,6 +34,9 @@ class LatexProvider(Provider):
     OUTPUT_DIR = os.getenv("LATEX_OUTPUT_DIR") or "output/latex"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    def __init__(self, **kwargs):
+        self.r2 = CloudflareR2()
+
     @abstractmethod
     def populate_reel(self, reel: Reel, resolution: Resolution, **kwargs) -> None:
         pass
@@ -41,8 +46,8 @@ class Matplotlib(LatexProvider):
     provider_name = "matplotlib"
 
     def render_single(self, id: int, latex_code: str, resolution: Resolution):
+        # ... (keep existing render_single logic)
         dpi = 100
-        # Use Figure directly to avoid global state (thread-safety)
         fig = Figure(figsize=(resolution.width / dpi, resolution.height / dpi), dpi=dpi)
         FigureCanvasAgg(fig)
         fig.patch.set_facecolor("white")
@@ -50,23 +55,26 @@ class Matplotlib(LatexProvider):
         ax = fig.add_axes([0, 0, 1, 1])
         ax.axis("off")
 
-        # Start with a large font and shrink until it fits
         fontsize = min(resolution.width, resolution.height) // 5
         while fontsize > 1:
             txt = ax.text(
                 0.5, 0.5, f"${latex_code}$", fontsize=fontsize, ha="center", va="center"
             )
-            fig.canvas.draw()  # needed to compute bounding box
+            fig.canvas.draw()
             bbox = txt.get_window_extent(renderer=fig.canvas.get_renderer())
             if bbox.width <= resolution.width and bbox.height <= resolution.height:
                 break
-            txt.remove()  # remove and try smaller
+            txt.remove()
             fontsize -= 1
 
         result_path = os.path.join(self.OUTPUT_DIR, f"{uuid.uuid4()}.png")
         fig.savefig(result_path, dpi=dpi)
 
-        return LatexResult(MediaFile(id=id, path=result_path), alt=latex_code)
+        # Upload to R2
+        remote_key = f"latex/{os.path.basename(result_path)}"
+        url = self.r2.upload_file(result_path, remote_key)
+
+        return LatexResult(MediaFile(id=id, path=result_path, url=url), alt=latex_code)
 
     def get_images(
         self,
@@ -105,6 +113,7 @@ class Matplotlib(LatexProvider):
 
         for res, (block_id, media_id) in zip(results, ids):
             reel.blocks[block_id].assets.media_map[media_id] = res.media.path
+            reel.blocks[block_id].assets.media_url_map[media_id] = res.media.url
 
 
 class RealLatex(LatexProvider):
@@ -242,8 +251,12 @@ class RealLatex(LatexProvider):
             out_path = os.path.join(self.OUTPUT_DIR, f"{uuid.uuid4()}.png")
             final_img.save(out_path)
 
+            # Upload to R2
+            remote_key = f"latex/{os.path.basename(out_path)}"
+            url = self.r2.upload_file(out_path, remote_key)
+
             return LatexResult(
-                media=MediaFile(id=id, path=out_path),
+                media=MediaFile(id=id, path=out_path, url=url),
                 alt=latex_code,
             )
 
@@ -283,3 +296,4 @@ class RealLatex(LatexProvider):
         results = self.get_images(latex_codes, resolution)
         for res, (block_id, media_id) in zip(results, ids):
             reel.blocks[block_id].assets.media_map[media_id] = res.media.path
+            reel.blocks[block_id].assets.media_url_map[media_id] = res.media.url

@@ -75,7 +75,7 @@ class ImageGenerator:
         # Collect results from the reel for styling
         paths_to_style = []
         for block in reel.blocks:
-            if AssetType.LATEX in block.valid_assets:
+            if AssetType.IMAGES in block.valid_assets:
                 # We only want to style images, so we iterate the media items to check type
                 for media_item in block.media:
                     if (

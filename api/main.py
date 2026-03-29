@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import generate, upload, users, admin
+from api.routers import generate, upload, users, admin, public
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,6 +26,7 @@ app.include_router(generate.router)
 app.include_router(upload.router)
 app.include_router(users.router)
 app.include_router(admin.router)
+app.include_router(public.router)
 
 
 @app.get("/")

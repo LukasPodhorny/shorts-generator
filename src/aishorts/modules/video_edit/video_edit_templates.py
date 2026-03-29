@@ -626,6 +626,7 @@ class StaticGameplayTemplate(EditTemplate):
 
                 # Ensure alpha channel exists for mp4
                 media_v = media_v.filter("format", "yuva420p")
+                media_v = media_v.filter("fps", fps=30)
 
                 media_v = media_v.filter("scale", f"{self.manim_width}:-1")
 
@@ -633,7 +634,7 @@ class StaticGameplayTemplate(EditTemplate):
                     media_v = Animator.rounded_corners(
                         media_v, self.manim_style.corner_radius
                     )
-                media_v = media_v.filter("setpts", f"PTS+{media.start_time}/TB")
+                media_v = media_v.filter("setpts", f"PTS-STARTPTS+{media.start_time}/TB")
                 is_static = False
             else:
                 is_static = True

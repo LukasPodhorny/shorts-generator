@@ -223,14 +223,21 @@ class ModalFFmpeg(FFmpegProvider):
     async def _prepare_inputs(self, cmd: FFmpegCommand, session_id: str) -> List[Union[str, Dict]]:
         processed_inputs = []
         for input_item in cmd.inputs:
+            # Handle Path objects or local strings
             if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
                 remote_key = f"uploads/{session_id}/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
                 presigned_url = self.r2.create_presigned_url(remote_key)
                 processed_inputs.append(presigned_url)
             elif isinstance(input_item, dict):
-                processed_inputs.append(input_item)
+                # If it's a dict (e.g. from an asset), extract the URL string
+                url = input_item.get("url")
+                if url:
+                    processed_inputs.append(str(url))
+                else:
+                    processed_inputs.append(input_item) # Fallback
             else:
+                # Already a URL string
                 processed_inputs.append(str(input_item))
         return processed_inputs
 
@@ -238,12 +245,9 @@ class ModalFFmpeg(FFmpegProvider):
         processed_args = []
         for arg in args:
             new_arg = arg
-            # Scan for local file paths in the argument string (e.g. for the 'ass' filter)
-            # This is a bit of a hack, but it works for common cases!
             import re
-            # Matches strings starting with /tmp/ or /home/ and ending with .ass, .srt, .vtt
-            # You can add more formats if needed!
-            path_pattern = r'(/[^"\'\s]+\.(?:ass|srt|vtt|png|jpg|jpeg))'
+            # Matches strings starting with / or output/ and ending with common media formats
+            path_pattern = r'((?:/|output/)[^"\'\s]+\.(?:ass|srt|vtt|png|jpg|jpeg|mp4))'
             matches = re.findall(path_pattern, arg)
             
             for local_path in matches:
@@ -251,7 +255,11 @@ class ModalFFmpeg(FFmpegProvider):
                     remote_key = f"uploads/{session_id}/args/{os.path.basename(local_path)}"
                     self.r2.upload_file(local_path, remote_key)
                     presigned_url = self.r2.create_presigned_url(remote_key)
-                    new_arg = new_arg.replace(local_path, presigned_url)
+                    
+                    # FFmpeg filter strings need special escaping for URLs containing ':' and ','
+                    # This is a basic escaping that works for most cases in FFmpeg filter strings
+                    escaped_url = presigned_url.replace(":", "\\:").replace(",", "\\,")
+                    new_arg = new_arg.replace(local_path, escaped_url)
                     
             processed_args.append(new_arg)
         return processed_args
