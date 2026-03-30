@@ -30,8 +30,11 @@ class FFmpegProvider(Provider):
     OUTPUT_DIR = "output/videos"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    def __init__(self, download_results: bool = True, **kwargs):
+        self.download_results = download_results
+
     @abstractmethod
-    async def render(self, cmd: FFmpegCommand, **kwargs) -> FFmpegResult:
+    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
         pass
 
     @staticmethod
@@ -71,6 +74,7 @@ class LocalFFmpeg(FFmpegProvider):
     )
 
     def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
     async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
@@ -124,6 +128,7 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         endpoint_id: str | None = None,
         runpod_api_key: str | None = None,
         timeout: int = 1800,  # Videos might take longer to render than TTS
+        download_results: bool = True,
         **kwargs,
     ):
         self.endpoint_id = endpoint_id or os.getenv("FFMPEG_ENDPOINT_ID")
@@ -132,6 +137,7 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
             timeout=timeout, 
             api_key=runpod_api_key
         )
+        FFmpegProvider.__init__(self, download_results=download_results, **kwargs)
         
         # Instantiate your Cloudflare R2 handler if needed for uploads/downloads
         self.r2 = CloudflareR2()
@@ -171,7 +177,7 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         prepared_inputs = await self._prepare_inputs(cmd, session_id=session_id)
 
         # 2. Tell the Runpod worker where to upload the final video (R2 Key)
-        output_key = f"videos/output/{output_filename}"
+        output_key = kwargs.get("output_key", f"videos/output/{output_filename}")
 
         # 3. Construct the payload for Runpod
         payload = {
@@ -195,8 +201,10 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
 
         download_url = result.get("download_url")
         
-        # Download locally as required by the user
-        local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
+        # Download locally if requested
+        local_filepath = ""
+        if self.download_results:
+            local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
         
         return FFmpegResult(
             download_url=download_url,
@@ -211,12 +219,14 @@ class ModalFFmpeg(FFmpegProvider):
         self,
         endpoint_url: str | None = None, # Your deployed Modal Web Endpoint URL
         modal_api_key: str | None = None,
+        download_results: bool = True,
         **kwargs,
     ):
         # Format usually looks like: https://yourusername--pdftoreel-ffmpeg-ffmpeg-endpoint.modal.run
         self.endpoint_url = endpoint_url or os.getenv("MODAL_FFMPEG_ENDPOINT_URL")
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
         
+        super().__init__(download_results=download_results, **kwargs)
         self.r2 = CloudflareR2()
         self.session_id = kwargs.get("session_id", "default")
 
@@ -256,7 +266,7 @@ class ModalFFmpeg(FFmpegProvider):
         session_id = kwargs.get("session_id", self.session_id)
         prepared_inputs = await self._prepare_inputs(cmd, session_id=session_id)
         prepared_args = self._prepare_args(cmd.args, session_id=session_id)
-        output_key = f"videos/output/{output_filename}"
+        output_key = kwargs.get("output_key", f"videos/output/{output_filename}")
 
         payload = {
             "input": {
@@ -284,8 +294,10 @@ class ModalFFmpeg(FFmpegProvider):
 
         download_url = result.get("download_url")
 
-        # Download locally as required by the user
-        local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
+        # Download locally if requested
+        local_filepath = ""
+        if self.download_results:
+            local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
 
         return FFmpegResult(
             download_url=download_url,

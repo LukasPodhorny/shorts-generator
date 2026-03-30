@@ -160,7 +160,9 @@ class EditTemplate(Provider):
         final_transcriptions = []
         current_time = 0.0
 
-        for block in reel.blocks:
+        print(f"DEBUG: collect_segments_and_timings starting for reel with {len(reel.blocks)} blocks")
+
+        for b_idx, block in enumerate(reel.blocks):
             seg_info = self._get_block_segment(block)
 
             if seg_info:
@@ -170,27 +172,44 @@ class EditTemplate(Provider):
                 duration = 0.0
 
             # Handle Subtitles
-            if block.assets and block.assets.subtitles:
-                trans = block.assets.subtitles
-                shifted_words = [
-                    TranscriptionWord(
-                        word=w.word,
-                        start=w.start + current_time,
-                        end=w.end + current_time,
-                    )
-                    for w in trans.words
-                ]
-                final_transcriptions.append(
-                    TranscriptionVerbose(
-                        duration=trans.duration,
-                        language=trans.language,
-                        text=trans.text,
-                        words=shifted_words,
-                    )
-                )
+            has_subs = False
+            if block.assets:
+                if block.assets.subtitles:
+                    has_subs = True
+                    trans = block.assets.subtitles
+                    # Handle both TranscriptionVerbose object and dict (from JSON/Pickle)
+                    words = getattr(trans, "words", None)
+                    if words is None and isinstance(trans, dict):
+                        words = trans.get("words", [])
+                    
+                    if words:
+                        shifted_words = [
+                            TranscriptionWord(
+                                word=w.word if hasattr(w, "word") else w["word"],
+                                start=(w.start if hasattr(w, "start") else w["start"]) + current_time,
+                                end=(w.end if hasattr(w, "end") else w["end"]) + current_time,
+                            )
+                            for w in words
+                        ]
+                        final_transcriptions.append(
+                            TranscriptionVerbose(
+                                duration=getattr(trans, "duration", 0.0) if hasattr(trans, "duration") else trans.get("duration", 0.0),
+                                language=getattr(trans, "language", "en") if hasattr(trans, "language") else trans.get("language", "en"),
+                                text=getattr(trans, "text", "") if hasattr(trans, "text") else trans.get("text", ""),
+                                words=shifted_words,
+                            )
+                        )
+                        print(f"Block {b_idx} ({block.type}): Subtitles found ({len(words)} words).")
+                    else:
+                        print(f"Block {b_idx} ({block.type}): Subtitles present but no words found.")
+                else:
+                    print(f"Block {b_idx} ({block.type}): block.assets.subtitles is empty.")
+            else:
+                print(f"Block {b_idx} ({block.type}): block.assets is None.")
 
             current_time += duration
 
+        print(f"Total transcriptions collected: {len(final_transcriptions)}")
         final_subtitles = self.merge_transcriptions(final_transcriptions)
 
         # Pass final_transcriptions (the list of shifted absolute transcriptions per block)
@@ -441,7 +460,7 @@ class EditTemplate(Provider):
 
     def extract_media_timings(
         self,
-        blocks: List[Block],  # List of Block objects from your Reel
+        blocks: List[Block],
         absolute_subtitles: List[TranscriptionVerbose],
     ) -> List[MediaTiming]:
         """
@@ -458,56 +477,73 @@ class EditTemplate(Provider):
         media_timings = []
         dialogue_idx = 0
 
-        for block in blocks:
-            # Only process blocks that actually have subtitles to maintain sync with absolute_subtitles list
-            if block.assets and block.assets.subtitles:
+        print(f"DEBUG: extract_media_timings starting. Blocks: {len(blocks)}, Subtitles: {len(absolute_subtitles)}")
+
+        for b_idx, block in enumerate(blocks):
+            has_subtitles = bool(block.assets and block.assets.subtitles)
+            
+            # Dialogue items in absolute_subtitles only exist for blocks that HAD subtitles
+            if has_subtitles:
                 if dialogue_idx >= len(absolute_subtitles):
+                    print(f"  Warning: dialogue_idx {dialogue_idx} out of range")
                     break
 
                 absolute_trans = absolute_subtitles[dialogue_idx]
                 dialogue_idx += 1
 
-                # Check if this block has media
-                if not getattr(block, "media", None):
+                media_list = getattr(block, "media", [])
+                if not media_list:
                     continue
 
-                for media_item in block.media:
-                    if not media_item.trigger:
-                        continue
+                print(f"  Block {b_idx} ({block.type}) has {len(media_list)} media items. IDs in media_map: {list(block.assets.media_map.keys())}")
 
-                    trigger = media_item.trigger
-
-                    # Get start and end word indices
-                    start_word_idx = trigger.start_word_index
-                    end_word_idx = trigger.end_word_index
-
-                    # Validate indices
-                    if start_word_idx >= len(
-                        absolute_trans.words
-                    ) or end_word_idx >= len(absolute_trans.words):
-                        print(
-                            f"Warning: Word indices [{start_word_idx}, {end_word_idx}] out of range for dialogue {dialogue_idx} (words: {len(absolute_trans.words)})"
-                        )
-                        continue
-
-                    # Get absolute timing from the words
-                    start_time = absolute_trans.words[start_word_idx].start
-                    end_time = absolute_trans.words[end_word_idx].end
-
-                    # Get the filepath from the map
+                for m_idx, media_item in enumerate(media_list):
+                    # Try to get from media_map or media_url_map
                     filepath = block.assets.media_map.get(media_item.id)
                     url = block.assets.media_url_map.get(media_item.id)
 
-                    if filepath or url:
-                        timing = MediaTiming(
-                            filepath=filepath or "",
-                            start_time=start_time,
-                            end_time=end_time,
-                            media_type=media_item.type,
-                            url=url,
-                        )
-                        media_timings.append(timing)
-                        print(f"Extracted media timing: {timing.media_type} at {timing.start_time:.2f}s - {timing.end_time:.2f}s")
+                    if not (filepath or url):
+                        print(f"    Media {m_idx} ({media_item.type}) skipped: ID {media_item.id} not found in maps.")
+                        continue
+
+                    # Determine timing
+                    trigger = media_item.trigger
+                    if trigger:
+                        start_word_idx = trigger.start_word_index
+                        end_word_idx = trigger.end_word_index
+
+                        if start_word_idx >= len(absolute_trans.words) or end_word_idx >= len(absolute_trans.words):
+                            print(f"    Media {m_idx} trigger [{start_word_idx}, {end_word_idx}] out of range ({len(absolute_trans.words)} words). Falling back to full block.")
+                            start_time = absolute_trans.words[0].start
+                            end_time = absolute_trans.words[-1].end
+                        else:
+                            start_time = absolute_trans.words[start_word_idx].start
+                            end_time = absolute_trans.words[end_word_idx].end
+                    else:
+                        print(f"    Media {m_idx} ({media_item.type}) has NO TRIGGER. Defaulting to full block timing.")
+                        # Fallback: display for the whole block
+                        if absolute_trans.words:
+                            start_time = absolute_trans.words[0].start
+                            end_time = absolute_trans.words[-1].end
+                        else:
+                            # If no words at all (shouldn't happen if has_subtitles is true), skip
+                            print(f"    Media {m_idx} skipped: No words in transcription to calculate fallback.")
+                            continue
+
+                    timing = MediaTiming(
+                        filepath=filepath or "",
+                        start_time=start_time,
+                        end_time=end_time,
+                        media_type=media_item.type,
+                        url=url,
+                    )
+                    media_timings.append(timing)
+                    print(f"    Media {m_idx} ({timing.media_type}) EXTRACTED: {timing.start_time:.2f}s - {timing.end_time:.2f}s")
+            else:
+                # If block has media but no subtitles, we should log it
+                media_list = getattr(block, "media", [])
+                if media_list:
+                    print(f"Block {b_idx} ({block.type}) has {len(media_list)} media items but NO SUBTITLES. Skipping media extraction.")
 
         print(f"Total media timings extracted: {len(media_timings)}")
         return media_timings

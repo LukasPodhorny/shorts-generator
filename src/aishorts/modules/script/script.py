@@ -31,7 +31,7 @@ class Trigger(BaseModel):
 
 class MediaBase(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    trigger: Optional[Trigger] = None
+    trigger: Trigger = None
 
 
 class ImageMedia(MediaBase):

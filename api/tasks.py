@@ -7,7 +7,7 @@ from api.models import ReelSeries, Reel, Avatar, VideoTemplate, JobStatus
 
 # Import core library
 from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig
-from aishorts.shorts_generator import ScriptConfig
+from aishorts.shorts_generator import ScriptConfig, FFmpegConfig
 from typing import Optional
 
 
@@ -52,8 +52,9 @@ def _prepare_generation_config(
         return ShortsConfig(
             avatars=selected_avatars,
             video_template=video_template,
-            subtitle_config=SubtitleConfig(provider="elevenlabs"),
+            subtitle_config=SubtitleConfig(provider="modal_wav2vec_aligner"),
             script_config=ScriptConfig(provider="gemini"),
+            ffmpeg_config=FFmpegConfig(provider="modal_ffmpeg"),
         )
 
 
@@ -119,6 +120,9 @@ async def process_reel_task(series_id: int, request_data: dict):
             tts_f5tts_api_key=os.getenv("TTS_API_KEY"),
             subtitles_api_key=os.getenv("SUBTITLES_API_KEY"),
             image_api_key=os.getenv("IMAGE_API_KEY"),
+            ffmpeg_api_key=os.getenv("MODAL_API_KEY"),
+            lipsync_float_api_key=os.getenv("FLOAT_API_KEY"),
+            minimax_api_key=os.getenv("MINIMAX_API_KEY"),
         )
 
         # 3. Generate (Async)

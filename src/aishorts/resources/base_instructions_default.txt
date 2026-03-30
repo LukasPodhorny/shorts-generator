@@ -136,6 +136,8 @@ AVATAR BEHAVIOR:
 
         Plain conversational text only.
 
+        Don't use exclamation marks (!)
+
         No meta comments, disclaimers, narrator text, or system talk.
 
         No line breaks inside a block.

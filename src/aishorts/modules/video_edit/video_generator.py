@@ -11,7 +11,11 @@ from aishorts.utils.r2_handler import download_from_url
 class VideoGenerator:
 
     def __init__(
-        self, video_template: VideoTemplate, provider: str = "modal_ffmpeg", **kwargs
+        self,
+        video_template: VideoTemplate,
+        provider: str = "modal_ffmpeg",
+        download_results: bool = True,
+        **kwargs,
     ):
         self.template_config = video_template.template_config
         edit_template = video_template.edit_template.lower()
@@ -26,7 +30,7 @@ class VideoGenerator:
         if not render_cls:
             raise ValueError(f"Unknown video template class '{provider}'")
 
-        self.render = render_cls(**kwargs)
+        self.render = render_cls(download_results=download_results, **kwargs)
 
     async def _ensure_assets_local(self, reel: Reel):
         """
