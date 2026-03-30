@@ -5,6 +5,8 @@ from aishorts.modules.script.script import Reel
 from aishorts.modules.motion_graphic.motion_graphic import (
     MotionGraphic,
     MotionGraphicRenderer,
+    LocalMotionGraphicRenderer,
+    ModalMotionGraphicRenderer,
 )
 from typing import Type
 import uuid
@@ -40,7 +42,15 @@ class MotionGraphicQuestionProvider(QuestionProvider):
     ):
         super().__init__(**kwargs)
         self.graphic_class = graphic_class
-        self.renderer = renderer or MotionGraphicRenderer()
+        
+        # Determine renderer: injection -> env -> local fallback
+        if renderer:
+            self.renderer = renderer
+        elif os.getenv("MODAL_MOTION_GRAPHIC_ENDPOINT_URL"):
+            self.renderer = ModalMotionGraphicRenderer()
+        else:
+            self.renderer = LocalMotionGraphicRenderer()
+            
         self.typing_duration = typing_duration
         self.thinking_duration = thinking_duration
         self.answer_duration = answer_duration

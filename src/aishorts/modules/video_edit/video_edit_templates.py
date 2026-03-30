@@ -56,8 +56,8 @@ class GameplayTemplate(EditTemplate):
             if block.assets.question_filepath:
                 seg_type = "question"
                 video_path = block.assets.question_filepath
-                if not os.path.exists(video_path) and block.assets.lipsync_url: # Note: question might use lipsync_url if it's a video
-                     video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
+                if not os.path.exists(video_path) and block.assets.question_url:
+                     video_path = block.assets.question_url if isinstance(block.assets.question_url, dict) else {"url": block.assets.question_url}
 
                 audio_path = block.assets.voice_filepath
                 if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
@@ -110,9 +110,11 @@ class GameplayTemplate(EditTemplate):
 
             elif seg["type"] == "question":
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
+                v = v.filter("fps", fps=30)
                 # Scale question to fit in the square area (with padding if needed)
                 v = v.filter("scale", "1080:1080:force_original_aspect_ratio=decrease")
-                v = v.filter("pad", "1080:1080:-1:-1:color=0x00000000")
+                v = v.filter("pad", "1080:1080:-1:-1:color=black@0")
+                v = v.filter("format", "yuva420p")
 
                 # Generate silence of full video duration to ensure sync
                 silence = graph.add_raw(
@@ -299,8 +301,8 @@ class AlphaGameplayTemplate(EditTemplate):
             if block.assets.question_filepath:
                 seg_type = "question"
                 video_path = block.assets.question_filepath
-                if not os.path.exists(video_path) and block.assets.lipsync_url: # Note: question might use lipsync_url if it's a video
-                     video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
+                if not os.path.exists(video_path) and block.assets.question_url:
+                     video_path = block.assets.question_url if isinstance(block.assets.question_url, dict) else {"url": block.assets.question_url}
 
                 audio_path = block.assets.voice_filepath
                 if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
@@ -369,11 +371,13 @@ class AlphaGameplayTemplate(EditTemplate):
 
             elif seg["type"] == "question":
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
+                v = v.filter("fps", fps=30)
                 # Scale question to fit width (1000px)
                 v = v.filter("scale", "1000:-1")
                 v = v.filter(
-                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=0x00000000"
+                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0"
                 )
+                v = v.filter("format", "yuva420p")
 
                 # Generate silence of full video duration to ensure sync
                 silence = graph.add_raw(
@@ -523,7 +527,7 @@ class StaticGameplayTemplate(EditTemplate):
         AssetType.IMAGES,
         AssetType.MANIM,
         AssetType.LATEX,
-        #AssetType.QUESTION,
+        AssetType.QUESTION,
     ]
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
@@ -567,8 +571,8 @@ class StaticGameplayTemplate(EditTemplate):
                 video_path = block.assets.question_filepath
                 audio_path = block.assets.voice_filepath
                 
-                if not os.path.exists(video_path) and block.assets.lipsync_url:
-                    video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
+                if not os.path.exists(video_path) and block.assets.question_url:
+                    video_path = block.assets.question_url if isinstance(block.assets.question_url, dict) else {"url": block.assets.question_url}
                 if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
                     audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
 
@@ -625,10 +629,12 @@ class StaticGameplayTemplate(EditTemplate):
             elif seg["type"] == "question":
                 # Same logic as AlphaGameplayTemplate for questions
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
+                v = v.filter("fps", fps=30)
                 v = v.filter("scale", "1000:-1")
                 v = v.filter(
-                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=0x00000000"
+                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0"
                 )
+                v = v.filter("format", "yuva420p")
 
                 silence = graph.add_raw(
                     [],

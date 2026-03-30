@@ -81,7 +81,16 @@ class VideoGenerator:
                 else:
                     print(f"WARNING: File missing and no URL for song_filepath: {assets.song_filepath}")
 
-            # 5. Media Map (Images, LaTeX, Manim)
+            # 5. Question
+            if assets.question_filepath and not os.path.exists(assets.question_filepath):
+                if assets.question_url:
+                    print(f"File missing: {assets.question_filepath}. Re-downloading from {assets.question_url}")
+                    os.makedirs(os.path.dirname(assets.question_filepath), exist_ok=True)
+                    download_tasks.append(download_from_url(assets.question_url, full_path=assets.question_filepath))
+                else:
+                    print(f"WARNING: File missing and no URL for question_filepath: {assets.question_filepath}")
+
+            # 6. Media Map (Images, LaTeX, Manim)
             for media_id, filepath in assets.media_map.items():
                 if filepath and not os.path.exists(filepath):
                     url = assets.media_url_map.get(media_id)

@@ -12,8 +12,10 @@ from api.models import (
     ReelSeriesRead,
     GenerateResponse,
     JobStatus,
+    VideoTemplate,
 )
 from api.tasks import process_reel_task
+from aishorts.modules.script.script import AssetType
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
@@ -38,18 +40,45 @@ async def start_generation(
         session.commit()
         session.refresh(user)
 
-    # 2. Check Credits
-    cost = request.amount  # Assuming 1 credit per reel
-    if user.credits < cost:
+    # 2. Fetch Template to determine cost
+    statement = select(VideoTemplate).where(VideoTemplate.name == request.template_name)
+    db_template = session.exec(statement).first()
+    if not db_template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    # Determine cost based on assets
+    # Base cost: 1 credit per reel
+    # Surcharge for Motion Graphics (Questions): +1 credit per reel
+    unit_cost = 1
+    template_data = db_template.data
+    
+    # We check the 'required_assets' which we know is a list of asset type strings
+    # in the Pydantic model's data
+    from aishorts.modules.video_edit.video_edit_templates import EditTemplate
+    try:
+        # Get the template class to check its required assets reliably
+        template_name = template_data.get("edit_template", request.template_name).lower()
+        template_cls = EditTemplate.get(template_name)
+        if template_cls and AssetType.QUESTION in template_cls.required_assets:
+            unit_cost += 1
+    except:
+        # Fallback if class not found or other error
+        pass
+
+    total_cost = request.amount * unit_cost
+
+    # 3. Check Credits
+    if user.credits < total_cost:
         raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits"
+            status_code=status.HTTP_402_PAYMENT_REQUIRED, 
+            detail=f"Insufficient credits. This request requires {total_cost} credits."
         )
 
-    # 3. Deduct Credits
-    user.credits -= cost
+    # 4. Deduct Credits
+    user.credits -= total_cost
     session.add(user)
 
-    # 4. Create DB Entries
+    # 5. Create DB Entries
     series = ReelSeries(user_id=user.id, status=JobStatus.QUEUED)
     session.add(series)
     session.commit()
@@ -62,7 +91,7 @@ async def start_generation(
 
     session.commit()
 
-    # 5. Start Background Task
+    # 6. Start Background Task
     background_tasks.add_task(process_reel_task, series.id, request.dict())
 
     return GenerateResponse(

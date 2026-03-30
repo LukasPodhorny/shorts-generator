@@ -25,6 +25,7 @@ from aishorts.modules.lipsync.lipsync_providers import populate_reel_static_face
 from pathlib import Path
 from aishorts.modules.song.song_generator import SongGenerator
 from aishorts.utils.r2_handler import CloudflareR2
+from typing import Callable, Awaitable, Any
 
 
 class PipelineStage(IntEnum):
@@ -43,7 +44,7 @@ class ScriptConfig(BaseModel):
             "aishorts.resources", "base_instructions_default.txt"
         )
     )
-    provider: str | None = "chatgpt"
+    provider: str | None = "gemini"
     provider_config: dict = Field(default_factory=dict)
 
 
@@ -83,7 +84,7 @@ class SongConfig(BaseModel):
 
 
 class FFmpegConfig(BaseModel):
-    provider: str = "local_ffmpeg"
+    provider: str = "modal_ffmpeg"
     provider_config: dict = Field(default_factory=dict)
 
 
@@ -92,12 +93,12 @@ class ShortsConfig(BaseModel):
     video_template: VideoTemplate
     script_config: ScriptConfig = Field(default_factory=ScriptConfig)
     subtitle_config: SubtitleConfig = Field(default_factory=SubtitleConfig)
+    ffmpeg_config: FFmpegConfig = Field(default_factory=FFmpegConfig)
     images_config: ImagesConfig = Field(default_factory=ImagesConfig)
     latex_config: LatexConfig = Field(default_factory=LatexConfig)
     manim_config: ManimConfig = Field(default_factory=ManimConfig)
     question_config: QuestionConfig = Field(default_factory=QuestionConfig)
     song_config: SongConfig = Field(default_factory=SongConfig)
-    ffmpeg_config: FFmpegConfig = Field(default_factory=FFmpegConfig)
 
 
 class ShortsGenerator:
@@ -131,7 +132,6 @@ class ShortsGenerator:
         self.update_config(shorts_config)
 
     def update_config(self, shorts_config: ShortsConfig):
-        self.shorts_config = shorts_config
         self.avatars = shorts_config.avatars
         self.video_template = shorts_config.video_template
         self.template_config = self.video_template.template_config
@@ -275,7 +275,7 @@ class ShortsGenerator:
         with open(path, "rb") as f:
             reel_series = pickle.load(f)
 
-        filename = os.path.basename(path)
+        filename = os.basename(path)
 
         # Assuming format "{stage}_stage_{timestamp}.pkl"
         parts = filename.split("_")
@@ -310,6 +310,7 @@ class ShortsGenerator:
         resume_from: str | None = None,
         mock_script: str | None = None,
         keep_assets: bool = False,
+        status_callback: Callable[[PipelineStage, ReelSeries | None], Awaitable[None]] | None = None,
     ) -> ReelSeriesOutput:
 
         current_stage = PipelineStage.SCRIPT
@@ -358,6 +359,8 @@ class ShortsGenerator:
                         )
 
                     self._save_debug_state(reel_series, PipelineStage.SCRIPT)
+                    if status_callback:
+                        await status_callback(PipelineStage.SCRIPT, reel_series)
 
             if not reel_series:
                 self.logger.warning("No script generated or loaded. Exiting.")
@@ -376,6 +379,8 @@ class ShortsGenerator:
                 self.logger.info("Generating voiceover, images, latex, manim...")
                 await self._populate_reels(reel_series, self.primary_generators)
                 self._save_debug_state(reel_series, PipelineStage.PRIMARY)
+                if status_callback:
+                    await status_callback(PipelineStage.PRIMARY, reel_series)
 
             # --- 5. Secondary Stage ---
 
@@ -383,6 +388,8 @@ class ShortsGenerator:
                 self.logger.info("Generating lipsync video, subtitles, and questions...")
                 await self._populate_reels(reel_series, self.secondary_generators)
                 self._save_debug_state(reel_series, PipelineStage.SECONDARY)
+                if status_callback:
+                    await status_callback(PipelineStage.SECONDARY, reel_series)
 
             # --- 6. Final Video ---
 
@@ -392,30 +399,23 @@ class ShortsGenerator:
             r2 = CloudflareR2()
 
             for reel in reel_series.reels:
-                # 1. Determine destination path
-                # Use a unique filename for the final video
-                filename = f"{uuid.uuid4().hex}.mp4"
+                # Compose Video
+                result = await self.video_gen.compose(reel=reel, session_id=session_id)
+                
+                # If result is already on R2 (from a remote provider), use copy instead of upload
+                file_path_str = result.filepath
+                filename = os.path.basename(file_path_str)
                 dest_key = f"generated/{filename}"
-                
-                # 2. Compose Video
-                # Tell the generator where we want the file on R2 and skip local download if remote
-                is_remote = self.shorts_config.ffmpeg_config.provider in ["modal_ffmpeg", "runpod_ffmpeg"]
-                
-                result = await self.video_gen.compose(
-                    reel=reel, 
-                    session_id=session_id,
-                    output_key=dest_key,
-                    download_results=not is_remote # Only download if not remote (local_ffmpeg always has it)
-                )
-                
-                if is_remote:
-                    # Remote providers already saved it to dest_key
-                    self.logger.info(f"Final video rendered directly to R2: {dest_key}")
-                    presigned_url = r2.get_public_url(dest_key)
-                    file_path_str = result.filepath # Will be empty, which is fine
+
+                if result.key:
+                    # Track the intermediate key for cleanup
+                    intermediate_keys.append(result.key)
+                    
+                    # Server-side copy to final location
+                    self.logger.info(f"Copying final video on R2 from {result.key} to {dest_key}")
+                    presigned_url = await asyncio.to_thread(r2.copy_file, result.key, dest_key)
                 else:
-                    # local_ffmpeg saved it to result.filepath, we need to upload it
-                    file_path_str = result.filepath
+                    # Upload local file
                     self.logger.info(f"Uploading final video to R2: {dest_key}")
                     presigned_url = await asyncio.to_thread(r2.upload_file, file_path_str, dest_key)
 
@@ -483,6 +483,7 @@ class ShortsGenerator:
                         assets.lipsync_url,
                         assets.staticface_url,
                         assets.song_url,
+                        assets.question_url,
                     ]
                     
                     for url in urls_to_check:

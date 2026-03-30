@@ -6,12 +6,34 @@ from api.database import engine
 from api.models import ReelSeries, Reel, Avatar, VideoTemplate, JobStatus
 
 # Import core library
-from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig
-from aishorts.shorts_generator import ScriptConfig, FFmpegConfig
+from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig, FFmpegConfig
+from aishorts.shorts_generator import ScriptConfig, PipelineStage
 from typing import Optional
 
 
 logger = logging.getLogger(__name__)
+
+
+def _update_series_status(series_id: int, stage: PipelineStage, reel_series=None):
+    """Sync helper to update database based on pipeline stage."""
+    with Session(engine) as session:
+        series = session.get(ReelSeries, series_id)
+        if not series:
+            return
+
+        # Map pipeline stages to human-readable strings for the frontend
+        status_map = {
+            PipelineStage.SCRIPT: "Generating script...",
+            PipelineStage.PRIMARY: "Generating assets (audio, images)...",
+            PipelineStage.SECONDARY: "Finalizing assets (lipsync, subtitles)...",
+        }
+        
+        # Update topic as soon as it's available (after SCRIPT stage)
+        if reel_series and reel_series.topic:
+            series.topic = reel_series.topic
+            
+        session.add(series)
+        session.commit()
 
 
 def _prepare_generation_config(
@@ -101,10 +123,9 @@ def _mark_series_failed(series_id: int):
 async def process_reel_task(series_id: int, request_data: dict):
     """
     Background task to generate shorts and update DB.
-    Uses run_in_threadpool to avoid blocking the async event loop with sync DB calls.
     """
     try:
-        # 1. Prepare Config (Sync DB call)
+        # 1. Prepare Config
         shorts_config = await run_in_threadpool(
             _prepare_generation_config, series_id, request_data
         )
@@ -120,19 +141,21 @@ async def process_reel_task(series_id: int, request_data: dict):
             tts_f5tts_api_key=os.getenv("TTS_API_KEY"),
             subtitles_api_key=os.getenv("SUBTITLES_API_KEY"),
             image_api_key=os.getenv("IMAGE_API_KEY"),
-            ffmpeg_api_key=os.getenv("MODAL_API_KEY"),
-            lipsync_float_api_key=os.getenv("FLOAT_API_KEY"),
-            minimax_api_key=os.getenv("MINIMAX_API_KEY"),
         )
 
-        # 3. Generate (Async)
+        # 3. Define the status callback for the generator
+        async def status_callback(stage, reel_series):
+            await run_in_threadpool(_update_series_status, series_id, stage, reel_series)
+
+        # 4. Generate (Async)
         output = await shorts_generator.generate_shorts_async(
             amount=request_data.get("amount", 1),
             files=request_data.get("files"),
             user_input=request_data.get("input_text"),
+            status_callback=status_callback,
         )
 
-        # 4. Save Results (Sync DB call)
+        # 5. Save Results
         await run_in_threadpool(_save_generation_results, series_id, output)
 
     except Exception as e:

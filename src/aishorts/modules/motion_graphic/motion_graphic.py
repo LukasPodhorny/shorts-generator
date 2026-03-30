@@ -2,10 +2,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import asyncio
 import os
-import subprocess
-from playwright.async_api import async_playwright
 import shutil
 import uuid
+import aiohttp
+from typing import List, Union, Dict, Optional, ClassVar
+from pathlib import Path
+from aishorts.utils.r2_handler import download_from_url
+from aishorts.modules.provider import Provider
 
 
 @dataclass
@@ -34,13 +37,23 @@ class MotionGraphic(ABC):
         pass
 
 
-class MotionGraphicRenderer:
+class MotionGraphicRenderer(Provider):
     def __init__(self, config: RenderConfig = None):
         self.config = config or RenderConfig()
+
+    @abstractmethod
+    async def render(self, graphic: MotionGraphic, output_filename: str) -> str:
+        """Renders the graphic and returns the local path to the video."""
+        pass
+
+
+class LocalMotionGraphicRenderer(MotionGraphicRenderer):
+    provider_name = "local"
 
     async def _render_worker(
         self, queue, browser, html_content, update_fn_factory, output_dir
     ):
+        from playwright.async_api import async_playwright
         page = await browser.new_page(
             viewport={"width": self.config.width, "height": self.config.height}
         )
@@ -57,7 +70,7 @@ class MotionGraphicRenderer:
 
             await page.evaluate(js_call)
             await page.screenshot(
-                path=f"{output_dir}/frame_{frame:04d}.png",
+                path=os.path.join(output_dir, f"frame_{frame:04d}.png"),
                 omit_background=True,
             )
 
@@ -66,7 +79,8 @@ class MotionGraphicRenderer:
 
         await page.close()
 
-    async def render(self, graphic: MotionGraphic, output_filename: str):
+    async def render(self, graphic: MotionGraphic, output_filename: str) -> str:
+        from playwright.async_api import async_playwright
         # Create unique output directory for this render to avoid collisions
         job_output_dir = os.path.join(self.config.output_dir, str(uuid.uuid4()))
         os.makedirs(job_output_dir, exist_ok=True)
@@ -116,3 +130,59 @@ class MotionGraphicRenderer:
         # Cleanup frames
         if os.path.exists(job_output_dir):
             shutil.rmtree(job_output_dir)
+            
+        return output_filename
+
+
+class ModalMotionGraphicRenderer(MotionGraphicRenderer):
+    provider_name = "modal"
+
+    def __init__(
+        self,
+        endpoint_url: str | None = None,
+        modal_api_key: str | None = None,
+        config: RenderConfig = None,
+        **kwargs,
+    ):
+        super().__init__(config)
+        self.endpoint_url = endpoint_url or os.getenv("MODAL_MOTION_GRAPHIC_ENDPOINT_URL")
+        self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
+
+    async def render(self, graphic: MotionGraphic, output_filename: str) -> str:
+        if not self.endpoint_url:
+            raise ValueError("MODAL_MOTION_GRAPHIC_ENDPOINT_URL not set")
+
+        total_frames = int(graphic.get_total_duration() * self.config.fps)
+        js_calls = []
+        for frame in range(total_frames):
+            time_passed = frame / self.config.fps
+            js_calls.append(graphic.get_javascript_update_call(time_passed))
+
+        payload = {
+            "html": graphic.get_html(),
+            "js_calls": js_calls,
+            "width": self.config.width,
+            "height": self.config.height,
+            "fps": self.config.fps,
+            "output_key": f"motion_graphic/{os.path.basename(output_filename)}",
+        }
+
+        if self.modal_api_key:
+            payload["api_key"] = self.modal_api_key
+
+        print(f"Sending motion graphic render job to Modal.com ({total_frames} frames)...")
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.endpoint_url, json=payload, timeout=600) as response:
+                if not response.ok:
+                    text = await response.text()
+                    raise Exception(f"Modal Motion Graphic failed with {response.status}: {text}")
+                
+                result = await response.json()
+
+        download_url = result.get("download_url")
+        
+        # Download locally
+        await download_from_url(download_url, full_path=output_filename)
+        
+        return output_filename
