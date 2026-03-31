@@ -275,7 +275,7 @@ class ShortsGenerator:
         with open(path, "rb") as f:
             reel_series = pickle.load(f)
 
-        filename = os.basename(path)
+        filename = os.path.basename(path)
 
         # Assuming format "{stage}_stage_{timestamp}.pkl"
         parts = filename.split("_")
