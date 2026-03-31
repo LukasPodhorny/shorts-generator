@@ -19,6 +19,9 @@ class BucketConfiguration(BaseModel):
 
 
 class CloudflareR2:
+    _clock_skew: float | None = None
+    _clock_skew_checked: bool = False
+
     def __init__(
         self, bucket_configuration: BucketConfiguration = BucketConfiguration()
     ):
@@ -38,6 +41,45 @@ class CloudflareR2:
         self.public_domain = bucket_configuration.public_domain or os.getenv(
             "R2_PUBLIC_DOMAIN"
         )
+        
+        # Self-correct clock skew if possible (lazy-loaded class level)
+        endpoint = bucket_configuration.endponit_url or os.getenv("R2_ENDPOINT")
+        self._ensure_clock_skew(endpoint)
+        
+        if CloudflareR2._clock_skew and abs(CloudflareR2._clock_skew) > 10:
+            skew = CloudflareR2._clock_skew
+            # botocore uses _client_config.clock_skew in some versions, 
+            # but we also register a handler for the request-created event to be sure.
+            self.client._client_config.clock_skew = skew
+            
+            def add_clock_skew(request, **kwargs):
+                if hasattr(request, 'context'):
+                    request.context['timestamp_offset'] = int(skew)
+
+            self.client.meta.events.register('request-created.s3', add_clock_skew)
+
+    @classmethod
+    def _ensure_clock_skew(cls, endpoint: str | None):
+        if cls._clock_skew_checked or not endpoint:
+            return
+            
+        try:
+            import requests
+            from email.utils import parsedate_to_datetime
+            from datetime import datetime, timezone
+
+            print(f"DEBUG: Checking clock skew against {endpoint}...")
+            response = requests.head(endpoint, timeout=5)
+            server_date_str = response.headers.get('Date')
+            if server_date_str:
+                server_date = parsedate_to_datetime(server_date_str)
+                local_date = datetime.now(timezone.utc)
+                cls._clock_skew = (server_date - local_date).total_seconds()
+                print(f"DEBUG: Detected clock skew: {cls._clock_skew} seconds.")
+            cls._clock_skew_checked = True
+        except Exception as e:
+            print(f"DEBUG: Clock correction failed: {e}")
+            cls._clock_skew_checked = True # Don't keep retrying if it fails
 
     def upload_file(self, file_path: str, key: str) -> str:
         """Uploads file and returns its public URL."""

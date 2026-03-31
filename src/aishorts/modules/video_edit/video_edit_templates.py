@@ -583,6 +583,11 @@ class StaticGameplayTemplate(EditTemplate):
                 
                 if duration == 0 and block.assets.subtitles:
                     duration = block.assets.subtitles.duration
+                
+                # If duration is still 0 (e.g. file missing and no duration in subs), 
+                # we should estimate it or use thinking_duration if it exists.
+                if duration == 0:
+                    duration = getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0)
 
         if seg_type != "none":
             return {

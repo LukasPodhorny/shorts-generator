@@ -34,7 +34,7 @@ def main():
         nargs="+",
         required=False,
     )
-    parser.add_argument("--amount", type=int, required=False)
+    parser.add_argument("--amount", type=int, default=1, required=False)
     parser.add_argument("--template", type=str, required=True)
     parser.add_argument("--llm_provider", default="chatgpt", type=str)
     parser.add_argument("--model", default="gpt-5", type=str)

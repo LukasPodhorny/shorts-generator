@@ -151,7 +151,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
         endpoint_url: Optional[str] = None,
         modal_api_key: Optional[str] = None,
         r2_provider=None,
-        max_concurrent: int = 5,
+        max_concurrent: int = 3,
         min_silence_duration: float = 0.5,
         **kwargs,
     ):
@@ -172,6 +172,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
             
         if os.path.exists(audio_path_str):
             remote_key = f"uploads/audio/{os.path.basename(audio_path_str)}"
+            print(f"[{self.provider_name}] Uploading {os.path.basename(audio_path_str)} to R2...")
             # Wrap synchronous R2 upload in a thread to keep it non-blocking
             await asyncio.to_thread(self.r2.upload_file, audio_path_str, remote_key)
             presigned_url = self.r2.create_presigned_url(remote_key)
@@ -194,9 +195,10 @@ class ModalWav2VecAligner(SubtitlesProvider):
             if self.modal_api_key:
                 payload["api_key"] = self.modal_api_key
 
-            print(f"[{self.provider_name}] Sending alignment job to Modal.com...")
+            print(f"[{self.provider_name}] Sending alignment job to Modal.com for {os.path.basename(audio_file)}...")
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.endpoint_url, json=payload, timeout=600) as response:
+                    print(f"[{self.provider_name}] Modal responded with status {response.status} for {os.path.basename(audio_file)}")
                     if not response.ok:
                         err = await response.text()
                         raise Exception(f"Modal Wav2Vec Alignment failed with {response.status}: {err}")

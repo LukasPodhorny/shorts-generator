@@ -192,7 +192,8 @@ MEDIA RULES:
     Word Index Clarification:
     The start_word_index and end_word_index refer ONLY to the words inside the text field
     Word counting restarts at 0 for each block.
-    Every media item must include a trigger with those indices.
+    Every media item MUST include a trigger with those indices.
+    The 'trigger' field is REQUIRED for all media objects.
     Count carefully to ensure the trigger spans at least 15 words.
     Use inclusive counting (if words 0-14 are selected, that's 15 words).
 

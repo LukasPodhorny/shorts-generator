@@ -207,6 +207,7 @@ class EditTemplate(Provider):
             else:
                 print(f"Block {b_idx} ({block.type}): block.assets is None.")
 
+            # IMPORTANT: Always increment current_time by the segment duration
             current_time += duration
 
         print(f"Total transcriptions collected: {len(final_transcriptions)}")

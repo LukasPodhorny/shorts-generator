@@ -153,14 +153,26 @@ class ModalMotionGraphicRenderer(MotionGraphicRenderer):
             raise ValueError("MODAL_MOTION_GRAPHIC_ENDPOINT_URL not set")
 
         total_frames = int(graphic.get_total_duration() * self.config.fps)
-        js_calls = []
-        for frame in range(total_frames):
-            time_passed = frame / self.config.fps
-            js_calls.append(graphic.get_javascript_update_call(time_passed))
+        
+        # Determine the update function name and arguments
+        # For BasicQuestion, it's updateFrame(time, typingDuration, thinkingDuration, answerDuration)
+        if hasattr(graphic, 'typing_duration'):
+            params = {
+                "typing_duration": graphic.typing_duration,
+                "thinking_duration": graphic.thinking_duration,
+                "answer_duration": graphic.answer_duration
+            }
+            update_fn_template = "updateFrame({time}, {typing_duration}, {thinking_duration}, {answer_duration})"
+        else:
+            # Fallback for other potential motion graphics
+            params = {}
+            update_fn_template = "updateFrame({time})"
 
         payload = {
             "html": graphic.get_html(),
-            "js_calls": js_calls,
+            "total_frames": total_frames,
+            "update_fn_template": update_fn_template,
+            "params": params,
             "width": self.config.width,
             "height": self.config.height,
             "fps": self.config.fps,
@@ -171,6 +183,9 @@ class ModalMotionGraphicRenderer(MotionGraphicRenderer):
             payload["api_key"] = self.modal_api_key
 
         print(f"Sending motion graphic render job to Modal.com ({total_frames} frames)...")
+        print(f"DEBUG: Payload keys: {list(payload.keys())}")
+        print(f"DEBUG: update_fn_template: {payload.get('update_fn_template')}")
+        print(f"DEBUG: params: {payload.get('params')}")
         
         async with aiohttp.ClientSession() as session:
             async with session.post(self.endpoint_url, json=payload, timeout=600) as response:
