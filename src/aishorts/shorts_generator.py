@@ -272,17 +272,48 @@ class ShortsGenerator:
     def _load_checkpoint(self, path: str) -> tuple[ReelSeries, PipelineStage]:
         """Loads the pickle and determines the stage from the filename."""
         self.logger.info(f"Resuming from checkpoint: {path}")
+        
+        # Ensure all related models are rebuilt before validation to handle Union types properly
+        from aishorts.modules.script.script import ReelSeries, Reel, DialogueBlock, QuestionBlock, SongBlock
+        for model in [DialogueBlock, QuestionBlock, SongBlock, Reel, ReelSeries]:
+            try:
+                model.model_rebuild()
+            except:
+                pass
+
         with open(path, "rb") as f:
             obj = pickle.load(f)
-            # Re-validate with Pydantic to ensure all fields from the latest schema are present
-            # even if the checkpoint was created with an older version.
-            if hasattr(obj, "model_dump"):
-                data = obj.model_dump()
-            elif hasattr(obj, "dict"):
-                data = obj.dict()
+            
+            # Use a safer way to get the dictionary data without triggering full serialization
+            # which might fail if the unpickled object's internal Pydantic state is corrupted.
+            if isinstance(obj, ReelSeries):
+                # If it's already a ReelSeries, we still want to re-validate it
+                # to ensure all fields from the NEW schema are present.
+                try:
+                    data = obj.model_dump()
+                except (TypeError, AttributeError):
+                    # Fallback if model_dump fails due to MockValSer or similar
+                    import json
+                    try:
+                        # try legacy dict() if available
+                        data = obj.dict() if hasattr(obj, "dict") else obj.__dict__
+                    except:
+                        data = obj
+            elif hasattr(obj, "__dict__"):
+                data = obj.__dict__
             else:
                 data = obj
-            reel_series = ReelSeries.model_validate(data)
+                
+            # Final attempt: if it's a dict or we extracted one, validate it
+            try:
+                reel_series = ReelSeries.model_validate(data)
+            except Exception as e:
+                self.logger.error(f"Failed to validate checkpoint data: {e}")
+                # If validation fails, try to return the object as is if it looks like a ReelSeries
+                if hasattr(obj, "reels") and hasattr(obj, "topic"):
+                    reel_series = obj
+                else:
+                    raise e
 
         filename = os.path.basename(path)
 
