@@ -3,6 +3,12 @@ from aishorts.shorts_generator import (
     ShortsConfig,
     ScriptConfig,
     SubtitleConfig,
+    FFmpegConfig,
+    ImagesConfig,
+    LatexConfig,
+    ManimConfig,
+    QuestionConfig,
+    SongConfig,
 )
 from aishorts.modules.video_edit.video_edit import (
     VideoTemplate,
