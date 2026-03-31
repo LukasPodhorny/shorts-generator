@@ -64,16 +64,23 @@ class GameplayTemplate(EditTemplate):
                     audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
 
         if seg_type != "none" and video_path:
-            # We can't get duration of a remote URL easily here without downloading, 
-            # but collect_segments_and_timings uses it. 
-            # If it's a dict, we assume the provider handles it or we've already downloaded it.
             try:
                 duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
-                # Fallback duration if missing
-                if duration == 0 and block.assets and block.assets.subtitles:
-                    duration = block.assets.subtitles.duration
             except:
                 duration = 0.0
+            
+            # Fallback duration if missing or couldn't be determined
+            if duration == 0:
+                if block.assets and block.assets.subtitles:
+                    duration = block.assets.subtitles.duration
+                elif block.type == "question":
+                    # Estimate based on BasicQuestion logic: typing + thinking + answer + 3.0 (buffers)
+                    typing_dur = 3.0
+                    if audio_path and os.path.exists(audio_path):
+                        try:
+                            typing_dur = self.get_video_duration(audio_path)
+                        except: pass
+                    duration = typing_dur + getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0) + 3.0
 
             return {
                 "type": seg_type,
@@ -117,14 +124,17 @@ class GameplayTemplate(EditTemplate):
                 v = v.filter("format", "yuva420p")
 
                 # Generate silence of full video duration to ensure sync
+                # Using atrim ensures exact duration
                 silence = graph.add_raw(
                     [],
-                    f"anullsrc=channel_layout=stereo:sample_rate=44100:d={seg['duration']}",
+                    f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={seg['duration']}",
                     f"silence_{i}",
                 )
 
                 if seg["audio"]:
                     _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
+                    # Force stereo to match silence
+                    a_in = a_in.filter("aformat", channel_layouts="stereo")
                     # Mix voice with silence. amix averages volume (1/2), so we boost it back.
                     # duration=first ensures it matches the silence (video) duration.
                     a = graph.add_raw(
@@ -309,16 +319,23 @@ class AlphaGameplayTemplate(EditTemplate):
                     audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
 
         if seg_type != "none" and video_path:
-            # We can't get duration of a remote URL easily here without downloading, 
-            # but collect_segments_and_timings uses it. 
-            # If it's a dict, we assume the provider handles it or we've already downloaded it.
             try:
                 duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
-                # Fallback duration if missing
-                if duration == 0 and block.assets and block.assets.subtitles:
-                    duration = block.assets.subtitles.duration
             except:
                 duration = 0.0
+            
+            # Fallback duration if missing or couldn't be determined
+            if duration == 0:
+                if block.assets and block.assets.subtitles:
+                    duration = block.assets.subtitles.duration
+                elif block.type == "question":
+                    # Estimate based on BasicQuestion logic: typing + thinking + answer + 3.0 (buffers)
+                    typing_dur = 3.0
+                    if audio_path and os.path.exists(audio_path):
+                        try:
+                            typing_dur = self.get_video_duration(audio_path)
+                        except: pass
+                    duration = typing_dur + getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0) + 3.0
 
             return {
                 "type": seg_type,
@@ -379,16 +396,17 @@ class AlphaGameplayTemplate(EditTemplate):
                 )
                 v = v.filter("format", "yuva420p")
 
-                # Generate silence of full video duration to ensure sync
+                # Using atrim ensures exact duration
                 silence = graph.add_raw(
                     [],
-                    f"anullsrc=channel_layout=stereo:sample_rate=44100:d={seg['duration']}",
+                    f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={seg['duration']}",
                     f"silence_{i}",
                 )
 
                 if seg["audio"]:
                     _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
-                    # Mix voice with silence.
+                    # Force stereo to match silence
+                    a_in = a_in.filter("aformat", channel_layouts="stereo")
                     a = graph.add_raw(
                         [silence, a_in],
                         "amix=inputs=2:duration=first:dropout_transition=0:normalize=0",
@@ -581,13 +599,18 @@ class StaticGameplayTemplate(EditTemplate):
                 except:
                     duration = 0.0
                 
-                if duration == 0 and block.assets.subtitles:
-                    duration = block.assets.subtitles.duration
-                
-                # If duration is still 0 (e.g. file missing and no duration in subs), 
-                # we should estimate it or use thinking_duration if it exists.
+                # Fallback duration if missing or couldn't be determined
                 if duration == 0:
-                    duration = getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0)
+                    if block.assets and block.assets.subtitles:
+                        duration = block.assets.subtitles.duration
+                    else:
+                        # Estimate based on BasicQuestion logic: typing + thinking + answer + 3.0 (buffers)
+                        typing_dur = 3.0
+                        if audio_path and os.path.exists(audio_path):
+                            try:
+                                typing_dur = self.get_video_duration(audio_path)
+                            except: pass
+                        duration = typing_dur + getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0) + 3.0
 
         if seg_type != "none":
             return {
@@ -641,14 +664,17 @@ class StaticGameplayTemplate(EditTemplate):
                 )
                 v = v.filter("format", "yuva420p")
 
+                # Using atrim ensures exact duration
                 silence = graph.add_raw(
                     [],
-                    f"anullsrc=channel_layout=stereo:sample_rate=44100:d={seg['duration']}",
+                    f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={seg['duration']}",
                     f"silence_{i}",
                 )
 
                 if seg["audio"]:
                     _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
+                    # Force stereo to match silence
+                    a_in = a_in.filter("aformat", channel_layouts="stereo")
                     a = graph.add_raw(
                         [silence, a_in],
                         "amix=inputs=2:duration=first:dropout_transition=0:normalize=0",
