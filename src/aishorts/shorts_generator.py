@@ -273,7 +273,16 @@ class ShortsGenerator:
         """Loads the pickle and determines the stage from the filename."""
         self.logger.info(f"Resuming from checkpoint: {path}")
         with open(path, "rb") as f:
-            reel_series = pickle.load(f)
+            obj = pickle.load(f)
+            # Re-validate with Pydantic to ensure all fields from the latest schema are present
+            # even if the checkpoint was created with an older version.
+            if hasattr(obj, "model_dump"):
+                data = obj.model_dump()
+            elif hasattr(obj, "dict"):
+                data = obj.dict()
+            else:
+                data = obj
+            reel_series = ReelSeries.model_validate(data)
 
         filename = os.path.basename(path)
 
@@ -331,6 +340,11 @@ class ShortsGenerator:
                     raise FileNotFoundError(f"Checkpoint file not found: {resume_from}")
 
                 reel_series, loaded_stage = self._load_checkpoint(resume_from)
+
+                # Re-download assets that were previously generated but are missing locally
+                # (essential for ephemeral environments like Railway).
+                self.logger.info("Ensuring all generated assets are available locally...")
+                await asyncio.gather(*[self.video_gen.ensure_assets_local(reel) for reel in reel_series.reels])
 
                 # We start *after* the loaded stage
                 current_stage = loaded_stage + 1
@@ -468,22 +482,22 @@ class ShortsGenerator:
 
                     # Collect local files (only if they are in the 'output' directory)
                     for path in [
-                        assets.voice_filepath,
-                        assets.lipsync_filepath,
-                        assets.staticface_filepath,
-                        assets.question_filepath,
-                        assets.song_filepath,
+                        getattr(assets, "voice_filepath", None),
+                        getattr(assets, "lipsync_filepath", None),
+                        getattr(assets, "staticface_filepath", None),
+                        getattr(assets, "question_filepath", None),
+                        getattr(assets, "song_filepath", None),
                     ]:
                         if path and os.path.exists(path) and "output" in path:
                             local_to_delete.add(path)
 
                     # Collect R2 keys
                     urls_to_check = [
-                        assets.voice_url,
-                        assets.lipsync_url,
-                        assets.staticface_url,
-                        assets.song_url,
-                        assets.question_url,
+                        getattr(assets, "voice_url", None),
+                        getattr(assets, "lipsync_url", None),
+                        getattr(assets, "staticface_url", None),
+                        getattr(assets, "song_url", None),
+                        getattr(assets, "question_url", None),
                     ]
                     
                     for url in urls_to_check:

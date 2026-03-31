@@ -32,7 +32,7 @@ class VideoGenerator:
 
         self.render = render_cls(download_results=download_results, **kwargs)
 
-    async def _ensure_assets_local(self, reel: Reel):
+    async def ensure_assets_local(self, reel: Reel):
         """
         Check if all assets referred to in the reel are present on the local filesystem.
         If missing but a URL is available, re-download from R2.
@@ -46,49 +46,59 @@ class VideoGenerator:
                 continue
 
             # 1. Voice
-            if assets.voice_filepath and not os.path.exists(assets.voice_filepath):
-                if assets.voice_url:
-                    print(f"File missing: {assets.voice_filepath}. Re-downloading from {assets.voice_url}")
-                    os.makedirs(os.path.dirname(assets.voice_filepath), exist_ok=True)
-                    download_tasks.append(download_from_url(assets.voice_url, full_path=assets.voice_filepath))
+            voice_filepath = getattr(assets, "voice_filepath", None)
+            voice_url = getattr(assets, "voice_url", None)
+            if voice_filepath and not os.path.exists(voice_filepath):
+                if voice_url:
+                    print(f"File missing: {voice_filepath}. Re-downloading from {voice_url}")
+                    os.makedirs(os.path.dirname(voice_filepath), exist_ok=True)
+                    download_tasks.append(download_from_url(voice_url, full_path=voice_filepath))
                 else:
-                    print(f"WARNING: File missing and no URL for voice_filepath: {assets.voice_filepath}")
+                    print(f"WARNING: File missing and no URL for voice_filepath: {voice_filepath}")
 
             # 2. Lipsync
-            if assets.lipsync_filepath and not os.path.exists(assets.lipsync_filepath):
-                if assets.lipsync_url:
-                    print(f"File missing: {assets.lipsync_filepath}. Re-downloading from {assets.lipsync_url}")
-                    os.makedirs(os.path.dirname(assets.lipsync_filepath), exist_ok=True)
-                    download_tasks.append(download_from_url(assets.lipsync_url, full_path=assets.lipsync_filepath))
+            lipsync_filepath = getattr(assets, "lipsync_filepath", None)
+            lipsync_url = getattr(assets, "lipsync_url", None)
+            if lipsync_filepath and not os.path.exists(lipsync_filepath):
+                if lipsync_url:
+                    print(f"File missing: {lipsync_filepath}. Re-downloading from {lipsync_url}")
+                    os.makedirs(os.path.dirname(lipsync_filepath), exist_ok=True)
+                    download_tasks.append(download_from_url(lipsync_url, full_path=lipsync_filepath))
                 else:
-                    print(f"WARNING: File missing and no URL for lipsync_filepath: {assets.lipsync_filepath}")
+                    print(f"WARNING: File missing and no URL for lipsync_filepath: {lipsync_filepath}")
 
             # 3. StaticFace
-            if assets.staticface_filepath and not os.path.exists(assets.staticface_filepath):
-                if assets.staticface_url:
-                    print(f"File missing: {assets.staticface_filepath}. Re-downloading from {assets.staticface_url}")
-                    os.makedirs(os.path.dirname(assets.staticface_filepath), exist_ok=True)
-                    download_tasks.append(download_from_url(assets.staticface_url, full_path=assets.staticface_filepath))
+            staticface_filepath = getattr(assets, "staticface_filepath", None)
+            staticface_url = getattr(assets, "staticface_url", None)
+            if staticface_filepath and not os.path.exists(staticface_filepath):
+                if staticface_url:
+                    print(f"File missing: {staticface_filepath}. Re-downloading from {staticface_url}")
+                    os.makedirs(os.path.dirname(staticface_filepath), exist_ok=True)
+                    download_tasks.append(download_from_url(staticface_url, full_path=staticface_filepath))
                 else:
-                    print(f"WARNING: File missing and no URL for staticface_filepath: {assets.staticface_filepath}")
+                    print(f"WARNING: File missing and no URL for staticface_filepath: {staticface_filepath}")
 
             # 4. Song
-            if assets.song_filepath and not os.path.exists(assets.song_filepath):
-                if assets.song_url:
-                    print(f"File missing: {assets.song_filepath}. Re-downloading from {assets.song_url}")
-                    os.makedirs(os.path.dirname(assets.song_filepath), exist_ok=True)
-                    download_tasks.append(download_from_url(assets.song_url, full_path=assets.song_filepath))
+            song_filepath = getattr(assets, "song_filepath", None)
+            song_url = getattr(assets, "song_url", None)
+            if song_filepath and not os.path.exists(song_filepath):
+                if song_url:
+                    print(f"File missing: {song_filepath}. Re-downloading from {song_url}")
+                    os.makedirs(os.path.dirname(song_filepath), exist_ok=True)
+                    download_tasks.append(download_from_url(song_url, full_path=song_filepath))
                 else:
-                    print(f"WARNING: File missing and no URL for song_filepath: {assets.song_filepath}")
+                    print(f"WARNING: File missing and no URL for song_filepath: {song_filepath}")
 
             # 5. Question
-            if assets.question_filepath and not os.path.exists(assets.question_filepath):
-                if assets.question_url:
-                    print(f"File missing: {assets.question_filepath}. Re-downloading from {assets.question_url}")
-                    os.makedirs(os.path.dirname(assets.question_filepath), exist_ok=True)
-                    download_tasks.append(download_from_url(assets.question_url, full_path=assets.question_filepath))
+            question_filepath = getattr(assets, "question_filepath", None)
+            question_url = getattr(assets, "question_url", None)
+            if question_filepath and not os.path.exists(question_filepath):
+                if question_url:
+                    print(f"File missing: {question_filepath}. Re-downloading from {question_url}")
+                    os.makedirs(os.path.dirname(question_filepath), exist_ok=True)
+                    download_tasks.append(download_from_url(question_url, full_path=question_filepath))
                 else:
-                    print(f"WARNING: File missing and no URL for question_filepath: {assets.question_filepath}")
+                    print(f"WARNING: File missing and no URL for question_filepath: {question_filepath}")
 
             # 6. Media Map (Images, LaTeX, Manim)
             for media_id, filepath in assets.media_map.items():
@@ -105,7 +115,7 @@ class VideoGenerator:
             await asyncio.gather(*download_tasks)
 
     async def compose(self, reel: Reel, **kwargs) -> FFmpegResult:
-        await self._ensure_assets_local(reel)
+        await self.ensure_assets_local(reel)
         cmd = self.edit.compose(reel=reel, **kwargs)
 
         return await self.render.render(cmd, f"{uuid.uuid4()}.mp4", **kwargs)
