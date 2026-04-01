@@ -151,7 +151,7 @@ class ScriptGenerator:
     ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
         func = self.llm.generate_structure
-
+        
         return await await_or_thread(
             func, instructions, files, user_input, ReelSeries, **kwargs
         )
