@@ -75,7 +75,7 @@ def _prepare_generation_config(
             avatars=selected_avatars,
             video_template=video_template,
             subtitle_config=SubtitleConfig(provider="modal_wav2vec_aligner"),
-            script_config=ScriptConfig(provider="minimax"),
+            script_config=ScriptConfig(provider="gemini"),
             ffmpeg_config=FFmpegConfig(provider="modal_ffmpeg"),
         )
 

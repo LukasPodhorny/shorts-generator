@@ -12,7 +12,7 @@ class ManimGenerator:
     def __init__(
         self,
         provider: str = "modal_manim",
-        llm_provider: str = "gemini",
+        llm_provider: str = "minimax",
         base_instructions: str = None,
         **kwargs,
     ):
@@ -79,14 +79,14 @@ class ManimGenerator:
                 for media_item in block.media:
                     if media_item.type == "manim":
                         # Generate the animation
-                        #result = await self.generate(media_item.prompt, **kwargs)
-                        result = ManimResult(
-                            media=MediaFile(
-                                path="/home/lukaspodhorny/projects/shorts-generator/assets/manim/manim_qubit_1.mp4",
-                                url="https://media.pdftoreel.com/manim/output_5318dc2a-1e63-467a-b226-de4f77e25089.mp4",
-                            ),
-                            code=""
-                        )
+                        result = await self.generate(media_item.prompt, **kwargs)
+                        #result = ManimResult(
+                        #    media=MediaFile(
+                        #        path="/home/lukaspodhorny/projects/#shorts-generator/assets/manim/manim_qubit_1.#mp4",
+                        #        url="https://media.pdftoreel.com/manim/#output_5318dc2a-1e63-467a-b226-de4f77e25089.#mp4",
+                        #    ),
+                        #    code=""
+                        #)
 
                         # Store the result in the block assets
                         block.assets.media_map[media_item.id] = result.media.path

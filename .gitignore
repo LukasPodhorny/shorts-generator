@@ -231,3 +231,4 @@ backup.txt
 
 # Large assets
 assets/bg_video/
+.aider*

@@ -65,7 +65,6 @@ def main():
         ffmpeg_config=FFmpegConfig(provider=args.ffmpeg_provider),
         script_config=ScriptConfig(
             provider=args.llm_provider,
-            provider_config={"model": args.model}
         ),
     )
 
