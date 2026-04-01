@@ -120,6 +120,7 @@ class TemplateConfig(BaseModel):
 class VideoTemplate(BaseModel):
     edit_template: str
     template_config: TemplateConfig
+    preview_url: str | None = None
 
 
 class AssSubtitles:
