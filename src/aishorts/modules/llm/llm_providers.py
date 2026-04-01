@@ -427,8 +427,6 @@ class Minimax(LLMProvider):
                 "NIM returned no parsed structured output; "
                 f"finish_reason={completion.choices[0].finish_reason!r}"
             )
-        print(parsed)
-        raise Exception("test")
         return parsed
 
     async def generate_response(
