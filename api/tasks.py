@@ -137,10 +137,6 @@ async def process_reel_task(series_id: int, request_data: dict):
         # 2. Initialize Generator
         shorts_generator = ShortsGenerator(
             shorts_config=shorts_config,
-            llm_api_key=os.getenv("LLM_API_KEY"),
-            tts_f5tts_api_key=os.getenv("TTS_API_KEY"),
-            subtitles_api_key=os.getenv("SUBTITLES_API_KEY"),
-            image_api_key=os.getenv("IMAGE_API_KEY"),
         )
 
         # 3. Define the status callback for the generator

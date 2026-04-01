@@ -36,8 +36,8 @@ def main():
     )
     parser.add_argument("--amount", type=int, default=1, required=False)
     parser.add_argument("--template", type=str, required=True)
-    parser.add_argument("--llm_provider", default="chatgpt", type=str)
-    parser.add_argument("--model", default="gpt-5", type=str)
+    parser.add_argument("--llm_provider", default="gemini", type=str)
+    parser.add_argument("--model", default="gemini-3-pro-preview", type=str)
     parser.add_argument("--subtitle_provider", default="modal_wav2vec_aligner", type=str) # remember to change this back to elevenlabs
     parser.add_argument("--ffmpeg_provider", default="modal_ffmpeg", type=str)
     parser.add_argument(
@@ -64,7 +64,8 @@ def main():
         subtitle_config=SubtitleConfig(provider=args.subtitle_provider),
         ffmpeg_config=FFmpegConfig(provider=args.ffmpeg_provider),
         script_config=ScriptConfig(
-            provider="gemini", provider_config={"model": "gemini-3-pro-preview"}
+            provider=args.llm_provider,
+            provider_config={"model": args.model}
         ),
     )
 

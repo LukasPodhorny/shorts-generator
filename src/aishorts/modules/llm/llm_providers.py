@@ -5,12 +5,27 @@ from aishorts.modules.provider import Provider
 from abc import abstractmethod
 import asyncio
 import os
+import json
 from google import genai
 import aiohttp
 import aiofiles
 import uuid
 import tempfile
 from urllib.parse import urlparse
+
+from pypdf import PdfReader
+
+
+def _extract_text_from_pdf_bytes(data: bytes) -> str:
+    import io
+
+    reader = PdfReader(io.BytesIO(data))
+    parts: list[str] = []
+    for page in reader.pages:
+        t = page.extract_text()
+        if t:
+            parts.append(t)
+    return "\n\n".join(parts)
 
 
 async def _ensure_local_file(
@@ -34,6 +49,97 @@ async def _ensure_local_file(
                     await f.write(chunk)
         return temp_path, True
     return file_ref, False
+
+
+MAX_PDF_INPUT_BYTES = 25 * 1024 * 1024
+
+
+async def _minimax_read_file_as_text(
+    path: str,
+    name: str,
+    max_plain_bytes: int,
+) -> str:
+    """
+    Plain text: UTF-8 only, capped at max_plain_bytes.
+    PDF: extract text with pypdf (same cap on extracted text length).
+    """
+    size = await asyncio.to_thread(lambda: os.path.getsize(path))
+    pdf_by_name = name.lower().endswith(".pdf")
+
+    async with aiofiles.open(path, "rb") as f:
+        head = await f.read(8)
+    pdf_by_magic = head.startswith(b"%PDF")
+
+    if pdf_by_name or pdf_by_magic:
+        if size > MAX_PDF_INPUT_BYTES:
+            return (
+                f"[PDF larger than {MAX_PDF_INPUT_BYTES} bytes; not read. "
+                "Use a smaller file or split it.]"
+            )
+        async with aiofiles.open(path, "rb") as f:
+            raw = await f.read()
+        try:
+            extracted = await asyncio.to_thread(_extract_text_from_pdf_bytes, raw)
+        except Exception as e:
+            return f"[Could not read PDF (encrypted or invalid): {e}]"
+        extracted = (extracted or "").strip()
+        if not extracted:
+            return "[No extractable text in this PDF (may be scanned images only).]"
+        if len(extracted) > max_plain_bytes:
+            extracted = (
+                extracted[:max_plain_bytes]
+                + f"\n\n[... truncated to {max_plain_bytes} characters ...]"
+            )
+        return extracted
+
+    if size > max_plain_bytes:
+        return f"[File larger than {max_plain_bytes} bytes; not inlined]"
+    try:
+        async with aiofiles.open(path, "rb") as f:
+            raw = await f.read()
+    except OSError as e:
+        return f"[Could not read: {e}]"
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return "[Binary or non-UTF-8 file; contents not inlined (not a PDF with extractable text).]"
+
+
+async def _minimax_build_user_content(
+    files: list[str] | None,
+    user_input: str | None,
+    max_bytes_per_file: int = 500_000,
+) -> str:
+    """
+    NVIDIA NIM chat.completions has no file-upload API like OpenAI/Gemini.
+    We download paths/URLs locally and inline text into the user message.
+    PDFs are handled via pypdf text extraction (not OCR).
+    """
+    parts: list[str] = []
+    if user_input:
+        parts.append(user_input)
+    if not files:
+        return "\n\n".join(parts).strip()
+
+    async with aiohttp.ClientSession() as session:
+        file_blocks: list[str] = []
+        for file_ref in files:
+            path, is_temp = await _ensure_local_file(file_ref, session)
+            try:
+                name = os.path.basename(path) or file_ref
+                text = await _minimax_read_file_as_text(
+                    path, name, max_bytes_per_file
+                )
+                file_blocks.append(f"--- File: {name} ---\n{text}")
+            finally:
+                if is_temp and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+        if file_blocks:
+            parts.append("Attached file contents:\n\n" + "\n\n".join(file_blocks))
+    return "\n\n".join(parts).strip()
 
 
 class LLMProvider(Provider):
@@ -329,3 +435,93 @@ class Gemini(LLMProvider):
             )
 
             return response.text
+
+
+class Minimax(LLMProvider):
+    provider_name = "minimax"
+
+    def __init__(
+        self,
+        model: str = "minimaxai/minimax-m2.5",
+        max_output_tokens: int = 50_000,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        **kwargs,
+    ):
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+
+        key = api_key or os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY")
+        self.client = AsyncOpenAI(
+            api_key=key,
+            base_url=base_url or "https://integrate.api.nvidia.com/v1",
+        )
+
+    @staticmethod
+    def _strip_code_fences(text: str) -> str:
+        text = (text or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines:
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        return text
+
+    async def generate_structure(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        response_schema=None,
+        **kwargs,
+    ) -> ReelSeries:
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+
+        schema_cls = response_schema or ReelSeries
+        schema = schema_cls.model_json_schema()
+
+        schema_prompt = (
+            "Return ONLY valid JSON that matches this JSON Schema exactly:\n"
+            f"{json.dumps(schema, ensure_ascii=True)}"
+        )
+
+        user_content = await _minimax_build_user_content(files, user_input)
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "system", "content": schema_prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+        completion = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_output_tokens,
+        )
+        text = self._strip_code_fences(completion.choices[0].message.content)
+        return schema_cls.model_validate_json(text)
+
+    async def generate_response(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> str:
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+
+        user_content = await _minimax_build_user_content(files, user_input)
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_content},
+        ]
+
+        completion = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self.max_output_tokens,
+        )
+        return completion.choices[0].message.content or ""
