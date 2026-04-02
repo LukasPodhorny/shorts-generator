@@ -38,7 +38,6 @@ async def _ensure_local_file(
 
 
 class LLMProvider(Provider):
-
     @abstractmethod
     async def generate_structure(
         self,
@@ -368,9 +367,7 @@ class Minimax(LLMProvider):
                         temp_paths.append(filepath)
                     label = file_ref if not is_temp else os.path.basename(filepath)
                     text = await asyncio.to_thread(extract_text, filepath)
-                    parts.append(
-                        f"--- Document: {label} ---\n{text.strip()}\n"
-                    )
+                    parts.append(f"--- Document: {label} ---\n{text.strip()}\n")
             finally:
                 for p in temp_paths:
                     try:
@@ -386,8 +383,7 @@ class Minimax(LLMProvider):
         if file_context:
             chunks.append(
                 "The following is plain text extracted from the provided file(s). "
-                "Use it as the source material.\n\n"
-                + file_context
+                "Use it as the source material.\n\n" + file_context
             )
         if user_input:
             chunks.append(user_input)
@@ -427,6 +423,17 @@ class Minimax(LLMProvider):
                 "NIM returned no parsed structured output; "
                 f"finish_reason={completion.choices[0].finish_reason!r}"
             )
+
+        finish_reason = completion.choices[0].finish_reason
+        if finish_reason == "length":
+            raise RuntimeError(
+                f"Output truncated (finish_reason={finish_reason}). "
+                "Consider increasing max_output_tokens."
+            )
+
+        if hasattr(parsed, "reels") and not parsed.reels:
+            raise RuntimeError("LLM returned empty reels array")
+
         return parsed
 
     async def generate_response(
