@@ -37,8 +37,10 @@ def main():
     parser.add_argument("--amount", type=int, default=1, required=False)
     parser.add_argument("--template", type=str, required=True)
     parser.add_argument("--llm_provider", default="gemini", type=str)
-    parser.add_argument("--model", default="gemini-3-pro-preview", type=str)
-    parser.add_argument("--subtitle_provider", default="modal_wav2vec_aligner", type=str) # remember to change this back to elevenlabs
+    parser.add_argument("--model", default=None, type=str)
+    parser.add_argument(
+        "--subtitle_provider", default="modal_wav2vec_aligner", type=str
+    )  # remember to change this back to elevenlabs
     parser.add_argument("--ffmpeg_provider", default="modal_ffmpeg", type=str)
     parser.add_argument(
         "--keep_assets",
@@ -58,6 +60,7 @@ def main():
     selected_avatars = [avatars[name] for name in args.avatars] if args.avatars else []
 
     from aishorts.shorts_generator import FFmpegConfig
+
     shorts_config = ShortsConfig(
         avatars=selected_avatars,
         video_template=video_template,
@@ -65,6 +68,7 @@ def main():
         ffmpeg_config=FFmpegConfig(provider=args.ffmpeg_provider),
         script_config=ScriptConfig(
             provider=args.llm_provider,
+            **({"provider_config": {"model": args.model}} if args.model else {}),
         ),
     )
 

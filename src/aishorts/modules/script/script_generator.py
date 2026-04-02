@@ -98,12 +98,6 @@ class ScriptGenerator:
 
         reel_conf = ["REEL CONFIGURATION:"]
         reel_conf.append(f"- Number of reels to generate: {num_reels}")
-        reel_conf.append(
-            f"- CRITICAL: You MUST generate EXACTLY {num_reels} reel(s). Do NOT generate more or less."
-        )
-        reel_conf.append(
-            "- The 'reels' array in your JSON output must contain exactly this number of reel objects."
-        )
         reel_block = "\n".join(reel_conf)
 
         # ------------------------------
@@ -148,54 +142,16 @@ class ScriptGenerator:
 
         self.llm = cls(**kwargs)
 
-
-async def generate_script(
-    self,
-    num_reels: int = 1,
-    files: list[str] | None = None,
-    user_input: str | None = None,
-    max_retries: int = 2,
-    **kwargs,
-) -> ReelSeries:
-    instructions = self._generate_instructions(num_reels)
-    func = self.llm.generate_structure
-    last_error = None
-
-    for attempt in range(max_retries + 1):
-        try:
-            result = await await_or_thread(
-                func, instructions, files, user_input, ReelSeries, **kwargs
-            )
-
-            actual_reels = len(result.reels)
-            if actual_reels != num_reels:
-                print(
-                    f"[ScriptGenerator] Warning: Got {actual_reels} reels, expected {num_reels}. "
-                    f"Regenerating (attempt {attempt + 1}/{max_retries + 1})..."
-                )
-                last_error = (
-                    f"Reel count mismatch: got {actual_reels}, expected {num_reels}"
-                )
-                continue
-
-            for i, reel in enumerate(result.reels):
-                if not reel.blocks:
-                    print(
-                        f"[ScriptGenerator] Warning: Reel {i} has no blocks. "
-                        f"Regenerating (attempt {attempt + 1}/{max_retries + 1})..."
-                    )
-                    last_error = f"Reel {i} has no blocks"
-                    break
-            else:
-                return result
-
-        except Exception as e:
-            print(
-                f"[ScriptGenerator] Error generating script (attempt {attempt + 1}/{max_retries + 1}): {e}"
-            )
-            last_error = str(e)
-
-    raise RuntimeError(
-        f"Failed to generate valid script after {max_retries + 1} attempts. "
-        f"Last error: {last_error}"
-    )
+    async def generate_script(
+        self,
+        num_reels: int = 1,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> ReelSeries:
+        instructions = self._generate_instructions(num_reels)
+        func = self.llm.generate_structure
+        
+        return await await_or_thread(
+            func, instructions, files, user_input, ReelSeries, **kwargs
+        )
