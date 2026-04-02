@@ -283,9 +283,16 @@ class ShortsGenerator:
     def _load_checkpoint(self, path: str) -> tuple[ReelSeries, PipelineStage]:
         """Loads the pickle and determines the stage from the filename."""
         self.logger.info(f"Resuming from checkpoint: {path}")
-        
+
         # Ensure all related models are rebuilt before validation to handle Union types properly
-        from aishorts.modules.script.script import ReelSeries, Reel, DialogueBlock, QuestionBlock, SongBlock
+        from aishorts.modules.script.script import (
+            ReelSeries,
+            Reel,
+            DialogueBlock,
+            QuestionBlock,
+            SongBlock,
+        )
+
         for model in [DialogueBlock, QuestionBlock, SongBlock, Reel, ReelSeries]:
             try:
                 model.model_rebuild()
@@ -294,7 +301,7 @@ class ShortsGenerator:
 
         with open(path, "rb") as f:
             obj = pickle.load(f)
-            
+
             # Use a safer way to get the dictionary data without triggering full serialization
             # which might fail if the unpickled object's internal Pydantic state is corrupted.
             if isinstance(obj, ReelSeries):
@@ -305,6 +312,7 @@ class ShortsGenerator:
                 except (TypeError, AttributeError):
                     # Fallback if model_dump fails due to MockValSer or similar
                     import json
+
                     try:
                         # try legacy dict() if available
                         data = obj.dict() if hasattr(obj, "dict") else obj.__dict__
@@ -314,7 +322,7 @@ class ShortsGenerator:
                 data = obj.__dict__
             else:
                 data = obj
-                
+
             # Final attempt: if it's a dict or we extracted one, validate it
             try:
                 reel_series = ReelSeries.model_validate(data)
@@ -361,12 +369,13 @@ class ShortsGenerator:
         resume_from: str | None = None,
         mock_script: str | None = None,
         keep_assets: bool = False,
-        status_callback: Callable[[PipelineStage, ReelSeries | None], Awaitable[None]] | None = None,
+        status_callback: Callable[[PipelineStage, ReelSeries | None], Awaitable[None]]
+        | None = None,
     ) -> ReelSeriesOutput:
 
         current_stage = PipelineStage.SCRIPT
         reel_series = None
-        
+
         # Generate a unique session ID for this run
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = f"run_{timestamp}_{uuid.uuid4().hex[:8]}"
@@ -385,15 +394,26 @@ class ShortsGenerator:
 
                 # Re-download assets that were previously generated but are missing locally
                 # (essential for ephemeral environments like Railway).
-                self.logger.info("Ensuring all generated assets are available locally...")
-                await asyncio.gather(*[self.video_gen.ensure_assets_local(reel) for reel in reel_series.reels])
+                self.logger.info(
+                    "Ensuring all generated assets are available locally..."
+                )
+                await asyncio.gather(
+                    *[
+                        self.video_gen.ensure_assets_local(reel)
+                        for reel in reel_series.reels
+                    ]
+                )
 
                 # We start *after* the loaded stage
                 current_stage = loaded_stage + 1
-                self.logger.info(f"Resuming pipeline AFTER stage: '{loaded_stage.name}'")
+                self.logger.info(
+                    f"Resuming pipeline AFTER stage: '{loaded_stage.name}'"
+                )
 
                 # Warning for Railway/ephemeral environments
-                if current_stage > PipelineStage.SCRIPT and not os.path.exists("output"):
+                if current_stage > PipelineStage.SCRIPT and not os.path.exists(
+                    "output"
+                ):
                     self.logger.warning(
                         "Output directory not found. If you are on an ephemeral environment (like Railway), "
                         "some assets may be missing. The video generator will attempt to re-download "
@@ -405,7 +425,6 @@ class ShortsGenerator:
             if current_stage <= PipelineStage.SCRIPT:
                 self.logger.info("Generating scripts...")
                 if AssetType.SCRIPT in self.required_assets:
-
                     if mock_script:
                         reel_json = Path(mock_script).read_text()
                         reel_series = ReelSeries.model_validate_json(reel_json)
@@ -445,7 +464,9 @@ class ShortsGenerator:
             # --- 5. Secondary Stage ---
 
             if current_stage <= PipelineStage.SECONDARY:
-                self.logger.info("Generating lipsync video, subtitles, and questions...")
+                self.logger.info(
+                    "Generating lipsync video, subtitles, and questions..."
+                )
                 await self._populate_reels(reel_series, self.secondary_generators)
                 self._save_debug_state(reel_series, PipelineStage.SECONDARY)
                 if status_callback:
@@ -461,7 +482,7 @@ class ShortsGenerator:
             for reel in reel_series.reels:
                 filename = f"{uuid.uuid4().hex}.mp4"
                 dest_key = f"generated/{filename}"
-                
+
                 # Compose video directly to the final R2 destination key.
                 result = await self.video_gen.compose(
                     reel=reel,
@@ -543,7 +564,7 @@ class ShortsGenerator:
                         getattr(assets, "song_url", None),
                         getattr(assets, "question_url", None),
                     ]
-                    
+
                     for url in urls_to_check:
                         if url:
                             # Extract string if it's a dict
@@ -578,7 +599,8 @@ class ShortsGenerator:
 
         # Protect final R2 outputs only.
         final_r2_keys = {
-            CloudflareR2.get_key_from_url(ro.presigned_url, r2.bucket) for ro in reel_outputs
+            CloudflareR2.get_key_from_url(ro.presigned_url, r2.bucket)
+            for ro in reel_outputs
         }
 
         r2_to_delete -= final_r2_keys
@@ -605,6 +627,12 @@ class ShortsGenerator:
             await asyncio.to_thread(r2.delete_prefix, uploads_prefix)
         except Exception as e:
             self.logger.warning(f"Failed to clean up uploads prefix: {e}")
+
+        # 6. Clean up shared audio uploads from subtitle aligner (uploads/audio/)
+        try:
+            await asyncio.to_thread(r2.delete_prefix, "uploads/audio/")
+        except Exception as e:
+            self.logger.warning(f"Failed to clean up uploads/audio prefix: {e}")
 
     def generate_shorts(
         self,

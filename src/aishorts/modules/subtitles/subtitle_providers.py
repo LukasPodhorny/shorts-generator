@@ -18,10 +18,12 @@ from aishorts.modules.provider import Provider
 from aishorts.modules.script.script import AssetType, Reel
 from aishorts.utils.r2_handler import CloudflareR2
 
+
 def get_wav_length(path: str):
     audio = AudioSegment.from_wav(path)
     duration = len(audio) / 1000.0
     return duration
+
 
 class SubtitlesProvider(Provider):
     @abstractmethod
@@ -29,8 +31,11 @@ class SubtitlesProvider(Provider):
         pass
 
     @abstractmethod
-    async def generate_subtitles(self, audio_file: str, text: str) -> TranscriptionVerbose:
+    async def generate_subtitles(
+        self, audio_file: str, text: str
+    ) -> TranscriptionVerbose:
         pass
+
 
 class WhisperSubtitles(SubtitlesProvider):
     provider_name = "whisper"
@@ -41,13 +46,19 @@ class WhisperSubtitles(SubtitlesProvider):
         api_key: str | None = None,
         max_concurrent: int = 5,
     ):
-        self.api_key = api_key or (os.getenv("LEMONFOX_API_KEY") if use_lemonfox else os.getenv("OPENAI_API_KEY"))
+        self.api_key = api_key or (
+            os.getenv("LEMONFOX_API_KEY")
+            if use_lemonfox
+            else os.getenv("OPENAI_API_KEY")
+        )
         base_url = "https://api.lemonfox.ai/v1" if use_lemonfox else None
-        
+
         self.client = AsyncOpenAI(api_key=self.api_key, base_url=base_url)
         self.semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def generate_subtitles(self, audio_file: str, text: str = None) -> TranscriptionVerbose:
+    async def generate_subtitles(
+        self, audio_file: str, text: str = None
+    ) -> TranscriptionVerbose:
         async with self.semaphore:
             with open(audio_file, "rb") as audio:
                 transcription = await self.client.audio.transcriptions.create(
@@ -59,89 +70,28 @@ class WhisperSubtitles(SubtitlesProvider):
                 )
             return transcription
 
-    async def populate_reel(self, reel: Reel) -> None:
-        tts_results = []
-        for i, block in enumerate(reel.blocks):
-            if AssetType.SUBTITLES in block.valid_assets and block.assets.voice_filepath:
-                tts_results.append(TTSResult(id=i, filepath=block.assets.voice_filepath, transcription=block.text))
 
-        if not tts_results: return
-
-        tasks = [self.generate_subtitles(res.filepath, res.transcription) for res in tts_results]
-        results = await asyncio.gather(*tasks)
-
-        for tts_res, sub_res in zip(tts_results, results):
-            reel.blocks[tts_res.id].assets.subtitles = sub_res
-
-class ElevenLabsSubtitles(SubtitlesProvider):
-    provider_name = "elevenlabs"
-
-    def __init__(
-        self,
-        display_silence: bool = False,
-        min_silence_duration: float = 0.5,
-        remove_chars="—",
-        api_key: str | None = None,
-        max_concurrent: int = 5,
-    ):
-        self.display_silence = display_silence
-        self.min_silence_duration = min_silence_duration
-        self.remove_chars = remove_chars
-        self.api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
-        self.elevenlabs = ElevenLabs(api_key=self.api_key)
-        self.semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def generate_subtitles(self, audio_file: str, transcription_text: str) -> TranscriptionVerbose:
-        async with self.semaphore:
-            with open(audio_file, "rb") as f:
-                audio_data = BytesIO(f.read())
-
-            transcription = await asyncio.to_thread(
-                self.elevenlabs.forced_alignment.create,
-                file=audio_data,
-                text=transcription_text,
-            )
-
-            transcription_verbose = TranscriptionVerbose(
-                duration=get_wav_length(audio_file),
-                language="english",
-                text=transcription_text,
-                words=[],
-            )
-
-            prev_word = None
-            for subtitle in transcription.words:
-                word = subtitle.text.replace(" ", "")
-                if word == "" and not self.display_silence:
-                    if prev_word is not None:
-                        silence_duration = subtitle.end - subtitle.start
-                        if silence_duration < self.min_silence_duration:
-                            prev_word.end = subtitle.end
-                            continue
-
-                transcription_word = TranscriptionWord(
-                    start=subtitle.start,
-                    end=subtitle.end,
-                    word=subtitle.text.translate({ord(x): "" for x in self.remove_chars}),
+async def populate_reel(self, reel: Reel) -> None:
+    tts_results = []
+    for i, block in enumerate(reel.blocks):
+        if AssetType.SUBTITLES in block.valid_assets and block.assets.voice_filepath:
+            tts_results.append(
+                TTSResult(
+                    id=i, filepath=block.assets.voice_filepath, transcription=block.text
                 )
-                transcription_verbose.words.append(transcription_word)
-                prev_word = transcription_word
+            )
 
-            return transcription_verbose
+    if not tts_results:
+        return
 
-    async def populate_reel(self, reel: Reel) -> None:
-        tts_results = []
-        for i, block in enumerate(reel.blocks):
-            if AssetType.SUBTITLES in block.valid_assets and block.assets.voice_filepath:
-                tts_results.append(TTSResult(id=i, filepath=block.assets.voice_filepath, transcription=block.text))
+    tasks = [
+        self.generate_subtitles(res.filepath, res.transcription) for res in tts_results
+    ]
+    results = await asyncio.gather(*tasks)
 
-        if not tts_results: return
+    for tts_res, sub_res in zip(tts_results, results):
+        reel.blocks[tts_res.id].assets.subtitles = sub_res
 
-        tasks = [self.generate_subtitles(res.filepath, res.transcription) for res in tts_results]
-        results = await asyncio.gather(*tasks)
-
-        for tts_res, sub_res in zip(tts_results, results):
-            reel.blocks[tts_res.id].assets.subtitles = sub_res
 
 class ModalWav2VecAligner(SubtitlesProvider):
     provider_name = "modal_wav2vec_aligner"
@@ -160,7 +110,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.min_silence_duration = min_silence_duration
-        
+
         # Use existing R2 handler or initialize the standard one
         self.r2 = r2_provider or CloudflareR2()
 
@@ -169,10 +119,12 @@ class ModalWav2VecAligner(SubtitlesProvider):
         audio_path_str = str(audio_path)
         if audio_path_str.startswith("http"):
             return audio_path_str
-            
+
         if os.path.exists(audio_path_str):
             remote_key = f"uploads/audio/{os.path.basename(audio_path_str)}"
-            print(f"[{self.provider_name}] Uploading {os.path.basename(audio_path_str)} to R2...")
+            print(
+                f"[{self.provider_name}] Uploading {os.path.basename(audio_path_str)} to R2..."
+            )
             # Wrap synchronous R2 upload in a thread to keep it non-blocking
             await asyncio.to_thread(self.r2.upload_file, audio_path_str, remote_key)
             presigned_url = self.r2.create_presigned_url(remote_key)
@@ -180,7 +132,9 @@ class ModalWav2VecAligner(SubtitlesProvider):
         else:
             raise FileNotFoundError(f"Audio file not found: {audio_path_str}")
 
-    async def generate_subtitles(self, audio_file: str, text: str) -> TranscriptionVerbose:
+    async def generate_subtitles(
+        self, audio_file: str, text: str
+    ) -> TranscriptionVerbose:
         """Alignment logic wrapped to return the expected OpenAI TranscriptionVerbose type."""
         async with self.semaphore:
             if not self.endpoint_url:
@@ -188,20 +142,25 @@ class ModalWav2VecAligner(SubtitlesProvider):
 
             audio_url = await self._prepare_audio(audio_file)
 
-            payload = {
-                "audio_url": audio_url,
-                "text": text
-            }
+            payload = {"audio_url": audio_url, "text": text}
             if self.modal_api_key:
                 payload["api_key"] = self.modal_api_key
 
-            print(f"[{self.provider_name}] Sending alignment job to Modal.com for {os.path.basename(audio_file)}...")
+            print(
+                f"[{self.provider_name}] Sending alignment job to Modal.com for {os.path.basename(audio_file)}..."
+            )
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.endpoint_url, json=payload, timeout=600) as response:
-                    print(f"[{self.provider_name}] Modal responded with status {response.status} for {os.path.basename(audio_file)}")
+                async with session.post(
+                    self.endpoint_url, json=payload, timeout=600
+                ) as response:
+                    print(
+                        f"[{self.provider_name}] Modal responded with status {response.status} for {os.path.basename(audio_file)}"
+                    )
                     if not response.ok:
                         err = await response.text()
-                        raise Exception(f"Modal Wav2Vec Alignment failed with {response.status}: {err}")
+                        raise Exception(
+                            f"Modal Wav2Vec Alignment failed with {response.status}: {err}"
+                        )
                     result = await response.json()
 
             # Map Modal segments to the standard TranscriptionWord format
@@ -220,19 +179,13 @@ class ModalWav2VecAligner(SubtitlesProvider):
                     if gap < self.min_silence_duration:
                         end = next_start
 
-                words.append(
-                    TranscriptionWord(
-                        word=word_text,
-                        start=start,
-                        end=end
-                    )
-                )
+                words.append(TranscriptionWord(word=word_text, start=start, end=end))
 
             return TranscriptionVerbose(
                 duration=get_wav_length(audio_file),
                 language="english",
                 text=text,
-                words=words
+                words=words,
             )
 
     async def populate_reel(self, reel: Reel) -> None:
@@ -243,10 +196,16 @@ class ModalWav2VecAligner(SubtitlesProvider):
                 AssetType.SUBTITLES in block.valid_assets
                 and block.assets.voice_filepath
             ):
+                audio_input = (
+                    block.assets.voice_url
+                    if block.assets.voice_url
+                    else block.assets.voice_filepath
+                )
                 tts_results.append(
                     TTSResult(
                         id=i,
                         filepath=block.assets.voice_filepath,
+                        url=audio_input,
                         transcription=block.text,
                     )
                 )
@@ -256,8 +215,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
 
         print(f"[{self.provider_name}] Aligning {len(tts_results)} audio blocks...")
         tasks = [
-            self.generate_subtitles(res.filepath, res.transcription)
-            for res in tts_results
+            self.generate_subtitles(res.url, res.transcription) for res in tts_results
         ]
         results = await asyncio.gather(*tasks)
 
