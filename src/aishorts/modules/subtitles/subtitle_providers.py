@@ -70,27 +70,120 @@ class WhisperSubtitles(SubtitlesProvider):
                 )
             return transcription
 
-
-async def populate_reel(self, reel: Reel) -> None:
-    tts_results = []
-    for i, block in enumerate(reel.blocks):
-        if AssetType.SUBTITLES in block.valid_assets and block.assets.voice_filepath:
-            tts_results.append(
-                TTSResult(
-                    id=i, filepath=block.assets.voice_filepath, transcription=block.text
+    async def populate_reel(self, reel: Reel) -> None:
+        tts_results = []
+        for i, block in enumerate(reel.blocks):
+            if (
+                AssetType.SUBTITLES in block.valid_assets
+                and block.assets.voice_filepath
+            ):
+                tts_results.append(
+                    TTSResult(
+                        id=i,
+                        filepath=block.assets.voice_filepath,
+                        transcription=block.text,
+                    )
                 )
+
+        if not tts_results:
+            return
+
+        tasks = [
+            self.generate_subtitles(res.filepath, res.transcription)
+            for res in tts_results
+        ]
+        results = await asyncio.gather(*tasks)
+
+        for tts_res, sub_res in zip(tts_results, results):
+            reel.blocks[tts_res.id].assets.subtitles = sub_res
+
+
+class ElevenLabsSubtitles(SubtitlesProvider):
+    provider_name = "elevenlabs"
+
+    def __init__(
+        self,
+        display_silence: bool = False,
+        min_silence_duration: float = 0.5,
+        remove_chars="—",
+        api_key: str | None = None,
+        max_concurrent: int = 5,
+    ):
+        self.display_silence = display_silence
+        self.min_silence_duration = min_silence_duration
+        self.remove_chars = remove_chars
+        self.api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
+        self.elevenlabs = ElevenLabs(api_key=self.api_key)
+        self.semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def generate_subtitles(
+        self, audio_file: str, transcription_text: str
+    ) -> TranscriptionVerbose:
+        async with self.semaphore:
+            with open(audio_file, "rb") as f:
+                audio_data = BytesIO(f.read())
+
+            transcription = await asyncio.to_thread(
+                self.elevenlabs.forced_alignment.create,
+                file=audio_data,
+                text=transcription_text,
             )
 
-    if not tts_results:
-        return
+            transcription_verbose = TranscriptionVerbose(
+                duration=get_wav_length(audio_file),
+                language="english",
+                text=transcription_text,
+                words=[],
+            )
 
-    tasks = [
-        self.generate_subtitles(res.filepath, res.transcription) for res in tts_results
-    ]
-    results = await asyncio.gather(*tasks)
+            prev_word = None
+            for subtitle in transcription.words:
+                word = subtitle.text.replace(" ", "")
+                if word == "" and not self.display_silence:
+                    if prev_word is not None:
+                        silence_duration = subtitle.end - subtitle.start
+                        if silence_duration < self.min_silence_duration:
+                            prev_word.end = subtitle.end
+                    continue
 
-    for tts_res, sub_res in zip(tts_results, results):
-        reel.blocks[tts_res.id].assets.subtitles = sub_res
+                transcription_word = TranscriptionWord(
+                    start=subtitle.start,
+                    end=subtitle.end,
+                    word=subtitle.text.translate(
+                        {ord(x): "" for x in self.remove_chars}
+                    ),
+                )
+                transcription_verbose.words.append(transcription_word)
+                prev_word = transcription_word
+
+            return transcription_verbose
+
+    async def populate_reel(self, reel: Reel) -> None:
+        tts_results = []
+        for i, block in enumerate(reel.blocks):
+            if (
+                AssetType.SUBTITLES in block.valid_assets
+                and block.assets.voice_filepath
+            ):
+                tts_results.append(
+                    TTSResult(
+                        id=i,
+                        filepath=block.assets.voice_filepath,
+                        transcription=block.text,
+                    )
+                )
+
+        if not tts_results:
+            return
+
+        tasks = [
+            self.generate_subtitles(res.filepath, res.transcription)
+            for res in tts_results
+        ]
+        results = await asyncio.gather(*tasks)
+
+        for tts_res, sub_res in zip(tts_results, results):
+            reel.blocks[tts_res.id].assets.subtitles = sub_res
 
 
 class ModalWav2VecAligner(SubtitlesProvider):
@@ -163,33 +256,35 @@ class ModalWav2VecAligner(SubtitlesProvider):
                         )
                     result = await response.json()
 
-            # Map Modal segments to the standard TranscriptionWord format
-            # and bridge gaps shorter than min_silence_duration
-            words = []
-            segments = result.get("segments", [])
-            for i, seg in enumerate(segments):
-                word_text = seg["word"]
-                start = seg["start"]
-                end = seg["end"]
+                    # Map Modal segments to the standard TranscriptionWord format
+                    # and bridge gaps shorter than min_silence_duration
+                    words = []
+                    segments = result.get("segments", [])
+                    for i, seg in enumerate(segments):
+                        word_text = seg["word"]
+                        start = seg["start"]
+                        end = seg["end"]
 
-                # If there's a next segment, check if we should bridge the gap
-                if i < len(segments) - 1:
-                    next_start = segments[i + 1]["start"]
-                    gap = next_start - end
-                    if gap < self.min_silence_duration:
-                        end = next_start
+                        # If there's a next segment, check if we should bridge the gap
+                        if i < len(segments) - 1:
+                            next_start = segments[i + 1]["start"]
+                            gap = next_start - end
+                            if gap < self.min_silence_duration:
+                                end = next_start
 
-words.append(TranscriptionWord(word=word_text, start=start, end=end))
+                        words.append(
+                            TranscriptionWord(word=word_text, start=start, end=end)
+                        )
 
-        # Calculate duration from the last segment's end time, or default to 0
-        duration = segments[-1]["end"] if segments else 0.0
+                    # Calculate duration from the last segment's end time, or default to 0
+                    duration = segments[-1]["end"] if segments else 0.0
 
-        return TranscriptionVerbose(
-            duration=duration,
-            language="english",
-            text=text,
-            words=words,
-        )
+                    return TranscriptionVerbose(
+                        duration=duration,
+                        language="english",
+                        text=text,
+                        words=words,
+                    )
 
     async def populate_reel(self, reel: Reel) -> None:
         """Processes all blocks in a reel that require subtitles."""
@@ -199,11 +294,13 @@ words.append(TranscriptionWord(word=word_text, start=start, end=end))
                 AssetType.SUBTITLES in block.valid_assets
                 and block.assets.voice_filepath
             ):
-                audio_input = (
-                    block.assets.voice_url
-                    if block.assets.voice_url
-                    else block.assets.voice_filepath
-                )
+                voice_url = block.assets.voice_url
+                if isinstance(voice_url, dict):
+                    audio_input = voice_url.get("url", block.assets.voice_filepath)
+                else:
+                    audio_input = (
+                        voice_url if voice_url else block.assets.voice_filepath
+                    )
                 tts_results.append(
                     TTSResult(
                         id=i,
