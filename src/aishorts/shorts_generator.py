@@ -212,6 +212,7 @@ class ShortsGenerator:
         self.video_gen = VideoGenerator(
             video_template=shorts_config.video_template,
             provider=shorts_config.ffmpeg_config.provider,
+            download_results=False,
             api_key=self.ffmpeg_api_key,
             **shorts_config.ffmpeg_config.provider_config,
         )
@@ -444,31 +445,29 @@ class ShortsGenerator:
             r2 = CloudflareR2()
 
             for reel in reel_series.reels:
-                # Compose Video
-                result = await self.video_gen.compose(reel=reel, session_id=session_id)
-                
-                # If result is already on R2 (from a remote provider), use copy instead of upload
-                file_path_str = result.filepath
-                filename = os.path.basename(file_path_str)
+                filename = f"{uuid.uuid4().hex}.mp4"
                 dest_key = f"generated/{filename}"
+                
+                # Compose video directly to the final R2 destination key.
+                result = await self.video_gen.compose(
+                    reel=reel,
+                    session_id=session_id,
+                    output_key=dest_key,
+                )
 
                 if result.key:
-                    # Track the intermediate key for cleanup
-                    intermediate_keys.append(result.key)
-                    
-                    # Server-side copy to final location
-                    self.logger.info(f"Copying final video on R2 from {result.key} to {dest_key}")
-                    presigned_url = await asyncio.to_thread(r2.copy_file, result.key, dest_key)
+                    presigned_url = result.download_url
                 else:
-                    # Upload local file
                     self.logger.info(f"Uploading final video to R2: {dest_key}")
-                    presigned_url = await asyncio.to_thread(r2.upload_file, file_path_str, dest_key)
+                    presigned_url = await asyncio.to_thread(
+                        r2.upload_file, result.filepath, dest_key
+                    )
 
                 reel_outputs.append(
                     ReelOutput(
                         title=reel.title,
                         description=reel.description,
-                        local_path=file_path_str,
+                        local_path=result.filepath or "",
                         presigned_url=presigned_url,
                     )
                 )
@@ -558,13 +557,16 @@ class ShortsGenerator:
                                 except:
                                     pass
 
-        # 2. Protection: Do NOT delete final outputs (even if they were in the output dirs)
-        final_local_paths = {ro.local_path for ro in reel_outputs}
+        # 2. Collect any local final outputs for deletion (avoid persisting local final files).
+        for ro in reel_outputs:
+            if ro.local_path and os.path.exists(ro.local_path):
+                local_to_delete.add(ro.local_path)
+
+        # Protect final R2 outputs only.
         final_r2_keys = {
             CloudflareR2.get_key_from_url(ro.presigned_url, r2.bucket) for ro in reel_outputs
         }
 
-        local_to_delete -= final_local_paths
         r2_to_delete -= final_r2_keys
 
         # 3. Delete local files

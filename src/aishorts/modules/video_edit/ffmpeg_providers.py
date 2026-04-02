@@ -199,7 +199,7 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         if "error" in result:
             raise Exception(f"Runpod FFmpeg failed: {result['error']}\nLogs: {result.get('logs')}")
 
-        download_url = result.get("download_url")
+        download_url = self.r2.get_public_url(output_key)
         
         # Download locally if requested
         local_filepath = ""
@@ -292,7 +292,7 @@ class ModalFFmpeg(FFmpegProvider):
                 
                 result = await response.json()
 
-        download_url = result.get("download_url")
+        download_url = self.r2.get_public_url(output_key)
 
         # Download locally if requested
         local_filepath = ""

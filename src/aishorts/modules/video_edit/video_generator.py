@@ -14,7 +14,7 @@ class VideoGenerator:
         self,
         video_template: VideoTemplate,
         provider: str = "modal_ffmpeg",
-        download_results: bool = True,
+        download_results: bool = False,
         **kwargs,
     ):
         self.template_config = video_template.template_config
