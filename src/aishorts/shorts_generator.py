@@ -85,7 +85,7 @@ class SongConfig(BaseModel):
 
 class FFmpegConfig(BaseModel):
     provider: str = "modal_ffmpeg"
-    compression_profile: str = "small"
+    compression_profile: str = "very_small"
     quality_value: int | None = None
     max_video_bitrate: str | None = "2M"
     audio_bitrate: str = "96k"
