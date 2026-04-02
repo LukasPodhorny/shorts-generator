@@ -179,14 +179,17 @@ class ModalWav2VecAligner(SubtitlesProvider):
                     if gap < self.min_silence_duration:
                         end = next_start
 
-                words.append(TranscriptionWord(word=word_text, start=start, end=end))
+words.append(TranscriptionWord(word=word_text, start=start, end=end))
 
-            return TranscriptionVerbose(
-                duration=get_wav_length(audio_file),
-                language="english",
-                text=text,
-                words=words,
-            )
+        # Calculate duration from the last segment's end time, or default to 0
+        duration = segments[-1]["end"] if segments else 0.0
+
+        return TranscriptionVerbose(
+            duration=duration,
+            language="english",
+            text=text,
+            words=words,
+        )
 
     async def populate_reel(self, reel: Reel) -> None:
         """Processes all blocks in a reel that require subtitles."""
