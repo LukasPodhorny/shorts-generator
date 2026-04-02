@@ -30,8 +30,72 @@ class FFmpegProvider(Provider):
     OUTPUT_DIR = "output/videos"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    def __init__(self, download_results: bool = True, **kwargs):
+    def __init__(
+        self,
+        download_results: bool = True,
+        compression_profile: str = "balanced",
+        quality_value: int | None = None,
+        max_video_bitrate: str | None = "3M",
+        audio_bitrate: str = "128k",
+        encoder_preset: str | None = None,
+        **kwargs,
+    ):
         self.download_results = download_results
+        self.compression_profile = compression_profile
+        self.quality_value = quality_value
+        self.max_video_bitrate = max_video_bitrate
+        self.audio_bitrate = audio_bitrate
+        self.encoder_preset = encoder_preset
+
+    @staticmethod
+    def _has_any_flag(args: List[str], flags: List[str]) -> bool:
+        return any(flag in args for flag in flags)
+
+    def get_compression_options(self, codec: str, existing_args: List[str]) -> List[str]:
+        """
+        Build lossy compression flags unless caller already provided explicit quality flags.
+        Lower quality_value = better quality/larger files; higher = smaller files.
+        """
+        options: List[str] = []
+        profile = (self.compression_profile or "balanced").lower()
+
+        if codec == "h264_nvenc":
+            if self._has_any_flag(existing_args, ["-cq", "-qp", "-b:v", "-rc"]):
+                return options
+
+            profile_to_cq = {
+                "high_quality": 21,
+                "balanced": 26,
+                "small": 30,
+                "very_small": 33,
+            }
+            cq = self.quality_value if self.quality_value is not None else profile_to_cq.get(profile, 26)
+            preset = self.encoder_preset or ("p5" if profile == "high_quality" else "p4")
+            options.extend(["-rc", "vbr", "-cq", str(cq), "-preset", preset, "-tune", "hq"])
+            if self.max_video_bitrate:
+                options.extend(["-maxrate", self.max_video_bitrate, "-bufsize", self.max_video_bitrate])
+            else:
+                options.extend(["-b:v", "0"])
+        else:
+            if self._has_any_flag(existing_args, ["-crf", "-qp", "-b:v"]):
+                return options
+
+            profile_to_crf = {
+                "high_quality": 20,
+                "balanced": 24,
+                "small": 28,
+                "very_small": 32,
+            }
+            crf = self.quality_value if self.quality_value is not None else profile_to_crf.get(profile, 24)
+            preset = self.encoder_preset or ("slow" if profile == "high_quality" else "medium")
+            options.extend(["-crf", str(crf), "-preset", preset])
+            if self.max_video_bitrate:
+                options.extend(["-maxrate", self.max_video_bitrate, "-bufsize", self.max_video_bitrate])
+
+        if not self._has_any_flag(existing_args, ["-b:a", "-acodec", "-c:a"]) and self.audio_bitrate:
+            options.extend(["-b:a", self.audio_bitrate])
+
+        return options
 
     @abstractmethod
     async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
@@ -90,7 +154,9 @@ class LocalFFmpeg(FFmpegProvider):
             else:
                 resolved_inputs.append(str(inp))
 
+        compression_options = self.get_compression_options(self.video_codec, cmd.args)
         ffmpeg_command = cmd.to_command_list(resolved_inputs)
+        ffmpeg_command.extend(compression_options)
         ffmpeg_command.extend(["-y", output_path])
 
         try:
@@ -180,13 +246,15 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         output_key = kwargs.get("output_key", f"videos/output/{output_filename}")
 
         # 3. Construct the payload for Runpod
+        codec = cmd.video_codec or "h264_nvenc"
         payload = {
             "input": {
                 "inputs": prepared_inputs,
                 "args": cmd.args,
                 # Force h264_nvenc since Runpod has NVIDIA GPUs
-                "video_codec": cmd.video_codec or "h264_nvenc",
-                "output_key": output_key
+                "video_codec": codec,
+                "output_key": output_key,
+                "ffmpeg_options": self.get_compression_options(codec, cmd.args),
             }
         }
 
@@ -268,12 +336,14 @@ class ModalFFmpeg(FFmpegProvider):
         prepared_args = self._prepare_args(cmd.args, session_id=session_id)
         output_key = kwargs.get("output_key", f"videos/output/{output_filename}")
 
+        codec = cmd.video_codec or "h264_nvenc"
         payload = {
             "input": {
                 "inputs": prepared_inputs,
                 "args": prepared_args,
-                "video_codec": cmd.video_codec or "h264_nvenc",
-                "output_key": output_key
+                "video_codec": codec,
+                "output_key": output_key,
+                "ffmpeg_options": self.get_compression_options(codec, prepared_args),
             }
         }
         

@@ -85,6 +85,11 @@ class SongConfig(BaseModel):
 
 class FFmpegConfig(BaseModel):
     provider: str = "modal_ffmpeg"
+    compression_profile: str = "small"
+    quality_value: int | None = None
+    max_video_bitrate: str | None = "2M"
+    audio_bitrate: str = "96k"
+    encoder_preset: str | None = None
     provider_config: dict = Field(default_factory=dict)
 
 
@@ -213,6 +218,11 @@ class ShortsGenerator:
             video_template=shorts_config.video_template,
             provider=shorts_config.ffmpeg_config.provider,
             download_results=False,
+            compression_profile=shorts_config.ffmpeg_config.compression_profile,
+            quality_value=shorts_config.ffmpeg_config.quality_value,
+            max_video_bitrate=shorts_config.ffmpeg_config.max_video_bitrate,
+            audio_bitrate=shorts_config.ffmpeg_config.audio_bitrate,
+            encoder_preset=shorts_config.ffmpeg_config.encoder_preset,
             api_key=self.ffmpeg_api_key,
             **shorts_config.ffmpeg_config.provider_config,
         )
@@ -404,6 +414,10 @@ class ShortsGenerator:
                             num_reels=amount, files=files, user_input=user_input
                         )
 
+                    self.logger.info(
+                        "Generated script JSON:\n%s",
+                        reel_series.model_dump_json(indent=2),
+                    )
                     self._save_debug_state(reel_series, PipelineStage.SCRIPT)
                     if status_callback:
                         await status_callback(PipelineStage.SCRIPT, reel_series)
