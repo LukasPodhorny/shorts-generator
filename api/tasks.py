@@ -6,7 +6,7 @@ from api.database import engine
 from api.models import ReelSeries, Reel, Avatar, VideoTemplate, JobStatus
 
 # Import core library
-from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig, FFmpegConfig
+from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig, FFmpegConfig, ManimConfig
 from aishorts.shorts_generator import ScriptConfig, PipelineStage
 from typing import Optional
 
@@ -77,6 +77,7 @@ def _prepare_generation_config(
             subtitle_config=SubtitleConfig(provider="modal_wav2vec_aligner"),
             script_config=ScriptConfig(provider="minimax", provider_config={"model":"deepseek-ai/deepseek-v3.2"}),
             ffmpeg_config=FFmpegConfig(provider="modal_ffmpeg"),
+            manim_config=ManimConfig(provider_config={"model":"z-ai/glm5"})
         )
 
 

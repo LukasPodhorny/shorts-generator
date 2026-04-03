@@ -25,7 +25,7 @@ class ManimGenerator:
             raise ValueError(f"Unknown Manim provider '{provider}'")
 
         self.manim_provider = cls(**kwargs)
-        self.llm_gen = LLMGenerator(provider=llm_provider)
+        self.llm_gen = LLMGenerator(provider=llm_provider, **kwargs)
 
     def _extract_code(self, text: str) -> str:
         # Try to find python code block
@@ -41,7 +41,7 @@ class ManimGenerator:
         # Assume the whole text is code if no blocks found
         return textwrap.dedent(text).strip()
 
-    async def generate(self, prompt: str, retries: int = 3, **kwargs) -> ManimResult:
+    async def generate(self, prompt: str, retries: int = 5, **kwargs) -> ManimResult:
         last_error = None
 
         for attempt in range(1, retries + 1):

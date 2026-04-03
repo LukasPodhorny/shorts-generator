@@ -1,6 +1,6 @@
 import warnings
 import logging
-from aishorts.shorts_generator import ScriptConfig
+from aishorts.shorts_generator import ManimConfig, ScriptConfig
 
 warnings.filterwarnings("ignore", category=UserWarning)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -70,6 +70,7 @@ def main():
             provider=args.llm_provider,
             **({"provider_config": {"model": args.model}} if args.model else {}),
         ),
+        manim_config=ManimConfig(provider_config={"model":"z-ai/glm5"})
     )
 
     shorts_generator = ShortsGenerator(shorts_config=shorts_config)
