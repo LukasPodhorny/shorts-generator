@@ -556,11 +556,11 @@ class ShortsGenerator:
                         if path and os.path.exists(path) and "output" in path:
                             local_to_delete.add(path)
 
-                    # Collect R2 keys
+                    # Collect R2 keys (staticface_url excluded - permanent assets in shorts-generator/assets/)
                     urls_to_check = [
                         getattr(assets, "voice_url", None),
                         getattr(assets, "lipsync_url", None),
-                        getattr(assets, "staticface_url", None),
+                        # staticface_url intentionally excluded - permanent assets
                         getattr(assets, "song_url", None),
                         getattr(assets, "question_url", None),
                     ]
