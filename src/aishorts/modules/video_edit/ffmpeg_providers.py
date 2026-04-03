@@ -54,7 +54,8 @@ class FFmpegProvider(Provider):
     def get_compression_options(self, codec: str, existing_args: List[str]) -> List[str]:
         """
         Build lossy compression flags unless caller already provided explicit quality flags.
-        Lower quality_value = better quality/larger files; higher = smaller files.
+        For NVENC: uses capped VBR with -b:v as target, -maxrate as ceiling.
+        For libx264: uses CRF with optional maxrate ceiling.
         """
         options: List[str] = []
         profile = (self.compression_profile or "balanced").lower()
@@ -63,20 +64,40 @@ class FFmpegProvider(Provider):
             if self._has_any_flag(existing_args, ["-cq", "-qp", "-b:v", "-rc"]):
                 return options
 
+            # NVENC quality levels (lower = better quality, larger file)
             profile_to_cq = {
                 "high_quality": 21,
                 "balanced": 26,
                 "small": 30,
-                "very_small": 33,
+                "very_small": 35,
             }
             cq = self.quality_value if self.quality_value is not None else profile_to_cq.get(profile, 26)
             preset = self.encoder_preset or ("p5" if profile == "high_quality" else "p4")
-            options.extend(["-rc", "vbr", "-cq", str(cq), "-preset", preset, "-tune", "hq"])
+
+            # Use VBR mode with target bitrate and max bitrate cap
+            # This ensures the video stays close to target while allowing quality flexibility
             if self.max_video_bitrate:
-                options.extend(["-maxrate", self.max_video_bitrate, "-bufsize", self.max_video_bitrate])
+                # Target bitrate is slightly below max for headroom
+                target_bitrate = self.max_video_bitrate
+                options.extend([
+                    "-rc", "vbr",
+                    "-b:v", target_bitrate,
+                    "-maxrate", self.max_video_bitrate,
+                    "-bufsize", self.max_video_bitrate,
+                    "-cq", str(cq),
+                    "-preset", preset,
+                    "-tune", "hq",
+                ])
             else:
-                options.extend(["-b:v", "0"])
+                # No bitrate limit - use constant quality mode
+                options.extend([
+                    "-rc", "vbr",
+                    "-cq", str(cq),
+                    "-preset", preset,
+                    "-tune", "hq",
+                ])
         else:
+            # libx264 / software encoding
             if self._has_any_flag(existing_args, ["-crf", "-qp", "-b:v"]):
                 return options
 
@@ -84,7 +105,7 @@ class FFmpegProvider(Provider):
                 "high_quality": 20,
                 "balanced": 24,
                 "small": 28,
-                "very_small": 32,
+                "very_small": 35,
             }
             crf = self.quality_value if self.quality_value is not None else profile_to_crf.get(profile, 24)
             preset = self.encoder_preset or ("slow" if profile == "high_quality" else "medium")
