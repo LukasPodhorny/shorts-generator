@@ -72,29 +72,18 @@ REEL SERIES STRUCTURE:
         Each reel should include a brief description summarizing its focus.
 
         Reels should be designed to work independently but also flow as a series.
-
+   
     Reel length and pacing:
+        WORD COUNT IS LAW: Do not measure in seconds. A 3-minute reel is strictly 350 to 450 words in total across all speakers. You must not exceed 450 words per reel.
 
-        Each reel should be approximately 3 minutes of spoken content (~180 seconds).
+        Block Count: Use exactly 6 to 10 dialogue blocks per reel.
 
-        This translates to approximately 5-15 dialogue blocks per reel.
+        Sentence Limits: Each dialogue block must be exactly 2 to 5 conversational sentences. NEVER exceed 5 sentences in a single block.
 
-        The number of blocks depends on how much each character says per turn:
+        Pacing Variety: * Fast exchanges: 2-sentence blocks of quick reactions.
 
-            Faster back-and-forth style: 12-15 shorter blocks with quick exchanges
+            Explanations: 4-sentence blocks of deeper content.
 
-            Balanced conversation: 8-10 blocks with mixed lengths
-
-            Deeper explanations: 5-7 longer blocks where characters speak more per turn
-
-        Each block has 1-8 conversational sentences in a single paragraph.
-
-        Vary the length of blocks naturally - some can be quick reactions (1-2 sentences),
-        others longer explanations (5-8 sentences).
-
-        Estimate duration as 150-200 seconds per reel to account for natural speech pacing.
-
-        Include an estimated duration in seconds for each reel.
 
     Content distribution across reels:
 
