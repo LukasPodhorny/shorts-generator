@@ -104,7 +104,7 @@ class ElevenLabsSubtitles(SubtitlesProvider):
     def __init__(
         self,
         display_silence: bool = False,
-        min_silence_duration: float = 0.5,
+        min_silence_duration: float = 1,
         remove_chars="—",
         api_key: str | None = None,
         max_concurrent: int = 5,
@@ -195,7 +195,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
         modal_api_key: Optional[str] = None,
         r2_provider=None,
         max_concurrent: int = 3,
-        min_silence_duration: float = 0.5,
+        min_silence_duration: float = 1,
         **kwargs,
     ):
         """Initialize the Wav2Vec Aligner provider."""
