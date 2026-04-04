@@ -45,8 +45,15 @@ def _prepare_generation_config(
         if not series:
             return None
 
+        # Mark series and reels as processing
         series.status = JobStatus.PROCESSING
         session.add(series)
+
+        reels = session.exec(select(Reel).where(Reel.series_id == series_id)).all()
+        for reel in reels:
+            reel.status = JobStatus.PROCESSING
+            session.add(reel)
+
         session.commit()
 
         # 1. Load Configuration from DB
@@ -115,12 +122,19 @@ def _save_generation_results(series_id: int, output):
 
 
 def _mark_series_failed(series_id: int):
-    """Sync helper to mark series as failed."""
+    """Sync helper to mark series and all its reels as failed."""
     with Session(engine) as session:
         series = session.get(ReelSeries, series_id)
         if series:
             series.status = JobStatus.FAILED
             session.add(series)
+
+            # Mark all reels as failed too
+            reels = session.exec(select(Reel).where(Reel.series_id == series_id)).all()
+            for reel in reels:
+                reel.status = JobStatus.FAILED
+                session.add(reel)
+
             session.commit()
 
 
