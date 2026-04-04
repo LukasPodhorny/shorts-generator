@@ -46,24 +46,8 @@ async def start_generation(
     if not db_template:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    # Determine cost based on assets
-    # Base cost: 1 credit per reel
-    # Surcharge for Motion Graphics (Questions): +1 credit per reel
-    unit_cost = 1
-    template_data = db_template.data
-    
-    # We check the 'required_assets' which we know is a list of asset type strings
-    # in the Pydantic model's data
-    from aishorts.modules.video_edit.video_edit_templates import EditTemplate
-    try:
-        # Get the template class to check its required assets reliably
-        template_name = template_data.get("edit_template", request.template_name).lower()
-        template_cls = EditTemplate.get(template_name)
-        if template_cls and AssetType.QUESTION in template_cls.required_assets:
-            unit_cost += 1
-    except:
-        # Fallback if class not found or other error
-        pass
+    # Use the template's credit cost from database (with fallback to 1)
+    unit_cost = getattr(db_template, 'credits', 1) or 1
 
     total_cost = request.amount * unit_cost
 

@@ -77,6 +77,7 @@ class VideoTemplate(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     # Store the full Pydantic model data as JSON
     data: dict = Field(sa_column=Column(JSON))
+    credits: int = Field(default=1, description="Credits cost per reel")
 
     def to_pydantic(self) -> PydanticVideoTemplate:
         return PydanticVideoTemplate(**self.data)
@@ -85,6 +86,13 @@ class VideoTemplate(SQLModel, table=True):
 class VideoTemplateCreate(SQLModel):
     name: str
     data: dict
+
+
+class VideoTemplateRead(SQLModel):
+    """Response model for VideoTemplate with credits"""
+    id: int
+    name: str
+    credits: int
 
 
 class ReelSeries(SQLModel, table=True):
