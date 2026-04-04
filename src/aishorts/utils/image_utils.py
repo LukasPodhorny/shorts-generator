@@ -62,8 +62,13 @@ def crop_to_aspect_ratio(
 
 
 def crop_to_16_9(input_path: str, output_path: str) -> str:
-    """Convenience function to crop to 16:9 aspect ratio."""
+    """Convenience function to crop to 16:9 aspect ratio (horizontal)."""
     return crop_to_aspect_ratio(input_path, output_path, (16, 9))
+
+
+def crop_to_9_16(input_path: str, output_path: str) -> str:
+    """Convenience function to crop to 9:16 aspect ratio (vertical)."""
+    return crop_to_aspect_ratio(input_path, output_path, (9, 16))
 
 
 def style_image(

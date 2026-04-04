@@ -1,7 +1,7 @@
 from aishorts.modules.image.image_providers import ImageProvider, ImageResult
 from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread
-from aishorts.utils.image_utils import ImageStyle, style_image, crop_to_16_9
+from aishorts.utils.image_utils import ImageStyle, style_image, crop_to_9_16
 import asyncio
 from aishorts.modules.provider import MediaFile
 from aishorts.modules.script.script import AssetType
@@ -60,17 +60,17 @@ class ImageGenerator:
         self,
         prompt: str,
         output_path: str,
-        width: int = 1920,
-        height: int = 1080,
+        width: int = 1080,
+        height: int = 1920,
     ) -> str:
         """
-        Generate a thumbnail image with 16:9 aspect ratio.
+        Generate a thumbnail image with 9:16 aspect ratio (vertical).
 
         Args:
             prompt: The prompt/keywords for image generation
             output_path: Where to save the thumbnail
-            width: Target width (default 1920 for 1080p)
-            height: Target height (default 1080 for 1080p)
+            width: Target width (default 1080 for vertical)
+            height: Target height (default 1920 for vertical)
 
         Returns:
             Path to the generated thumbnail
@@ -98,8 +98,8 @@ class ImageGenerator:
                 import shutil
                 shutil.move(results[0].media.path, output_path)
 
-        # Ensure 16:9 aspect ratio by cropping if needed
-        await asyncio.to_thread(crop_to_16_9, output_path, output_path)
+        # Ensure 9:16 aspect ratio by cropping if needed
+        await asyncio.to_thread(crop_to_9_16, output_path, output_path)
 
         return output_path
 
