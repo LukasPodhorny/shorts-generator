@@ -127,6 +127,7 @@ class Reel(SQLModel, table=True):
     title: Optional[str] = None
     description: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    duration: Optional[str] = None  # Video duration in "MM:SS" or "HH:MM:SS" format
 
     series: ReelSeries = Relationship(back_populates="reels")
 
@@ -156,6 +157,7 @@ class ReelRead(SQLModel):
     title: Optional[str] = None
     description: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    duration: Optional[str] = None
 
 
 class ReelSeriesRead(SQLModel):

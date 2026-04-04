@@ -105,6 +105,7 @@ def _save_generation_results(series_id: int, output):
                 reel.local_path = reel_out.local_path
                 reel.cloudflare_r2_url = reel_out.presigned_url
                 reel.thumbnail_url = reel_out.thumbnail_url
+                reel.duration = reel_out.duration
                 reel.status = JobStatus.DONE
                 session.add(reel)
 
