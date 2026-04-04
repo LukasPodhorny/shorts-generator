@@ -138,6 +138,9 @@ class Reel(BaseModel):
     thumbnail_prompt: Optional[str] = Field(
         None, description="Visual prompt for generating a thumbnail image for this reel"
     )
+    thumbnail_url: Optional[str] = Field(
+        None, description="URL of the generated thumbnail image for this reel"
+    )
     blocks: List[Block] = Field(
         description="The dialogue blocks that make up this reel"
     )
@@ -151,6 +154,9 @@ class ReelSeries(BaseModel):
     )
     thumbnail_prompt: Optional[str] = Field(
         None, description="Visual prompt for generating a thumbnail image for the series"
+    )
+    thumbnail_url: Optional[str] = Field(
+        None, description="URL of the generated thumbnail image for the series"
     )
     reels: List[Reel] = Field(
         description="Ordered list of reels, each covering a chapter/segment of the topic"

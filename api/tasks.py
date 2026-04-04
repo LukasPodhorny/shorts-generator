@@ -31,6 +31,28 @@ def _update_series_status(series_id: int, stage: PipelineStage, reel_series=None
         # Update topic as soon as it's available (after SCRIPT stage)
         if reel_series and reel_series.topic:
             series.topic = reel_series.topic
+
+        # Update series thumbnail URL if available
+        if reel_series and hasattr(reel_series, 'thumbnail_url') and reel_series.thumbnail_url:
+            series.thumbnail_url = reel_series.thumbnail_url
+
+        # Update reel titles, descriptions, and thumbnails after SCRIPT stage
+        if reel_series and reel_series.reels:
+            db_reels = session.exec(
+                select(Reel).where(Reel.series_id == series_id)
+            ).all()
+
+            for i, generated_reel in enumerate(reel_series.reels):
+                if i < len(db_reels):
+                    db_reel = db_reels[i]
+                    if generated_reel.title:
+                        db_reel.title = generated_reel.title
+                    if generated_reel.description:
+                        db_reel.description = generated_reel.description
+                    # Update thumbnail URL if available
+                    if hasattr(generated_reel, 'thumbnail_url') and generated_reel.thumbnail_url:
+                        db_reel.thumbnail_url = generated_reel.thumbnail_url
+                    session.add(db_reel)
             
         session.add(series)
         session.commit()

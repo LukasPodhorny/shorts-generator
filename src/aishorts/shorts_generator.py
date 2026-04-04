@@ -502,6 +502,16 @@ class ShortsGenerator:
                         except Exception as e:
                             self.logger.warning(f"Failed to generate thumbnail for reel {i}: {e}")
 
+            # Store thumbnail URLs in reel_series for callback
+            reel_series.thumbnail_url = series_thumbnail_url
+            for i, reel in enumerate(reel_series.reels):
+                if i in reel_thumbnails:
+                    reel.thumbnail_url = reel_thumbnails[i]
+
+            # Call callback to update database with thumbnails
+            if status_callback:
+                await status_callback(PipelineStage.SCRIPT, reel_series)
+
             # --- 3. Static Faces ---
             # fast enough to run anytime
 
