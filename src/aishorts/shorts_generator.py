@@ -455,15 +455,16 @@ class ShortsGenerator:
                 self.logger.info("Generating thumbnails...")
                 r2 = CloudflareR2()
 
-                # Generate series thumbnail from topic
-                if reel_series.topic:
+                # Generate series thumbnail from thumbnail_prompt (fallback to topic)
+                thumbnail_source = reel_series.thumbnail_prompt or reel_series.topic
+                if thumbnail_source:
                     try:
                         series_thumb_path = os.path.join(
                             self.image_gen.image_gen.OUTPUT_DIR,
                             f"series_thumb_{uuid.uuid4().hex}.png"
                         )
                         await self.image_gen.generate_thumbnail(
-                            prompt=reel_series.topic,
+                            prompt=thumbnail_source,
                             output_path=series_thumb_path,
                         )
                         series_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"
@@ -477,16 +478,17 @@ class ShortsGenerator:
                     except Exception as e:
                         self.logger.warning(f"Failed to generate series thumbnail: {e}")
 
-                # Generate thumbnails for each reel from description
+                # Generate thumbnails for each reel from thumbnail_prompt (fallback to description)
                 for i, reel in enumerate(reel_series.reels):
-                    if reel.description:
+                    reel_thumb_source = reel.thumbnail_prompt or reel.description
+                    if reel_thumb_source:
                         try:
                             reel_thumb_path = os.path.join(
                                 self.image_gen.image_gen.OUTPUT_DIR,
                                 f"reel_thumb_{uuid.uuid4().hex}.png"
                             )
                             await self.image_gen.generate_thumbnail(
-                                prompt=reel.description,
+                                prompt=reel_thumb_source,
                                 output_path=reel_thumb_path,
                             )
                             reel_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"

@@ -135,6 +135,9 @@ class Reel(BaseModel):
     description: Optional[str] = Field(
         None, description="Brief description of what this reel covers"
     )
+    thumbnail_prompt: Optional[str] = Field(
+        None, description="Visual prompt for generating a thumbnail image for this reel"
+    )
     blocks: List[Block] = Field(
         description="The dialogue blocks that make up this reel"
     )
@@ -145,6 +148,9 @@ class ReelSeries(BaseModel):
 
     topic: str = Field(
         description="Overall topic being explained (e.g., 'Photosynthesis')"
+    )
+    thumbnail_prompt: Optional[str] = Field(
+        None, description="Visual prompt for generating a thumbnail image for the series"
     )
     reels: List[Reel] = Field(
         description="Ordered list of reels, each covering a chapter/segment of the topic"

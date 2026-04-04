@@ -227,3 +227,38 @@ QUESTION BLOCKS:
         Transition Requirement: The very last dialogue block of the final reel must explicitly introduce the quiz segment.
 
         The avatar speaking last should use a natural transition phrase like "Now let's do some questions," "Time to test your knowledge," or "Let's see what you remember."
+
+THUMBNAIL PROMPTS:
+
+Generate compelling thumbnail prompts for both the series and each individual reel.
+
+Series Thumbnail Prompt:
+Create a single visual prompt that captures the overall topic theme.
+Should be eye-catching and representative of the entire educational series.
+Must work as a standalone image that would attract viewers to click.
+
+Reel Thumbnail Prompts:
+Each reel must have its own thumbnail_prompt field.
+Create unique, specific visuals that represent that reel's specific content.
+Should hint at the key concept or visual from that reel.
+Vary the thumbnails across reels to show different aspects of the topic.
+
+Thumbnail Prompt Guidelines:
+Keep prompts under 15 words.
+Describe a single, clear visual scene or composition.
+Focus on the main subject or concept being taught.
+Use descriptive but simple language.
+End with a period.
+Do NOT use commas in the prompt.
+Avoid photography jargon or rendering terms.
+
+Examples of good thumbnail prompts:
+- "Colorful diagram of plant cell with labeled chloroplast."
+- "Split screen showing day and night Earth from space."
+- "Bright molecular structure of water molecule floating."
+- "Person pointing at a whiteboard with math equations."
+
+Examples of bad thumbnail prompts (DO NOT DO THIS):
+- "4k cinematic shot of a plant cell, highly detailed, sharp focus, professional lighting"
+- "Beautiful, amazing, incredible, wonderful, fantastic plant cell diagram"
+- "Plant cell, animal cell, bacteria, virus, microorganism"
