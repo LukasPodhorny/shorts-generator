@@ -97,6 +97,7 @@ class ReelSeries(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     status: JobStatus = Field(default=JobStatus.QUEUED, sa_column=Column(String))
     topic: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
     user: User = Relationship(back_populates="series")
     reels: List["Reel"] = Relationship(back_populates="series", cascade_delete=True)
@@ -115,6 +116,7 @@ class Reel(SQLModel, table=True):
     local_path: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
     series: ReelSeries = Relationship(back_populates="reels")
 
@@ -143,6 +145,7 @@ class ReelRead(SQLModel):
     local_path: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 
 class ReelSeriesRead(SQLModel):
@@ -151,6 +154,7 @@ class ReelSeriesRead(SQLModel):
     created_at: datetime
     status: JobStatus
     topic: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     reels: List[ReelRead]
 
 

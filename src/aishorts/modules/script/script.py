@@ -156,10 +156,12 @@ class ReelOutput(BaseModel):
     description: Optional[str]
     local_path: str
     presigned_url: str
+    thumbnail_url: Optional[str] = None
 
 
 class ReelSeriesOutput(BaseModel):
     topic: str
+    thumbnail_url: Optional[str] = None
     reels: List[ReelOutput]
 
 

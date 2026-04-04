@@ -1,7 +1,7 @@
 from aishorts.modules.image.image_providers import ImageProvider, ImageResult
 from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread
-from aishorts.utils.image_utils import ImageStyle, style_image
+from aishorts.utils.image_utils import ImageStyle, style_image, crop_to_16_9
 import asyncio
 from aishorts.modules.provider import MediaFile
 from aishorts.modules.script.script import AssetType
@@ -55,6 +55,53 @@ class ImageGenerator:
         await asyncio.gather(*[_style_task(r) for r in results])
 
         return results
+
+    async def generate_thumbnail(
+        self,
+        prompt: str,
+        output_path: str,
+        width: int = 1920,
+        height: int = 1080,
+    ) -> str:
+        """
+        Generate a thumbnail image with 16:9 aspect ratio.
+
+        Args:
+            prompt: The prompt/keywords for image generation
+            output_path: Where to save the thumbnail
+            width: Target width (default 1920 for 1080p)
+            height: Target height (default 1080 for 1080p)
+
+        Returns:
+            Path to the generated thumbnail
+        """
+        # Try to use provider's native size support (like RunPodAI)
+        if hasattr(self.image_gen, 'get_image'):
+            # Use get_image with specific size for AI providers
+            result = await self.image_gen.get_image(
+                prompt=prompt,
+                size=f"{width}*{height}",
+                id="thumbnail"
+            )
+            # Move to output path
+            import shutil
+            shutil.move(result.media.path, output_path)
+        else:
+            # For providers like Unsplash, generate and crop
+            results = await self.image_gen.get_images(
+                queries=[prompt],
+                max_width=width,
+                max_height=height,
+                ids=["thumbnail"]
+            )
+            if results and results[0]:
+                import shutil
+                shutil.move(results[0].media.path, output_path)
+
+        # Ensure 16:9 aspect ratio by cropping if needed
+        await asyncio.to_thread(crop_to_16_9, output_path, output_path)
+
+        return output_path
 
     async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
         """Generates images and populates the reel.blocks[i].assets fields in-place."""

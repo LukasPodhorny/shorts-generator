@@ -1,6 +1,7 @@
 from PIL import Image, ImageDraw, ImageFilter, ImageColor, ImageChops
 import os
 from pydantic import BaseModel
+import math
 
 
 class ImageStyle(BaseModel):
@@ -9,6 +10,60 @@ class ImageStyle(BaseModel):
     shadow_offset: tuple[int, int] = (0, 0)
     shadow_color: str = "#000000"
     shadow_opacity: float = 0.5
+
+
+def crop_to_aspect_ratio(
+    input_path: str,
+    output_path: str,
+    target_ratio: tuple[int, int] = (16, 9),
+) -> str:
+    """
+    Crops an image to the specified aspect ratio by center-cropping.
+
+    Args:
+        input_path: Path to the source image.
+        output_path: Path where the cropped image will be saved.
+        target_ratio: Target aspect ratio as (width, height) tuple. Default is 16:9.
+
+    Returns:
+        The output_path.
+    """
+    with Image.open(input_path) as img:
+        img = img.convert("RGBA")
+
+        current_width, current_height = img.size
+        target_width, target_height = target_ratio
+
+        # Calculate target aspect ratio
+        target_aspect = target_width / target_height
+        current_aspect = current_width / current_height
+
+        if current_aspect > target_aspect:
+            # Image is wider than target - crop width
+            new_width = int(current_height * target_aspect)
+            new_height = current_height
+        else:
+            # Image is taller than target - crop height
+            new_width = current_width
+            new_height = int(current_width / target_aspect)
+
+        # Calculate crop position (center crop)
+        left = (current_width - new_width) // 2
+        top = (current_height - new_height) // 2
+        right = left + new_width
+        bottom = top + new_height
+
+        # Crop and save
+        cropped = img.crop((left, top, right, bottom))
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        cropped.save(output_path)
+
+    return output_path
+
+
+def crop_to_16_9(input_path: str, output_path: str) -> str:
+    """Convenience function to crop to 16:9 aspect ratio."""
+    return crop_to_aspect_ratio(input_path, output_path, (16, 9))
 
 
 def style_image(

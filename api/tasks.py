@@ -88,8 +88,9 @@ def _save_generation_results(series_id: int, output):
         if not series:
             return
 
-        # Update Series Topic
+        # Update Series Topic and Thumbnail
         series.topic = output.topic
+        series.thumbnail_url = output.thumbnail_url
         session.add(series)
 
         # 4. Upload and Update Reels
@@ -103,6 +104,7 @@ def _save_generation_results(series_id: int, output):
                 reel.description = reel_out.description
                 reel.local_path = reel_out.local_path
                 reel.cloudflare_r2_url = reel_out.presigned_url
+                reel.thumbnail_url = reel_out.thumbnail_url
                 reel.status = JobStatus.DONE
                 session.add(reel)
 

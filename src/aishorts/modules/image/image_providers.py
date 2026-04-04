@@ -4,7 +4,7 @@ import asyncio
 import aiohttp
 from dataclasses import dataclass
 import os
-from aishorts.utils.r2_handler import download_from_url, CloudflareR2
+from aishorts.utils.r2_handler import download_from_url
 from aishorts.modules.script.script import Reel, AssetType
 from typing import Any
 
@@ -166,6 +166,166 @@ class Unsplash(ImageProvider):
         results = await self.get_images(
             queries=queries, max_width=max_width, max_height=max_height, ids=ids
         )
+
+        for res in results:
+            if res:
+                block_idx, media_id = res.media.id
+                block = reel.blocks[block_idx]
+                block.assets.media_map[media_id] = res.media.path
+                block.assets.media_url_map[media_id] = res.media.url
+
+
+class RunPodAI(ImageProvider):
+    """AI image generation provider using RunPod's public z-image-turbo endpoint."""
+
+    provider_name = "runpod_ai"
+
+    def __init__(
+        self,
+        max_concurrent_downloads: int = 3,
+        api_key: str | None = None,
+        endpoint_id: str = "z-image-turbo",
+        default_size: str = "1024*1024",
+        default_strength: float = 0.8,
+        enable_safety_checker: bool = True,
+        timeout: int = 300,
+    ):
+        self.api_key = api_key or os.getenv("RUNPOD_API_KEY")
+        self.endpoint_id = endpoint_id
+        self.base_url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
+        self.default_size = default_size
+        self.default_strength = default_strength
+        self.enable_safety_checker = enable_safety_checker
+        self.timeout = timeout
+        self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
+
+    async def _generate_image(
+        self,
+        prompt: str,
+        size: str | None = None,
+        strength: float | None = None,
+        seed: int = -1,
+    ) -> tuple[str, str]:
+        """Generate an image and return (image_url, prompt)."""
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        payload = {
+            "input": {
+                "prompt": prompt,
+                "size": size or self.default_size,
+                "strength": strength if strength is not None else self.default_strength,
+                "seed": seed,
+                "output_format": "png",
+                "enable_safety_checker": self.enable_safety_checker,
+            }
+        }
+
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.base_url, headers=headers, json=payload
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+
+        # Extract image URL from response
+        # RunPod response format: {"output": "https://..."}
+        image_url = data.get("output")
+        if not image_url:
+            raise RuntimeError(f"No image URL in RunPod response: {data}")
+
+        return image_url, prompt
+
+    async def _download_image(self, url: str, prompt: str, id: Any) -> ImageResult:
+        """Download generated image to local storage."""
+        async with self.semaphore:
+            path = await download_from_url(url, self.OUTPUT_DIR, ".png")
+            return ImageResult(
+                media=MediaFile(id=id, url=url, path=path), alt=prompt
+            )
+
+    async def get_image(
+        self,
+        prompt: str,
+        size: str | None = None,
+        strength: float | None = None,
+        seed: int = -1,
+        id: Any = 0,
+    ) -> ImageResult:
+        """Generate and download a single image."""
+        image_url, alt = await self._generate_image(
+            prompt=prompt, size=size, strength=strength, seed=seed
+        )
+        return await self._download_image(image_url, alt, id)
+
+    async def get_images(
+        self,
+        prompts: list[str],
+        sizes: list[str] | None = None,
+        strengths: list[float] | None = None,
+        seeds: list[int] | None = None,
+        ids: list[Any] | None = None,
+        **kwargs,  # Accept but ignore max_width/max_height from base class
+    ) -> list[ImageResult | None]:
+        """Generate and download multiple images concurrently."""
+        if ids is None:
+            ids = list(range(len(prompts)))
+
+        if sizes is None:
+            sizes = [None] * len(prompts)
+        if strengths is None:
+            strengths = [None] * len(prompts)
+        if seeds is None:
+            seeds = [-1] * len(prompts)
+
+        total = len(prompts)
+        completed = 0
+
+        async def _generate_and_download(prompt, size, strength, seed, id):
+            nonlocal completed
+            try:
+                image_url, alt = await self._generate_image(
+                    prompt=prompt, size=size, strength=strength, seed=seed
+                )
+                result = await self._download_image(image_url, alt, id)
+                completed += 1
+                print(f"Generated images: {completed}/{total}")
+                return result
+            except Exception as e:
+                print(f"Failed to generate image for prompt '{prompt}': {e}")
+                completed += 1
+                return None
+
+        tasks = [
+            _generate_and_download(prompt, size, strength, seed, id)
+            for prompt, size, strength, seed, id in zip(
+                prompts, sizes, strengths, seeds, ids
+            )
+        ]
+
+        results = await asyncio.gather(*tasks)
+        return list(results)
+
+    async def populate_reel(
+        self,
+        reel: Reel,
+        **kwargs,  # Accept but ignore max_width/max_height
+    ) -> None:
+        """Generate images for all media items in the reel."""
+        prompts = []
+        ids = []
+
+        for i, block in enumerate(reel.blocks):
+            if AssetType.IMAGES in block.valid_assets and block.media:
+                for media_item in block.media:
+                    if media_item.type == "image":
+                        prompts.append(media_item.keywords)
+                        ids.append((i, media_item.id))
+
+        results = await self.get_images(prompts=prompts, ids=ids, **kwargs)
 
         for res in results:
             if res:

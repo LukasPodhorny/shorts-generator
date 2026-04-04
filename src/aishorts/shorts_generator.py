@@ -445,6 +445,61 @@ class ShortsGenerator:
                 self.logger.warning("No script generated or loaded. Exiting.")
                 return ReelSeriesOutput(topic="Error", reels=[])
 
+            # --- 2.5. Thumbnail Generation ---
+            # Generate thumbnails after script is available
+
+            series_thumbnail_url = None
+            reel_thumbnails = {}  # Map reel index to thumbnail URL
+
+            if AssetType.IMAGES in self.required_assets:
+                self.logger.info("Generating thumbnails...")
+                r2 = CloudflareR2()
+
+                # Generate series thumbnail from topic
+                if reel_series.topic:
+                    try:
+                        series_thumb_path = os.path.join(
+                            self.image_gen.image_gen.OUTPUT_DIR,
+                            f"series_thumb_{uuid.uuid4().hex}.png"
+                        )
+                        await self.image_gen.generate_thumbnail(
+                            prompt=reel_series.topic,
+                            output_path=series_thumb_path,
+                        )
+                        series_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"
+                        series_thumbnail_url = await asyncio.to_thread(
+                            r2.upload_file, series_thumb_path, series_thumb_key
+                        )
+                        self.logger.info(f"Series thumbnail uploaded: {series_thumbnail_url}")
+                        # Clean up local file
+                        if os.path.exists(series_thumb_path):
+                            os.remove(series_thumb_path)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to generate series thumbnail: {e}")
+
+                # Generate thumbnails for each reel from description
+                for i, reel in enumerate(reel_series.reels):
+                    if reel.description:
+                        try:
+                            reel_thumb_path = os.path.join(
+                                self.image_gen.image_gen.OUTPUT_DIR,
+                                f"reel_thumb_{uuid.uuid4().hex}.png"
+                            )
+                            await self.image_gen.generate_thumbnail(
+                                prompt=reel.description,
+                                output_path=reel_thumb_path,
+                            )
+                            reel_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"
+                            reel_thumbnails[i] = await asyncio.to_thread(
+                                r2.upload_file, reel_thumb_path, reel_thumb_key
+                            )
+                            self.logger.info(f"Reel {i} thumbnail uploaded")
+                            # Clean up local file
+                            if os.path.exists(reel_thumb_path):
+                                os.remove(reel_thumb_path)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to generate thumbnail for reel {i}: {e}")
+
             # --- 3. Static Faces ---
             # fast enough to run anytime
 
@@ -504,10 +559,15 @@ class ShortsGenerator:
                         description=reel.description,
                         local_path=result.filepath or "",
                         presigned_url=presigned_url,
+                        thumbnail_url=reel_thumbnails.get(i),
                     )
                 )
 
-            return ReelSeriesOutput(topic=reel_series.topic, reels=reel_outputs)
+            return ReelSeriesOutput(
+                topic=reel_series.topic,
+                thumbnail_url=series_thumbnail_url,
+                reels=reel_outputs
+            )
 
         finally:
             # --- 7. Cleanup ---
