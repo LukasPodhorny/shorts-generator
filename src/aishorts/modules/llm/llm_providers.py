@@ -14,14 +14,48 @@ import tempfile
 from urllib.parse import urlparse
 
 
+def _get_r2_presigned_url(key: str) -> str:
+    """Generate a presigned URL for an R2 object using environment variables."""
+    import boto3
+
+    endpoint_url = os.getenv("R2_ENDPOINT")
+    access_key = os.getenv("R2_ACCESS_KEY_ID")
+    secret_key = os.getenv("R2_SECRET_ACCESS_KEY")
+    bucket = os.getenv("R2_BUCKET")
+
+    if not all([endpoint_url, access_key, secret_key, bucket]):
+        raise ValueError("R2 environment variables not configured")
+
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name="auto",
+    )
+
+    url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=3600,  # 1 hour
+    )
+    return url
+
+
 async def _ensure_local_file(
     file_ref: str, session: aiohttp.ClientSession
 ) -> tuple[str, bool]:
     """
     Helper to ensure a file reference is a local path.
     If it's a URL, it downloads it to a temp file.
+    If it's an R2 key (starts with 'uploads/'), it generates a presigned URL and downloads.
     Returns (file_path, is_temporary).
     """
+    # Check if it's an R2 key (not a URL and not a local path)
+    if not file_ref.startswith(("http://", "https://")) and not os.path.isabs(file_ref):
+        # Assume it's an R2 key - generate presigned URL
+        file_ref = _get_r2_presigned_url(file_ref)
+
     if file_ref.startswith(("http://", "https://")):
         parsed = urlparse(file_ref)
         ext = os.path.splitext(parsed.path)[1] or ".bin"
