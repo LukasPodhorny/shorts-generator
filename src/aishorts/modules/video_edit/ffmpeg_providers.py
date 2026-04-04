@@ -23,6 +23,7 @@ class FFmpegResult:
     download_url: str
     filepath: str
     key: Optional[str] = None
+    duration: Optional[str] = None  # Video duration in "MM:SS" or "HH:MM:SS" format
 
 
 class FFmpegProvider(Provider):
@@ -289,16 +290,18 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
             raise Exception(f"Runpod FFmpeg failed: {result['error']}\nLogs: {result.get('logs')}")
 
         download_url = self.r2.get_public_url(output_key)
-        
+        duration = result.get("duration")  # Extract duration from response
+
         # Download locally if requested
         local_filepath = ""
         if self.download_results:
             local_filepath = await download_from_url(download_url, self.OUTPUT_DIR)
-        
+
         return FFmpegResult(
             download_url=download_url,
             filepath=local_filepath,
-            key=output_key
+            key=output_key,
+            duration=duration
         )
 
 class ModalFFmpeg(FFmpegProvider):
@@ -384,6 +387,7 @@ class ModalFFmpeg(FFmpegProvider):
                 result = await response.json()
 
         download_url = self.r2.get_public_url(output_key)
+        duration = result.get("duration")  # Extract duration from Modal response
 
         # Download locally if requested
         local_filepath = ""
@@ -393,5 +397,6 @@ class ModalFFmpeg(FFmpegProvider):
         return FFmpegResult(
             download_url=download_url,
             filepath=local_filepath,
-            key=output_key
+            key=output_key,
+            duration=duration
         )

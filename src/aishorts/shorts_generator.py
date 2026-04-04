@@ -504,7 +504,7 @@ class ShortsGenerator:
             # fast enough to run anytime
 
             if AssetType.STATICFACE in self.required_assets:
-                for reel in reel_series.reels:
+                for i, reel in enumerate(reel_series.reels):
                     populate_reel_static_faces(reel, self.avatars)
 
             # --- 4. Primary Stage ---
@@ -534,7 +534,7 @@ class ShortsGenerator:
             # Initialize R2 Handler
             r2 = CloudflareR2()
 
-            for reel in reel_series.reels:
+            for i, reel in enumerate(reel_series.reels):
                 filename = f"{uuid.uuid4().hex}.mp4"
                 dest_key = f"generated/{filename}"
 
@@ -560,6 +560,7 @@ class ShortsGenerator:
                         local_path=result.filepath or "",
                         presigned_url=presigned_url,
                         thumbnail_url=reel_thumbnails.get(i),
+					duration=getattr(result, "duration", None),
                     )
                 )
 
@@ -599,7 +600,7 @@ class ShortsGenerator:
 
         # 1. Collect from reel_series blocks
         if reel_series:
-            for reel in reel_series.reels:
+            for i, reel in enumerate(reel_series.reels):
                 for block in reel.blocks:
                     assets = block.assets
                     if not assets:

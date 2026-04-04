@@ -157,6 +157,7 @@ class ReelOutput(BaseModel):
     local_path: str
     presigned_url: str
     thumbnail_url: Optional[str] = None
+    duration: Optional[str] = None  # Format: "MM:SS" or "HH:MM:SS"
 
 
 class ReelSeriesOutput(BaseModel):
