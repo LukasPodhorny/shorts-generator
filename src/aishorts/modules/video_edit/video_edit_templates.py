@@ -122,6 +122,9 @@ class GameplayTemplate(EditTemplate):
                 v = v.filter("scale", "1080:1080:force_original_aspect_ratio=decrease")
                 v = v.filter("pad", "1080:1080:-1:-1:color=black@0")
                 v = v.filter("format", "yuva420p")
+                # Trim to expected duration to prevent container metadata issues
+                v = v.filter("trim", duration=seg["duration"])
+                v = v.filter("setpts", "PTS-STARTPTS")
 
                 # Generate silence of full video duration to ensure sync
                 # Using atrim ensures exact duration
@@ -395,6 +398,9 @@ class AlphaGameplayTemplate(EditTemplate):
                     "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0"
                 )
                 v = v.filter("format", "yuva420p")
+                # Trim to expected duration to prevent container metadata issues
+                v = v.filter("trim", duration=seg["duration"])
+                v = v.filter("setpts", "PTS-STARTPTS")
 
                 # Using atrim ensures exact duration
                 silence = graph.add_raw(
@@ -663,6 +669,9 @@ class StaticGameplayTemplate(EditTemplate):
                     "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0"
                 )
                 v = v.filter("format", "yuva420p")
+                # Trim to expected duration to prevent container metadata issues
+                v = v.filter("trim", duration=seg["duration"])
+                v = v.filter("setpts", "PTS-STARTPTS")
 
                 # Using atrim ensures exact duration
                 silence = graph.add_raw(

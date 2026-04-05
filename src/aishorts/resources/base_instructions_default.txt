@@ -139,6 +139,8 @@ AVATAR BEHAVIOR:
 
         Use contractions naturally (it's, that's, we're, etc.).
 
+Never use ellipses that connect words together (e.g., "thing...it's", "well...that"). The ellipsis will merge adjacent words into one during subtitle processing, breaking readability. Use commas, periods, or dashes instead.
+
 SONG BLOCKS:
 
     Song Block Usage & Limits:
