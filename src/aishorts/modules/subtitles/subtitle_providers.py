@@ -226,9 +226,15 @@ class ModalWav2VecAligner(SubtitlesProvider):
             raise FileNotFoundError(f"Audio file not found: {audio_path_str}")
 
     async def generate_subtitles(
-        self, audio_file: str, text: str
+        self, audio_file: str, text: str, audio_duration: float | None = None
     ) -> TranscriptionVerbose:
-        """Alignment logic wrapped to return the expected OpenAI TranscriptionVerbose type."""
+        """Alignment logic wrapped to return the expected OpenAI TranscriptionVerbose type.
+        
+        Args:
+            audio_file: URL or path to audio file
+            text: Text to align
+            audio_duration: Actual audio duration in seconds (if known)
+        """
         async with self.semaphore:
             if not self.endpoint_url:
                 raise ValueError("MODAL_WAV2VEC_ENDPOINT_URL is not set.")
@@ -276,15 +282,20 @@ class ModalWav2VecAligner(SubtitlesProvider):
                             TranscriptionWord(word=word_text, start=start, end=end)
                         )
 
-                    # Calculate duration from the last segment's end time, or default to 0
-                    duration = segments[-1]["end"] if segments else 0.0
+        # Use the actual audio duration if provided, otherwise use last word's end time
+        # This is important because subtitle duration is used to offset the next block,
+        # and using the last word's end time would cause drift if there's silence at the end
+        if audio_duration is not None and audio_duration > 0:
+            duration = audio_duration
+        else:
+            duration = segments[-1]["end"] if segments else 0.0
 
-                    return TranscriptionVerbose(
-                        duration=duration,
-                        language="english",
-                        text=text,
-                        words=words,
-                    )
+        return TranscriptionVerbose(
+            duration=duration,
+            language="english",
+            text=text,
+            words=words,
+        )
 
     async def populate_reel(self, reel: Reel) -> None:
         """Processes all blocks in a reel that require subtitles."""
@@ -314,9 +325,18 @@ class ModalWav2VecAligner(SubtitlesProvider):
             return
 
         print(f"[{self.provider_name}] Aligning {len(tts_results)} audio blocks...")
-        tasks = [
-            self.generate_subtitles(res.url, res.transcription) for res in tts_results
-        ]
+        
+        async def get_duration_and_align(res):
+            duration = None
+            # Try to get duration from local file
+            if res.filepath and os.path.exists(res.filepath):
+                try:
+                    duration = get_wav_length(res.filepath)
+                except Exception as e:
+                    print(f"Warning: Could not get duration for {res.filepath}: {e}")
+            return await self.generate_subtitles(res.url, res.transcription, duration)
+        
+        tasks = [get_duration_and_align(res) for res in tts_results]
         results = await asyncio.gather(*tasks)
 
         for tts_res, sub_res in zip(tts_results, results):
