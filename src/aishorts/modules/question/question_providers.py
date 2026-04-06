@@ -75,7 +75,9 @@ class MotionGraphicQuestionProvider(QuestionProvider):
                         )
                         typing_duration = len(audio) / 1000.0
                     except Exception as e:
-                        logger.warning(f"Failed to get audio duration for question block {block_idx}: {e}")
+                        logger.warning(
+                            f"Failed to get audio duration for question block {block_idx}: {e}"
+                        )
 
                 try:
                     graphic = self.graphic_class(
@@ -89,16 +91,22 @@ class MotionGraphicQuestionProvider(QuestionProvider):
                     filename = f"{uuid.uuid4()}.mov"
                     output_path = os.path.join(self.OUTPUT_DIR, filename)
 
-                    logger.info(f"Rendering question block {block_idx}: '{block.text[:50]}...'")
+                    logger.info(
+                        f"Rendering question block {block_idx}: '{block.text[:50]}...'"
+                    )
                     await self.renderer.render(graphic, output_path)
-                    logger.info(f"Successfully rendered question block {block_idx} to {output_path}")
+                    logger.info(
+                        f"Successfully rendered question block {block_idx} to {output_path}"
+                    )
 
                     # Upload to R2
                     remote_key = f"question/{os.path.basename(output_path)}"
                     url = await asyncio.to_thread(
                         self.r2.upload_file, output_path, remote_key
                     )
-                    logger.info(f"Uploaded question block {block_idx} to R2: {remote_key}")
+                    logger.info(
+                        f"Uploaded question block {block_idx} to R2: {remote_key}"
+                    )
 
                     block.assets.question_filepath = output_path
                     block.assets.question_url = url
@@ -107,9 +115,12 @@ class MotionGraphicQuestionProvider(QuestionProvider):
                     block.typing_duration = typing_duration
                     block.thinking_duration = self.thinking_duration
                     block.answer_duration = self.answer_duration
-                    
+
                 except Exception as e:
-                    logger.error(f"Failed to render question block {block_idx}: {e}", exc_info=True)
+                    logger.error(
+                        f"Failed to render question block {block_idx}: {e}",
+                        exc_info=True,
+                    )
                     # Don't re-raise, let the process continue but mark the block as failed
                     block.assets.question_filepath = None
                     block.assets.question_url = None
