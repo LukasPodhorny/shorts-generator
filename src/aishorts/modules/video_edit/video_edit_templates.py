@@ -48,39 +48,65 @@ class GameplayTemplate(EditTemplate):
                 seg_type = "video"
                 video_path = block.assets.lipsync_filepath
                 if not os.path.exists(video_path) and block.assets.lipsync_url:
-                    video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
-            
-        elif (
-            block.type == "question" and block.assets
-        ):
+                    video_path = (
+                        block.assets.lipsync_url
+                        if isinstance(block.assets.lipsync_url, dict)
+                        else {"url": block.assets.lipsync_url}
+                    )
+
+        elif block.type == "question" and block.assets:
             if block.assets.question_filepath:
                 seg_type = "question"
                 video_path = block.assets.question_filepath
                 if not os.path.exists(video_path) and block.assets.question_url:
-                     video_path = block.assets.question_url if isinstance(block.assets.question_url, dict) else {"url": block.assets.question_url}
+                    video_path = (
+                        block.assets.question_url
+                        if isinstance(block.assets.question_url, dict)
+                        else {"url": block.assets.question_url}
+                    )
 
                 audio_path = block.assets.voice_filepath
-                if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
-                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+                if (
+                    audio_path
+                    and not os.path.exists(audio_path)
+                    and block.assets.voice_url
+                ):
+                    audio_path = (
+                        block.assets.voice_url
+                        if isinstance(block.assets.voice_url, dict)
+                        else {"url": block.assets.voice_url}
+                    )
 
         if seg_type != "none" and video_path:
             try:
-                duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
+                duration = (
+                    self.get_video_duration(video_path)
+                    if isinstance(video_path, (str, Path))
+                    and os.path.exists(video_path)
+                    else 0.0
+                )
             except:
                 duration = 0.0
-            
+
             # Fallback duration if missing or couldn't be determined
             if duration == 0:
                 if block.assets and block.assets.subtitles:
                     duration = block.assets.subtitles.duration
                 elif block.type == "question":
-                    # Estimate based on BasicQuestion logic: typing + thinking + answer + 3.0 (buffers)
-                    typing_dur = 3.0
-                    if audio_path and os.path.exists(audio_path):
+                    # Use stored typing_duration from question provider if available
+                    typing_dur = getattr(block, "typing_duration", 3.0)
+                    # If not stored, try to calculate from audio
+                    if typing_dur == 3.0 and audio_path and os.path.exists(audio_path):
                         try:
                             typing_dur = self.get_video_duration(audio_path)
-                        except: pass
-                    duration = typing_dur + getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0) + 3.0
+                        except:
+                            pass
+                    duration = (
+                        typing_dur
+                        + getattr(block, "thinking_duration", 5.0)
+                        + getattr(block, "answer_duration", 2.0)
+                        + 3.0
+                    )
 
             return {
                 "type": seg_type,
@@ -181,9 +207,15 @@ class GameplayTemplate(EditTemplate):
             input_path = media.filepath
             if not os.path.isfile(media.filepath):
                 if media.url:
-                    input_path = media.url if not isinstance(media.url, str) else {"url": media.url}
+                    input_path = (
+                        media.url
+                        if not isinstance(media.url, str)
+                        else {"url": media.url}
+                    )
                 else:
-                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    print(
+                        f"Skipping media {i} ({media.media_type}): File not found and no URL provided."
+                    )
                     continue
 
             media_v, _ = graph.add_input(input_path, f"media_{i}")
@@ -192,7 +224,11 @@ class GameplayTemplate(EditTemplate):
 
             if media.media_type == "manim":
                 # Manim is a video, scale to fit width and shift time
-                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+                manim_duration = (
+                    self.get_video_duration(media.filepath)
+                    if os.path.isfile(media.filepath)
+                    else (media.end_time - media.start_time)
+                )
 
                 display_end_time = media.start_time + manim_duration
 
@@ -281,7 +317,7 @@ class AlphaGameplayTemplate(EditTemplate):
         AssetType.IMAGES,
         AssetType.MANIM,
         AssetType.LATEX,
-        #AssetType.QUESTION,
+        # AssetType.QUESTION,
     ]
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
@@ -306,39 +342,65 @@ class AlphaGameplayTemplate(EditTemplate):
                 seg_type = "video"
                 video_path = block.assets.lipsync_filepath
                 if not os.path.exists(video_path) and block.assets.lipsync_url:
-                    video_path = block.assets.lipsync_url if isinstance(block.assets.lipsync_url, dict) else {"url": block.assets.lipsync_url}
-            
-        elif (
-            block.type == "question" and block.assets
-        ):
+                    video_path = (
+                        block.assets.lipsync_url
+                        if isinstance(block.assets.lipsync_url, dict)
+                        else {"url": block.assets.lipsync_url}
+                    )
+
+        elif block.type == "question" and block.assets:
             if block.assets.question_filepath:
                 seg_type = "question"
                 video_path = block.assets.question_filepath
                 if not os.path.exists(video_path) and block.assets.question_url:
-                     video_path = block.assets.question_url if isinstance(block.assets.question_url, dict) else {"url": block.assets.question_url}
+                    video_path = (
+                        block.assets.question_url
+                        if isinstance(block.assets.question_url, dict)
+                        else {"url": block.assets.question_url}
+                    )
 
                 audio_path = block.assets.voice_filepath
-                if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
-                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+                if (
+                    audio_path
+                    and not os.path.exists(audio_path)
+                    and block.assets.voice_url
+                ):
+                    audio_path = (
+                        block.assets.voice_url
+                        if isinstance(block.assets.voice_url, dict)
+                        else {"url": block.assets.voice_url}
+                    )
 
         if seg_type != "none" and video_path:
             try:
-                duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
+                duration = (
+                    self.get_video_duration(video_path)
+                    if isinstance(video_path, (str, Path))
+                    and os.path.exists(video_path)
+                    else 0.0
+                )
             except:
                 duration = 0.0
-            
+
             # Fallback duration if missing or couldn't be determined
             if duration == 0:
                 if block.assets and block.assets.subtitles:
                     duration = block.assets.subtitles.duration
                 elif block.type == "question":
-                    # Estimate based on BasicQuestion logic: typing + thinking + answer + 3.0 (buffers)
-                    typing_dur = 3.0
-                    if audio_path and os.path.exists(audio_path):
+                    # Use stored typing_duration from question provider if available
+                    typing_dur = getattr(block, "typing_duration", 3.0)
+                    # If not stored, try to calculate from audio
+                    if typing_dur == 3.0 and audio_path and os.path.exists(audio_path):
                         try:
                             typing_dur = self.get_video_duration(audio_path)
-                        except: pass
-                    duration = typing_dur + getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0) + 3.0
+                        except:
+                            pass
+                    duration = (
+                        typing_dur
+                        + getattr(block, "thinking_duration", 5.0)
+                        + getattr(block, "answer_duration", 2.0)
+                        + 3.0
+                    )
 
             return {
                 "type": seg_type,
@@ -394,9 +456,7 @@ class AlphaGameplayTemplate(EditTemplate):
                 v = v.filter("fps", fps=30)
                 # Scale question to fit width (1000px)
                 v = v.filter("scale", "1000:-1")
-                v = v.filter(
-                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0"
-                )
+                v = v.filter("pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0")
                 v = v.filter("format", "yuva420p")
                 # Trim to expected duration to prevent container metadata issues
                 v = v.filter("trim", duration=seg["duration"])
@@ -453,9 +513,13 @@ class AlphaGameplayTemplate(EditTemplate):
             input_path = media.filepath
             if not os.path.isfile(media.filepath):
                 if media.url:
-                    input_path = media.url if isinstance(media.url, dict) else {"url": media.url}
+                    input_path = (
+                        media.url if isinstance(media.url, dict) else {"url": media.url}
+                    )
                 else:
-                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    print(
+                        f"Skipping media {i} ({media.media_type}): File not found and no URL provided."
+                    )
                     continue
 
             media_v, _ = graph.add_input(input_path, f"media_{i}")
@@ -464,7 +528,11 @@ class AlphaGameplayTemplate(EditTemplate):
 
             if media.media_type == "manim":
                 # Manim is a video, scale to fit width and shift time
-                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+                manim_duration = (
+                    self.get_video_duration(media.filepath)
+                    if os.path.isfile(media.filepath)
+                    else (media.end_time - media.start_time)
+                )
 
                 display_end_time = media.start_time + manim_duration
 
@@ -574,18 +642,31 @@ class StaticGameplayTemplate(EditTemplate):
                 seg_type = "static_face"
                 video_path = block.assets.staticface_filepath
                 audio_path = block.assets.voice_filepath
-                
+
                 # Check for URLs if files missing
                 if not os.path.exists(video_path) and block.assets.staticface_url:
-                    video_path = block.assets.staticface_url if isinstance(block.assets.staticface_url, dict) else {"url": block.assets.staticface_url}
+                    video_path = (
+                        block.assets.staticface_url
+                        if isinstance(block.assets.staticface_url, dict)
+                        else {"url": block.assets.staticface_url}
+                    )
                 if not os.path.exists(audio_path) and block.assets.voice_url:
-                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+                    audio_path = (
+                        block.assets.voice_url
+                        if isinstance(block.assets.voice_url, dict)
+                        else {"url": block.assets.voice_url}
+                    )
 
                 try:
-                    duration = self.get_video_duration(audio_path) if isinstance(audio_path, (str, Path)) and os.path.exists(audio_path) else 0.0
+                    duration = (
+                        self.get_video_duration(audio_path)
+                        if isinstance(audio_path, (str, Path))
+                        and os.path.exists(audio_path)
+                        else 0.0
+                    )
                 except:
                     duration = 0.0
-                
+
                 if duration == 0 and block.assets.subtitles:
                     duration = block.assets.subtitles.duration
 
@@ -594,29 +675,53 @@ class StaticGameplayTemplate(EditTemplate):
                 seg_type = "question"
                 video_path = block.assets.question_filepath
                 audio_path = block.assets.voice_filepath
-                
+
                 if not os.path.exists(video_path) and block.assets.question_url:
-                    video_path = block.assets.question_url if isinstance(block.assets.question_url, dict) else {"url": block.assets.question_url}
-                if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
-                    audio_path = block.assets.voice_url if isinstance(block.assets.voice_url, dict) else {"url": block.assets.voice_url}
+                    video_path = (
+                        block.assets.question_url
+                        if isinstance(block.assets.question_url, dict)
+                        else {"url": block.assets.question_url}
+                    )
+                if (
+                    audio_path
+                    and not os.path.exists(audio_path)
+                    and block.assets.voice_url
+                ):
+                    audio_path = (
+                        block.assets.voice_url
+                        if isinstance(block.assets.voice_url, dict)
+                        else {"url": block.assets.voice_url}
+                    )
 
                 try:
-                    duration = self.get_video_duration(video_path) if isinstance(video_path, (str, Path)) and os.path.exists(video_path) else 0.0
+                    duration = (
+                        self.get_video_duration(video_path)
+                        if isinstance(video_path, (str, Path))
+                        and os.path.exists(video_path)
+                        else 0.0
+                    )
                 except:
                     duration = 0.0
-                
+
                 # Fallback duration if missing or couldn't be determined
                 if duration == 0:
                     if block.assets and block.assets.subtitles:
                         duration = block.assets.subtitles.duration
                     else:
-                        # Estimate based on BasicQuestion logic: typing + thinking + answer + 3.0 (buffers)
-                        typing_dur = 3.0
-                        if audio_path and os.path.exists(audio_path):
+                        # Use stored typing_duration from question provider if available
+                        typing_dur = getattr(block, "typing_duration", 3.0)
+                        # If not stored, try to calculate from audio
+                        if typing_dur == 3.0 and audio_path and os.path.exists(audio_path):
                             try:
                                 typing_dur = self.get_video_duration(audio_path)
-                            except: pass
-                        duration = typing_dur + getattr(block, "thinking_duration", 5.0) + getattr(block, "answer_duration", 2.0) + 3.0
+                            except:
+                                pass
+                        duration = (
+                            typing_dur
+                            + getattr(block, "thinking_duration", 5.0)
+                            + getattr(block, "answer_duration", 2.0)
+                            + 3.0
+                        )
 
         if seg_type != "none":
             return {
@@ -665,9 +770,7 @@ class StaticGameplayTemplate(EditTemplate):
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
                 v = v.filter("fps", fps=30)
                 v = v.filter("scale", "1000:-1")
-                v = v.filter(
-                    "pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0"
-                )
+                v = v.filter("pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0")
                 v = v.filter("format", "yuva420p")
                 # Trim to expected duration to prevent container metadata issues
                 v = v.filter("trim", duration=seg["duration"])
@@ -717,9 +820,13 @@ class StaticGameplayTemplate(EditTemplate):
             input_path = media.filepath
             if not os.path.isfile(media.filepath):
                 if media.url:
-                    input_path = media.url if isinstance(media.url, dict) else {"url": media.url}
+                    input_path = (
+                        media.url if isinstance(media.url, dict) else {"url": media.url}
+                    )
                 else:
-                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    print(
+                        f"Skipping media {i} ({media.media_type}): File not found and no URL provided."
+                    )
                     continue
 
             media_v, _ = graph.add_input(input_path, f"media_{i}")
@@ -727,7 +834,11 @@ class StaticGameplayTemplate(EditTemplate):
             display_end_time = media.end_time
 
             if media.media_type == "manim":
-                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+                manim_duration = (
+                    self.get_video_duration(media.filepath)
+                    if os.path.isfile(media.filepath)
+                    else (media.end_time - media.start_time)
+                )
 
                 display_end_time = media.start_time + manim_duration
 
@@ -741,7 +852,9 @@ class StaticGameplayTemplate(EditTemplate):
                     media_v = Animator.rounded_corners(
                         media_v, self.manim_style.corner_radius
                     )
-                media_v = media_v.filter("setpts", f"PTS-STARTPTS+{media.start_time}/TB")
+                media_v = media_v.filter(
+                    "setpts", f"PTS-STARTPTS+{media.start_time}/TB"
+                )
                 is_static = False
             else:
                 is_static = True
@@ -808,23 +921,29 @@ class SongTemplate(EditTemplate):
         self.manim_style = template_config.manim_style
 
     def _get_block_segment(self, block):
-        if (
-            AssetType.SONG in block.valid_assets
-            and block.assets
-        ):
+        if AssetType.SONG in block.valid_assets and block.assets:
             audio_path = block.assets.song_filepath
             if not audio_path:
                 return None
-                
+
             # Check for URL fallback
             if not os.path.exists(audio_path) and block.assets.song_url:
-                audio_path = block.assets.song_url if isinstance(block.assets.song_url, dict) else {"url": block.assets.song_url}
+                audio_path = (
+                    block.assets.song_url
+                    if isinstance(block.assets.song_url, dict)
+                    else {"url": block.assets.song_url}
+                )
 
             try:
-                duration = self.get_video_duration(audio_path) if isinstance(audio_path, (str, Path)) and os.path.exists(audio_path) else 0.0
+                duration = (
+                    self.get_video_duration(audio_path)
+                    if isinstance(audio_path, (str, Path))
+                    and os.path.exists(audio_path)
+                    else 0.0
+                )
             except:
                 duration = 0.0
-                
+
             if duration == 0 and block.assets.subtitles:
                 duration = block.assets.subtitles.duration
 
@@ -884,16 +1003,24 @@ class SongTemplate(EditTemplate):
             input_path = media.filepath
             if not os.path.isfile(media.filepath):
                 if media.url:
-                    input_path = media.url if isinstance(media.url, dict) else {"url": media.url}
+                    input_path = (
+                        media.url if isinstance(media.url, dict) else {"url": media.url}
+                    )
                 else:
-                    print(f"Skipping media {i} ({media.media_type}): File not found and no URL provided.")
+                    print(
+                        f"Skipping media {i} ({media.media_type}): File not found and no URL provided."
+                    )
                     continue
 
             media_v, _ = graph.add_input(input_path, f"media_{i}")
             display_end_time = media.end_time
 
             if media.media_type == "manim":
-                manim_duration = self.get_video_duration(media.filepath) if os.path.isfile(media.filepath) else (media.end_time - media.start_time)
+                manim_duration = (
+                    self.get_video_duration(media.filepath)
+                    if os.path.isfile(media.filepath)
+                    else (media.end_time - media.start_time)
+                )
 
                 display_end_time = media.start_time + manim_duration
                 media_v = media_v.filter("format", "yuva420p")

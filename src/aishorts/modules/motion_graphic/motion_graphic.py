@@ -54,6 +54,7 @@ class LocalMotionGraphicRenderer(MotionGraphicRenderer):
         self, queue, browser, html_content, update_fn_factory, output_dir
     ):
         from playwright.async_api import async_playwright
+
         page = await browser.new_page(
             viewport={"width": self.config.width, "height": self.config.height}
         )
@@ -81,6 +82,7 @@ class LocalMotionGraphicRenderer(MotionGraphicRenderer):
 
     async def render(self, graphic: MotionGraphic, output_filename: str) -> str:
         from playwright.async_api import async_playwright
+
         # Create unique output directory for this render to avoid collisions
         job_output_dir = os.path.join(self.config.output_dir, str(uuid.uuid4()))
         os.makedirs(job_output_dir, exist_ok=True)
@@ -130,7 +132,7 @@ class LocalMotionGraphicRenderer(MotionGraphicRenderer):
         # Cleanup frames
         if os.path.exists(job_output_dir):
             shutil.rmtree(job_output_dir)
-            
+
         return output_filename
 
 
@@ -145,7 +147,9 @@ class ModalMotionGraphicRenderer(MotionGraphicRenderer):
         **kwargs,
     ):
         super().__init__(config)
-        self.endpoint_url = endpoint_url or os.getenv("MODAL_MOTION_GRAPHIC_ENDPOINT_URL")
+        self.endpoint_url = endpoint_url or os.getenv(
+            "MODAL_MOTION_GRAPHIC_ENDPOINT_URL"
+        )
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
 
     async def render(self, graphic: MotionGraphic, output_filename: str) -> str:
@@ -153,14 +157,14 @@ class ModalMotionGraphicRenderer(MotionGraphicRenderer):
             raise ValueError("MODAL_MOTION_GRAPHIC_ENDPOINT_URL not set")
 
         total_frames = int(graphic.get_total_duration() * self.config.fps)
-        
+
         # Determine the update function name and arguments
         # For BasicQuestion, it's updateFrame(time, typingDuration, thinkingDuration, answerDuration)
-        if hasattr(graphic, 'typing_duration'):
+        if hasattr(graphic, "typing_duration"):
             params = {
                 "typing_duration": graphic.typing_duration,
                 "thinking_duration": graphic.thinking_duration,
-                "answer_duration": graphic.answer_duration
+                "answer_duration": graphic.answer_duration,
             }
             update_fn_template = "updateFrame({time}, {typing_duration}, {thinking_duration}, {answer_duration})"
         else:
@@ -182,22 +186,28 @@ class ModalMotionGraphicRenderer(MotionGraphicRenderer):
         if self.modal_api_key:
             payload["api_key"] = self.modal_api_key
 
-        print(f"Sending motion graphic render job to Modal.com ({total_frames} frames)...")
+        print(
+            f"Sending motion graphic render job to Modal.com ({total_frames} frames)..."
+        )
         print(f"DEBUG: Payload keys: {list(payload.keys())}")
         print(f"DEBUG: update_fn_template: {payload.get('update_fn_template')}")
         print(f"DEBUG: params: {payload.get('params')}")
-        
+
         async with aiohttp.ClientSession() as session:
-            async with session.post(self.endpoint_url, json=payload, timeout=600) as response:
+            async with session.post(
+                self.endpoint_url, json=payload, timeout=600
+            ) as response:
                 if not response.ok:
                     text = await response.text()
-                    raise Exception(f"Modal Motion Graphic failed with {response.status}: {text}")
-                
+                    raise Exception(
+                        f"Modal Motion Graphic failed with {response.status}: {text}"
+                    )
+
                 result = await response.json()
 
         download_url = result.get("download_url")
-        
+
         # Download locally
         await download_from_url(download_url, full_path=output_filename)
-        
+
         return output_filename

@@ -92,3 +92,8 @@ class MotionGraphicQuestionProvider(QuestionProvider):
 
                 block.assets.question_filepath = output_path
                 block.assets.question_url = url
+
+                # Store the actual durations on the block so video template uses same values
+                block.typing_duration = typing_duration
+                block.thinking_duration = self.thinking_duration
+                block.answer_duration = self.answer_duration
