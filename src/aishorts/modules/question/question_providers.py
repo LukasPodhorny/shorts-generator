@@ -12,9 +12,12 @@ from typing import Type
 import uuid
 from pydub import AudioSegment
 import asyncio
+import logging
 
 
 from aishorts.utils.r2_handler import CloudflareR2
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionProvider(Provider):
@@ -57,7 +60,7 @@ class MotionGraphicQuestionProvider(QuestionProvider):
         self.answer_duration = answer_duration
 
     async def populate_reel(self, reel: Reel, **kwargs) -> None:
-        for block in reel.blocks:
+        for block_idx, block in enumerate(reel.blocks):
             if block.type == "question":
 
                 typing_duration = self.typing_duration
@@ -72,31 +75,41 @@ class MotionGraphicQuestionProvider(QuestionProvider):
                         )
                         typing_duration = len(audio) / 1000.0
                     except Exception as e:
-                        print(f"Failed to get audio duration for question block: {e}")
+                        logger.warning(f"Failed to get audio duration for question block {block_idx}: {e}")
 
-                graphic = self.graphic_class(
-                    question=block.text,
-                    answer=block.answer,
-                    typing_duration=typing_duration,
-                    thinking_duration=self.thinking_duration,
-                    answer_duration=self.answer_duration,
-                )
+                try:
+                    graphic = self.graphic_class(
+                        question=block.text,
+                        answer=block.answer,
+                        typing_duration=typing_duration,
+                        thinking_duration=self.thinking_duration,
+                        answer_duration=self.answer_duration,
+                    )
 
-                filename = f"{uuid.uuid4()}.mov"
-                output_path = os.path.join(self.OUTPUT_DIR, filename)
+                    filename = f"{uuid.uuid4()}.mov"
+                    output_path = os.path.join(self.OUTPUT_DIR, filename)
 
-                await self.renderer.render(graphic, output_path)
+                    logger.info(f"Rendering question block {block_idx}: '{block.text[:50]}...'")
+                    await self.renderer.render(graphic, output_path)
+                    logger.info(f"Successfully rendered question block {block_idx} to {output_path}")
 
-                # Upload to R2
-                remote_key = f"question/{os.path.basename(output_path)}"
-                url = await asyncio.to_thread(
-                    self.r2.upload_file, output_path, remote_key
-                )
+                    # Upload to R2
+                    remote_key = f"question/{os.path.basename(output_path)}"
+                    url = await asyncio.to_thread(
+                        self.r2.upload_file, output_path, remote_key
+                    )
+                    logger.info(f"Uploaded question block {block_idx} to R2: {remote_key}")
 
-                block.assets.question_filepath = output_path
-                block.assets.question_url = url
+                    block.assets.question_filepath = output_path
+                    block.assets.question_url = url
 
-                # Store the actual durations on the block so video template uses same values
-                block.typing_duration = typing_duration
-                block.thinking_duration = self.thinking_duration
-                block.answer_duration = self.answer_duration
+                    # Store the actual durations on the block so video template uses same values
+                    block.typing_duration = typing_duration
+                    block.thinking_duration = self.thinking_duration
+                    block.answer_duration = self.answer_duration
+                    
+                except Exception as e:
+                    logger.error(f"Failed to render question block {block_idx}: {e}", exc_info=True)
+                    # Don't re-raise, let the process continue but mark the block as failed
+                    block.assets.question_filepath = None
+                    block.assets.question_url = None

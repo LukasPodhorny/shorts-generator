@@ -160,7 +160,9 @@ class EditTemplate(Provider):
         final_transcriptions = []
         current_time = 0.0
 
-        print(f"DEBUG: collect_segments_and_timings starting for reel with {len(reel.blocks)} blocks")
+        print(
+            f"DEBUG: collect_segments_and_timings starting for reel with {len(reel.blocks)} blocks"
+        )
 
         for b_idx, block in enumerate(reel.blocks):
             seg_info = self._get_block_segment(block)
@@ -168,8 +170,15 @@ class EditTemplate(Provider):
             if seg_info:
                 segments.append(seg_info)
                 duration = seg_info.get("duration", 0.0)
+                print(
+                    f"  Block {b_idx} ({block.type}): Added to video ({duration:.2f}s)"
+                )
             else:
                 duration = 0.0
+                block_text = getattr(block, "text", "N/A")[:50]
+                print(
+                    f"  Block {b_idx} ({block.type}): Skipped (no video asset) - '{block_text}...'"
+                )
 
             # Handle Subtitles
             has_subs = False
@@ -181,29 +190,49 @@ class EditTemplate(Provider):
                     words = getattr(trans, "words", None)
                     if words is None and isinstance(trans, dict):
                         words = trans.get("words", [])
-                    
+
                     if words:
                         shifted_words = [
                             TranscriptionWord(
                                 word=w.word if hasattr(w, "word") else w["word"],
-                                start=(w.start if hasattr(w, "start") else w["start"]) + current_time,
-                                end=(w.end if hasattr(w, "end") else w["end"]) + current_time,
+                                start=(w.start if hasattr(w, "start") else w["start"])
+                                + current_time,
+                                end=(w.end if hasattr(w, "end") else w["end"])
+                                + current_time,
                             )
                             for w in words
                         ]
                         final_transcriptions.append(
                             TranscriptionVerbose(
-                                duration=getattr(trans, "duration", 0.0) if hasattr(trans, "duration") else trans.get("duration", 0.0),
-                                language=getattr(trans, "language", "en") if hasattr(trans, "language") else trans.get("language", "en"),
-                                text=getattr(trans, "text", "") if hasattr(trans, "text") else trans.get("text", ""),
+                                duration=(
+                                    getattr(trans, "duration", 0.0)
+                                    if hasattr(trans, "duration")
+                                    else trans.get("duration", 0.0)
+                                ),
+                                language=(
+                                    getattr(trans, "language", "en")
+                                    if hasattr(trans, "language")
+                                    else trans.get("language", "en")
+                                ),
+                                text=(
+                                    getattr(trans, "text", "")
+                                    if hasattr(trans, "text")
+                                    else trans.get("text", "")
+                                ),
                                 words=shifted_words,
                             )
                         )
-                        print(f"Block {b_idx} ({block.type}): Subtitles found ({len(words)} words).")
+                        print(
+                            f"Block {b_idx} ({block.type}): Subtitles found ({len(words)} words)."
+                        )
                     else:
-                        print(f"Block {b_idx} ({block.type}): Subtitles present but no words found.")
+                        print(
+                            f"Block {b_idx} ({block.type}): Subtitles present but no words found."
+                        )
                 else:
-                    print(f"Block {b_idx} ({block.type}): block.assets.subtitles is empty.")
+                    print(
+                        f"Block {b_idx} ({block.type}): block.assets.subtitles is empty."
+                    )
             else:
                 print(f"Block {b_idx} ({block.type}): block.assets is None.")
 
@@ -478,11 +507,13 @@ class EditTemplate(Provider):
         media_timings = []
         dialogue_idx = 0
 
-        print(f"DEBUG: extract_media_timings starting. Blocks: {len(blocks)}, Subtitles: {len(absolute_subtitles)}")
+        print(
+            f"DEBUG: extract_media_timings starting. Blocks: {len(blocks)}, Subtitles: {len(absolute_subtitles)}"
+        )
 
         for b_idx, block in enumerate(blocks):
             has_subtitles = bool(block.assets and block.assets.subtitles)
-            
+
             # Dialogue items in absolute_subtitles only exist for blocks that HAD subtitles
             if has_subtitles:
                 if dialogue_idx >= len(absolute_subtitles):
@@ -496,7 +527,9 @@ class EditTemplate(Provider):
                 if not media_list:
                     continue
 
-                print(f"  Block {b_idx} ({block.type}) has {len(media_list)} media items. IDs in media_map: {list(block.assets.media_map.keys())}")
+                print(
+                    f"  Block {b_idx} ({block.type}) has {len(media_list)} media items. IDs in media_map: {list(block.assets.media_map.keys())}"
+                )
 
                 for m_idx, media_item in enumerate(media_list):
                     # Try to get from media_map or media_url_map
@@ -504,7 +537,9 @@ class EditTemplate(Provider):
                     url = block.assets.media_url_map.get(media_item.id)
 
                     if not (filepath or url):
-                        print(f"    Media {m_idx} ({media_item.type}) skipped: ID {media_item.id} not found in maps.")
+                        print(
+                            f"    Media {m_idx} ({media_item.type}) skipped: ID {media_item.id} not found in maps."
+                        )
                         continue
 
                     # Determine timing
@@ -513,22 +548,30 @@ class EditTemplate(Provider):
                         start_word_idx = trigger.start_word_index
                         end_word_idx = trigger.end_word_index
 
-                        if start_word_idx >= len(absolute_trans.words) or end_word_idx >= len(absolute_trans.words):
-                            print(f"    Media {m_idx} trigger [{start_word_idx}, {end_word_idx}] out of range ({len(absolute_trans.words)} words). Falling back to full block.")
+                        if start_word_idx >= len(
+                            absolute_trans.words
+                        ) or end_word_idx >= len(absolute_trans.words):
+                            print(
+                                f"    Media {m_idx} trigger [{start_word_idx}, {end_word_idx}] out of range ({len(absolute_trans.words)} words). Falling back to full block."
+                            )
                             start_time = absolute_trans.words[0].start
                             end_time = absolute_trans.words[-1].end
                         else:
                             start_time = absolute_trans.words[start_word_idx].start
                             end_time = absolute_trans.words[end_word_idx].end
                     else:
-                        print(f"    Media {m_idx} ({media_item.type}) has NO TRIGGER. Defaulting to full block timing.")
+                        print(
+                            f"    Media {m_idx} ({media_item.type}) has NO TRIGGER. Defaulting to full block timing."
+                        )
                         # Fallback: display for the whole block
                         if absolute_trans.words:
                             start_time = absolute_trans.words[0].start
                             end_time = absolute_trans.words[-1].end
                         else:
                             # If no words at all (shouldn't happen if has_subtitles is true), skip
-                            print(f"    Media {m_idx} skipped: No words in transcription to calculate fallback.")
+                            print(
+                                f"    Media {m_idx} skipped: No words in transcription to calculate fallback."
+                            )
                             continue
 
                     timing = MediaTiming(
@@ -539,12 +582,16 @@ class EditTemplate(Provider):
                         url=url,
                     )
                     media_timings.append(timing)
-                    print(f"    Media {m_idx} ({timing.media_type}) EXTRACTED: {timing.start_time:.2f}s - {timing.end_time:.2f}s")
+                    print(
+                        f"    Media {m_idx} ({timing.media_type}) EXTRACTED: {timing.start_time:.2f}s - {timing.end_time:.2f}s"
+                    )
             else:
                 # If block has media but no subtitles, we should log it
                 media_list = getattr(block, "media", [])
                 if media_list:
-                    print(f"Block {b_idx} ({block.type}) has {len(media_list)} media items but NO SUBTITLES. Skipping media extraction.")
+                    print(
+                        f"Block {b_idx} ({block.type}) has {len(media_list)} media items but NO SUBTITLES. Skipping media extraction."
+                    )
 
         print(f"Total media timings extracted: {len(media_timings)}")
         return media_timings
@@ -584,12 +631,13 @@ class FilterGraph:
             self.inputs.append(path)
         else:
             self.inputs.append(Path(path))
-            
+
         self.input_labels.append(label or f"input_{idx}")
         return FilterNode(self, f"{idx}:v"), FilterNode(self, f"{idx}:a")
 
     def add_filter(
-        self, inputs: List[FilterNode], name: str, *args, **kwargs) -> FilterNode:
+        self, inputs: List[FilterNode], name: str, *args, **kwargs
+    ) -> FilterNode:
         """Adds a filter command"""
         # Format arguments: filter=arg1:arg2:key=value
         arg_list = [str(a) for a in args]

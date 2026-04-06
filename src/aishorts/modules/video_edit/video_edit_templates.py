@@ -10,6 +10,9 @@ from aishorts.modules.script.script import AssetType
 from aishorts.modules.script.script import BlockType
 import os
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class GameplayTemplate(EditTemplate):
