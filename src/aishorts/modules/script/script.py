@@ -101,8 +101,9 @@ class QuestionBlock(BaseModel):
     avatar: str
     text: str
     answer: str
-    answer_duration: float = 2.0
+    typing_duration: float = 3.0
     thinking_duration: float = 5.0
+    answer_duration: float = 2.0
     assets: SkipJsonSchema[BlockAssets] = Field(default_factory=BlockAssets)
 
 
@@ -153,7 +154,8 @@ class ReelSeries(BaseModel):
         description="Overall topic being explained (e.g., 'Photosynthesis')"
     )
     thumbnail_prompt: Optional[str] = Field(
-        None, description="Visual prompt for generating a thumbnail image for the series"
+        None,
+        description="Visual prompt for generating a thumbnail image for the series",
     )
     thumbnail_url: Optional[str] = Field(
         None, description="URL of the generated thumbnail image for the series"

@@ -96,7 +96,7 @@ class BasicQuestion(MotionGraphic):
                 </div>
             </div>
             <div class="card-back"><div class="answer-text" id="answer-text">__ANSWER__</div></div>
-        </div>
+        </div>;
     </div>
     <script>
         const titleElement = document.getElementById('title-text');

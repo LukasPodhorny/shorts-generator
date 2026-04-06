@@ -9,6 +9,7 @@ from aishorts.modules.script.script import Reel
 from aishorts.modules.script.script import AssetType
 from aishorts.modules.script.script import BlockType
 import os
+from pathlib import Path
 
 
 class GameplayTemplate(EditTemplate):
@@ -711,7 +712,11 @@ class StaticGameplayTemplate(EditTemplate):
                         # Use stored typing_duration from question provider if available
                         typing_dur = getattr(block, "typing_duration", 3.0)
                         # If not stored, try to calculate from audio
-                        if typing_dur == 3.0 and audio_path and os.path.exists(audio_path):
+                        if (
+                            typing_dur == 3.0
+                            and audio_path
+                            and os.path.exists(audio_path)
+                        ):
                             try:
                                 typing_dur = self.get_video_duration(audio_path)
                             except:

@@ -16,6 +16,7 @@ import asyncio
 
 from aishorts.utils.r2_handler import CloudflareR2
 
+
 class QuestionProvider(Provider):
     OUTPUT_DIR = os.getenv("QUESTION_OUTPUT_DIR") or "output/question"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -42,7 +43,7 @@ class MotionGraphicQuestionProvider(QuestionProvider):
     ):
         super().__init__(**kwargs)
         self.graphic_class = graphic_class
-        
+
         # Determine renderer: injection -> env -> local fallback
         if renderer:
             self.renderer = renderer
@@ -50,7 +51,7 @@ class MotionGraphicQuestionProvider(QuestionProvider):
             self.renderer = ModalMotionGraphicRenderer()
         else:
             self.renderer = LocalMotionGraphicRenderer()
-            
+
         self.typing_duration = typing_duration
         self.thinking_duration = thinking_duration
         self.answer_duration = answer_duration
@@ -88,7 +89,9 @@ class MotionGraphicQuestionProvider(QuestionProvider):
 
                 # Upload to R2
                 remote_key = f"question/{os.path.basename(output_path)}"
-                url = await asyncio.to_thread(self.r2.upload_file, output_path, remote_key)
+                url = await asyncio.to_thread(
+                    self.r2.upload_file, output_path, remote_key
+                )
 
                 block.assets.question_filepath = output_path
                 block.assets.question_url = url
