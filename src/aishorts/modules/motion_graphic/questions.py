@@ -243,6 +243,10 @@ class BasicQuestion(MotionGraphic):
                 titleElement.innerText = originalText.substring(0, Math.floor(originalText.length * typeProgress));
                 const activeTime = Math.max(0, time - typingDuration);
                 document.getElementById('progress').style.width = Math.max(0, 100 - (activeTime / thinkingDuration * 100)) + '%';
+            } else {
+                // After flip starts, hide the question text and freeze the progress bar at 0%
+                titleElement.innerText = '';
+                document.getElementById('progress').style.width = '0%';
             }
         }
     </script>
