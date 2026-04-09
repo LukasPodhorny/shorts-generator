@@ -546,11 +546,10 @@ class ShortsGenerator:
             # Initialize R2 Handler
             r2 = CloudflareR2()
 
-            for i, reel in enumerate(reel_series.reels):
+            async def _compose_reel(i, reel):
                 filename = f"{uuid.uuid4().hex}.mp4"
                 dest_key = f"generated/{filename}"
 
-                # Compose video directly to the final R2 destination key.
                 result = await self.video_gen.compose(
                     reel=reel,
                     session_id=session_id,
@@ -565,16 +564,21 @@ class ShortsGenerator:
                         r2.upload_file, result.filepath, dest_key
                     )
 
-                reel_outputs.append(
-                    ReelOutput(
-                        title=reel.title,
-                        description=reel.description,
-                        local_path=result.filepath or "",
-                        presigned_url=presigned_url,
-                        thumbnail_url=reel_thumbnails.get(i),
+                return i, ReelOutput(
+                    title=reel.title,
+                    description=reel.description,
+                    local_path=result.filepath or "",
+                    presigned_url=presigned_url,
+                    thumbnail_url=reel_thumbnails.get(i),
 					duration=getattr(result, "duration", None),
-                    )
                 )
+
+            compose_results = await asyncio.gather(
+                *[_compose_reel(i, reel) for i, reel in enumerate(reel_series.reels)]
+            )
+            # Maintain original order
+            for _, output in sorted(compose_results, key=lambda x: x[0]):
+                reel_outputs.append(output)
 
             return ReelSeriesOutput(
                 topic=reel_series.topic,

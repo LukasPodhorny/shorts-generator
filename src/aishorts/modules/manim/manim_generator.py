@@ -2,6 +2,7 @@ from aishorts.modules.manim.manim_providers import ManimProvider, ManimResult
 from aishorts.modules.llm.llm_generator import LLMGenerator
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.modules.script.script import Reel
+import asyncio
 import re
 import textwrap
 from aishorts.modules.video_edit.video_edit import AssetType
@@ -72,23 +73,25 @@ class ManimGenerator:
     async def populate_reel(self, reel: Reel, **kwargs):
         """
         Iterates through the reel's blocks and generates Manim animations
-        for any block that has ManimMedia.
+        for any block that has ManimMedia. Renders all items concurrently.
         """
+        # Collect all (block, media_item) pairs that need rendering
+        render_items = []
         for block in reel.blocks:
             if AssetType.MANIM in block.valid_assets:
                 for media_item in block.media:
                     if media_item.type == "manim":
-                        # Generate the animation
-                        result = await self.generate(media_item.prompt, **kwargs)
-                        #result = ManimResult(
-                        #    media=MediaFile(
-                        #        path="/home/lukaspodhorny/projects/#shorts-generator/assets/manim/manim_qubit_1.#mp4",
-                        #        url="https://media.pdftoreel.com/manim/#output_5318dc2a-1e63-467a-b226-de4f77e25089.#mp4",
-                        #    ),
-                        #    code=""
-                        #)
+                        render_items.append((block, media_item))
 
-                        # Store the result in the block assets
-                        block.assets.media_map[media_item.id] = result.media.path
-                        if result.media.url:
-                            block.assets.media_url_map[media_item.id] = result.media.url
+        if not render_items:
+            return
+
+        # Launch all renders concurrently
+        async def _render(block, media_item):
+            result = await self.generate(media_item.prompt, **kwargs)
+            block.assets.media_map[media_item.id] = result.media.path
+            if result.media.url:
+                block.assets.media_url_map[media_item.id] = result.media.url
+
+        tasks = [_render(block, media_item) for block, media_item in render_items]
+        await asyncio.gather(*tasks)

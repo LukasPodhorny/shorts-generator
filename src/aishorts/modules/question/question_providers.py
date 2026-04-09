@@ -60,67 +60,78 @@ class MotionGraphicQuestionProvider(QuestionProvider):
         self.answer_duration = answer_duration
 
     async def populate_reel(self, reel: Reel, **kwargs) -> None:
-        for block_idx, block in enumerate(reel.blocks):
-            if block.type == "question":
+        # Collect question blocks to render concurrently
+        question_items = [
+            (block_idx, block)
+            for block_idx, block in enumerate(reel.blocks)
+            if block.type == "question"
+        ]
 
-                typing_duration = self.typing_duration
+        if not question_items:
+            return
 
-                # If voiceover exists, sync typing duration to audio length
-                if block.assets.voice_filepath and os.path.exists(
-                    block.assets.voice_filepath
-                ):
-                    try:
-                        audio = await asyncio.to_thread(
-                            AudioSegment.from_file, block.assets.voice_filepath
-                        )
-                        typing_duration = len(audio) / 1000.0
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to get audio duration for question block {block_idx}: {e}"
-                        )
+        async def _render_question(block_idx, block):
+            typing_duration = self.typing_duration
 
+            # If voiceover exists, sync typing duration to audio length
+            if block.assets.voice_filepath and os.path.exists(
+                block.assets.voice_filepath
+            ):
                 try:
-                    graphic = self.graphic_class(
-                        question=block.text,
-                        answer=block.answer,
-                        typing_duration=typing_duration,
-                        thinking_duration=self.thinking_duration,
-                        answer_duration=self.answer_duration,
+                    audio = await asyncio.to_thread(
+                        AudioSegment.from_file, block.assets.voice_filepath
                     )
-
-                    filename = f"{uuid.uuid4()}.mov"
-                    output_path = os.path.join(self.OUTPUT_DIR, filename)
-
-                    logger.info(
-                        f"Rendering question block {block_idx}: '{block.text[:50]}...'"
-                    )
-                    await self.renderer.render(graphic, output_path)
-                    logger.info(
-                        f"Successfully rendered question block {block_idx} to {output_path}"
-                    )
-
-                    # Upload to R2
-                    remote_key = f"question/{os.path.basename(output_path)}"
-                    url = await asyncio.to_thread(
-                        self.r2.upload_file, output_path, remote_key
-                    )
-                    logger.info(
-                        f"Uploaded question block {block_idx} to R2: {remote_key}"
-                    )
-
-                    block.assets.question_filepath = output_path
-                    block.assets.question_url = url
-
-                    # Store the actual durations on the block so video template uses same values
-                    block.typing_duration = typing_duration
-                    block.thinking_duration = self.thinking_duration
-                    block.answer_duration = self.answer_duration
-
+                    typing_duration = len(audio) / 1000.0
                 except Exception as e:
-                    logger.error(
-                        f"Failed to render question block {block_idx}: {e}",
-                        exc_info=True,
+                    logger.warning(
+                        f"Failed to get audio duration for question block {block_idx}: {e}"
                     )
-                    # Don't re-raise, let the process continue but mark the block as failed
-                    block.assets.question_filepath = None
-                    block.assets.question_url = None
+
+            try:
+                graphic = self.graphic_class(
+                    question=block.text,
+                    answer=block.answer,
+                    typing_duration=typing_duration,
+                    thinking_duration=self.thinking_duration,
+                    answer_duration=self.answer_duration,
+                )
+
+                filename = f"{uuid.uuid4()}.mov"
+                output_path = os.path.join(self.OUTPUT_DIR, filename)
+
+                logger.info(
+                    f"Rendering question block {block_idx}: '{block.text[:50]}...'"
+                )
+                await self.renderer.render(graphic, output_path)
+                logger.info(
+                    f"Successfully rendered question block {block_idx} to {output_path}"
+                )
+
+                # Upload to R2
+                remote_key = f"question/{os.path.basename(output_path)}"
+                url = await asyncio.to_thread(
+                    self.r2.upload_file, output_path, remote_key
+                )
+                logger.info(
+                    f"Uploaded question block {block_idx} to R2: {remote_key}"
+                )
+
+                block.assets.question_filepath = output_path
+                block.assets.question_url = url
+
+                # Store the actual durations on the block so video template uses same values
+                block.typing_duration = typing_duration
+                block.thinking_duration = self.thinking_duration
+                block.answer_duration = self.answer_duration
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to render question block {block_idx}: {e}",
+                    exc_info=True,
+                )
+                # Don't re-raise, let the process continue but mark the block as failed
+                block.assets.question_filepath = None
+                block.assets.question_url = None
+
+        tasks = [_render_question(idx, block) for idx, block in question_items]
+        await asyncio.gather(*tasks)
