@@ -445,19 +445,25 @@ class ShortsGenerator:
                 self.logger.warning("No script generated or loaded. Exiting.")
                 return ReelSeriesOutput(topic="Error", reels=[])
 
-            # --- 2.5. Thumbnail Generation ---
-            # Generate thumbnails after script is available
+            # --- 2.5. Thumbnail Generation (runs concurrently with primary+secondary) ---
 
             series_thumbnail_url = None
             reel_thumbnails = {}  # Map reel index to thumbnail URL
 
-            if AssetType.IMAGES in self.required_assets:
+            async def _generate_all_thumbnails():
+                """Generate all thumbnails concurrently."""
+                nonlocal series_thumbnail_url
+                if AssetType.IMAGES not in self.required_assets:
+                    return
+
                 self.logger.info("Generating thumbnails...")
                 r2 = CloudflareR2()
 
-                # Generate series thumbnail from thumbnail_prompt (fallback to topic)
-                thumbnail_source = reel_series.thumbnail_prompt or reel_series.topic
-                if thumbnail_source:
+                async def _gen_series_thumb():
+                    nonlocal series_thumbnail_url
+                    thumbnail_source = reel_series.thumbnail_prompt or reel_series.topic
+                    if not thumbnail_source:
+                        return
                     try:
                         series_thumb_path = os.path.join(
                             self.image_gen.image_gen.OUTPUT_DIR,
@@ -472,45 +478,48 @@ class ShortsGenerator:
                             r2.upload_file, series_thumb_path, series_thumb_key
                         )
                         self.logger.info(f"Series thumbnail uploaded: {series_thumbnail_url}")
-                        # Clean up local file
                         if os.path.exists(series_thumb_path):
                             os.remove(series_thumb_path)
                     except Exception as e:
                         self.logger.warning(f"Failed to generate series thumbnail: {e}")
 
-                # Generate thumbnails for each reel from thumbnail_prompt (fallback to description)
-                for i, reel in enumerate(reel_series.reels):
+                async def _gen_reel_thumb(i, reel):
                     reel_thumb_source = reel.thumbnail_prompt or reel.description
-                    if reel_thumb_source:
-                        try:
-                            reel_thumb_path = os.path.join(
-                                self.image_gen.image_gen.OUTPUT_DIR,
-                                f"reel_thumb_{uuid.uuid4().hex}.png"
-                            )
-                            await self.image_gen.generate_thumbnail(
-                                prompt=reel_thumb_source,
-                                output_path=reel_thumb_path,
-                            )
-                            reel_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"
-                            reel_thumbnails[i] = await asyncio.to_thread(
-                                r2.upload_file, reel_thumb_path, reel_thumb_key
-                            )
-                            self.logger.info(f"Reel {i} thumbnail uploaded")
-                            # Clean up local file
-                            if os.path.exists(reel_thumb_path):
-                                os.remove(reel_thumb_path)
-                        except Exception as e:
-                            self.logger.warning(f"Failed to generate thumbnail for reel {i}: {e}")
+                    if not reel_thumb_source:
+                        return
+                    try:
+                        reel_thumb_path = os.path.join(
+                            self.image_gen.image_gen.OUTPUT_DIR,
+                            f"reel_thumb_{uuid.uuid4().hex}.png"
+                        )
+                        await self.image_gen.generate_thumbnail(
+                            prompt=reel_thumb_source,
+                            output_path=reel_thumb_path,
+                        )
+                        reel_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"
+                        reel_thumbnails[i] = await asyncio.to_thread(
+                            r2.upload_file, reel_thumb_path, reel_thumb_key
+                        )
+                        self.logger.info(f"Reel {i} thumbnail uploaded")
+                        if os.path.exists(reel_thumb_path):
+                            os.remove(reel_thumb_path)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to generate thumbnail for reel {i}: {e}")
 
-            # Store thumbnail URLs in reel_series for callback
-            reel_series.thumbnail_url = series_thumbnail_url
-            for i, reel in enumerate(reel_series.reels):
-                if i in reel_thumbnails:
-                    reel.thumbnail_url = reel_thumbnails[i]
+                # Generate series + all reel thumbnails concurrently
+                await asyncio.gather(
+                    _gen_series_thumb(),
+                    *[_gen_reel_thumb(i, reel) for i, reel in enumerate(reel_series.reels)]
+                )
 
-            # Call callback to update database with thumbnails
-            if status_callback:
-                await status_callback(PipelineStage.SCRIPT, reel_series)
+                # Store thumbnail URLs in reel_series for callback
+                reel_series.thumbnail_url = series_thumbnail_url
+                for i, reel in enumerate(reel_series.reels):
+                    if i in reel_thumbnails:
+                        reel.thumbnail_url = reel_thumbnails[i]
+
+                if status_callback:
+                    await status_callback(PipelineStage.SCRIPT, reel_series)
 
             # --- 3. Static Faces ---
             # fast enough to run anytime
@@ -519,7 +528,10 @@ class ShortsGenerator:
                 for i, reel in enumerate(reel_series.reels):
                     populate_reel_static_faces(reel, self.avatars)
 
-            # --- 4. Primary Stage ---
+            # --- 4. Primary + Secondary Stages (thumbnails run in background) ---
+
+            # Launch thumbnail generation concurrently with primary+secondary
+            thumbnail_task = asyncio.create_task(_generate_all_thumbnails())
 
             if current_stage <= PipelineStage.PRIMARY:
                 self.logger.info("Generating voiceover, images, latex, manim...")
@@ -538,6 +550,9 @@ class ShortsGenerator:
                 self._save_debug_state(reel_series, PipelineStage.SECONDARY)
                 if status_callback:
                     await status_callback(PipelineStage.SECONDARY, reel_series)
+
+            # Ensure thumbnails are done before final video compose
+            await thumbnail_task
 
             # --- 6. Final Video ---
 

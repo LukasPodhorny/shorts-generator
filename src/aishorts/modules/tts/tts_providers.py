@@ -143,18 +143,17 @@ class F5TTS(EndpointCaller, TTSProvider):
         if not isinstance(results, list):
             raise RuntimeError(f"F5TTS worker returned unexpected output: {results}")
 
-        for i, dialogue in enumerate(results):
+        async def _download_and_assign(dialogue):
             if not isinstance(dialogue, dict):
                 raise RuntimeError(f"F5TTS worker returned unexpected dialogue format: {dialogue}")
-            
             result_url = dialogue["audio_url"]
             filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
-
-            # Map back to block
             block_id = dialogue["id"]
             block = reel.blocks[block_id]
             block.assets.voice_filepath = filepath
             block.assets.voice_url = result_url
+
+        await asyncio.gather(*[_download_and_assign(d) for d in results])
 
 
 class LemonFoxTTS(TTSProvider):

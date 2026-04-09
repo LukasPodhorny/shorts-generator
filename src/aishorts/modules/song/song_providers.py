@@ -1,3 +1,4 @@
+import asyncio
 import os
 import aiohttp
 from dataclasses import dataclass
@@ -110,8 +111,17 @@ class MinimaxSong(SongProvider):
                 return SongResult(filepath=filepath, url=public_url)
 
     async def populate_reel(self, reel: Reel, **kwargs) -> None:
-        for block in reel.blocks:
-            if AssetType.SONG in block.valid_assets:
-                result = await self.generate_song(block.text)
-                block.assets.song_filepath = result.filepath
-                block.assets.song_url = result.url
+        song_blocks = [
+            block for block in reel.blocks
+            if AssetType.SONG in block.valid_assets
+        ]
+
+        if not song_blocks:
+            return
+
+        async def _gen_song(block):
+            result = await self.generate_song(block.text)
+            block.assets.song_filepath = result.filepath
+            block.assets.song_url = result.url
+
+        await asyncio.gather(*[_gen_song(block) for block in song_blocks])

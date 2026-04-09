@@ -1,3 +1,4 @@
+import asyncio
 import os
 from urllib.parse import urlparse
 from aishorts.modules.avatar import Avatar
@@ -166,21 +167,19 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
 
         response = await self.run_async(input_data)
 
-        results = []
-
-        for i, item in enumerate(response):
+        async def _download_and_assign(item):
             video_url = item["video_url"]
             filepath = (
                 await download_from_url(video_url, LipsyncProvider.OUTPUT_DIR)
                 if self.download_results
                 else None
             )
-
-            # Map back to reel
             block_id = item["id"]
             block = reel.blocks[block_id]
             block.assets.lipsync_filepath = filepath
             block.assets.lipsync_url = video_url
+
+        await asyncio.gather(*[_download_and_assign(item) for item in response])
 
 
 def populate_reel_static_faces(reel: Reel, avatars: list[Avatar]) -> None:
