@@ -60,8 +60,8 @@ class ImageGenerator:
         self,
         prompt: str,
         output_path: str,
-        width: int = 1080,
-        height: int = 1920,
+        width: int = 540,
+        height: int = 960,
     ) -> str:
         """
         Generate a thumbnail image with 9:16 aspect ratio (vertical).
@@ -69,12 +69,17 @@ class ImageGenerator:
         Args:
             prompt: The prompt/keywords for image generation
             output_path: Where to save the thumbnail
-            width: Target width (default 1080 for vertical)
-            height: Target height (default 1920 for vertical)
+            width: Target width (default 540 for vertical)
+            height: Target height (default 960 for vertical)
 
         Returns:
             Path to the generated thumbnail
         """
+        import shutil
+        from PIL import Image
+
+        got_image = False
+
         # Try to use provider's native size support (like RunPodAI)
         if hasattr(self.image_gen, 'get_image'):
             # Use get_image with specific size for AI providers
@@ -83,9 +88,8 @@ class ImageGenerator:
                 size=f"{width}*{height}",
                 id="thumbnail"
             )
-            # Move to output path
-            import shutil
             shutil.move(result.media.path, output_path)
+            got_image = True
         else:
             # For providers like Unsplash, generate and crop
             results = await self.image_gen.get_images(
@@ -95,11 +99,32 @@ class ImageGenerator:
                 ids=["thumbnail"]
             )
             if results and results[0]:
-                import shutil
                 shutil.move(results[0].media.path, output_path)
+                got_image = True
+
+        # Fallback to RunPodAI if primary provider returned nothing
+        if not got_image:
+            print(f"Thumbnail: primary provider returned no result, falling back to RunPodAI")
+            from aishorts.modules.image.image_providers import RunPodAI
+            fallback = RunPodAI()
+            result = await fallback.get_image(
+                prompt=prompt,
+                size=f"{width}*{height}",
+                id="thumbnail"
+            )
+            shutil.move(result.media.path, output_path)
 
         # Ensure 9:16 aspect ratio by cropping if needed
         await asyncio.to_thread(crop_to_9_16, output_path, output_path)
+
+        # Resize to target dimensions and compress as JPEG
+        def _compress(path, w, h):
+            with Image.open(path) as img:
+                img = img.convert("RGB")
+                img = img.resize((w, h), Image.LANCZOS)
+                img.save(path, "JPEG", quality=80, optimize=True)
+
+        await asyncio.to_thread(_compress, output_path, width, height)
 
         return output_path
 

@@ -151,7 +151,7 @@ class Unsplash(ImageProvider):
         max_width: int,
         max_height: int,
     ) -> None:
-        """Fetch images for all queries concurrently"""
+        """Fetch images for all queries concurrently, with RunPodAI fallback."""
 
         queries = []
         ids = []
@@ -167,12 +167,33 @@ class Unsplash(ImageProvider):
             queries=queries, max_width=max_width, max_height=max_height, ids=ids
         )
 
-        for res in results:
+        # Collect failed items for RunPodAI fallback
+        failed_queries = []
+        failed_ids = []
+
+        for res, query, id_pair in zip(results, queries, ids):
             if res:
                 block_idx, media_id = res.media.id
                 block = reel.blocks[block_idx]
                 block.assets.media_map[media_id] = res.media.path
                 block.assets.media_url_map[media_id] = res.media.url
+            else:
+                failed_queries.append(query)
+                failed_ids.append(id_pair)
+
+        # Fallback to RunPodAI for any images Unsplash couldn't find
+        if failed_queries:
+            print(f"Unsplash returned no results for {len(failed_queries)} image(s), falling back to RunPodAI")
+            fallback = RunPodAI()
+            fallback_results = await fallback.get_images(
+                prompts=failed_queries, ids=failed_ids
+            )
+            for res in fallback_results:
+                if res:
+                    block_idx, media_id = res.media.id
+                    block = reel.blocks[block_idx]
+                    block.assets.media_map[media_id] = res.media.path
+                    block.assets.media_url_map[media_id] = res.media.url
 
 
 class RunPodAI(ImageProvider):
