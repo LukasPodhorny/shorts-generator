@@ -52,7 +52,9 @@ class FFmpegProvider(Provider):
     def _has_any_flag(args: List[str], flags: List[str]) -> bool:
         return any(flag in args for flag in flags)
 
-    def get_compression_options(self, codec: str, existing_args: List[str]) -> List[str]:
+    def get_compression_options(
+        self, codec: str, existing_args: List[str]
+    ) -> List[str]:
         """
         Build lossy compression flags unless caller already provided explicit quality flags.
         For NVENC: uses capped VBR with -b:v as target, -maxrate as ceiling.
@@ -72,31 +74,52 @@ class FFmpegProvider(Provider):
                 "small": 30,
                 "very_small": 35,
             }
-            cq = self.quality_value if self.quality_value is not None else profile_to_cq.get(profile, 26)
-            preset = self.encoder_preset or ("p5" if profile == "high_quality" else "p4")
+            cq = (
+                self.quality_value
+                if self.quality_value is not None
+                else profile_to_cq.get(profile, 26)
+            )
+            preset = self.encoder_preset or (
+                "p5" if profile == "high_quality" else "p4"
+            )
 
             # Use VBR mode with target bitrate and max bitrate cap
             # This ensures the video stays close to target while allowing quality flexibility
             if self.max_video_bitrate:
                 # Target bitrate is slightly below max for headroom
                 target_bitrate = self.max_video_bitrate
-                options.extend([
-                    "-rc", "vbr",
-                    "-b:v", target_bitrate,
-                    "-maxrate", self.max_video_bitrate,
-                    "-bufsize", self.max_video_bitrate,
-                    "-cq", str(cq),
-                    "-preset", preset,
-                    "-tune", "hq",
-                ])
+                options.extend(
+                    [
+                        "-rc",
+                        "vbr",
+                        "-b:v",
+                        target_bitrate,
+                        "-maxrate",
+                        self.max_video_bitrate,
+                        "-bufsize",
+                        self.max_video_bitrate,
+                        "-cq",
+                        str(cq),
+                        "-preset",
+                        preset,
+                        "-tune",
+                        "hq",
+                    ]
+                )
             else:
                 # No bitrate limit - use constant quality mode
-                options.extend([
-                    "-rc", "vbr",
-                    "-cq", str(cq),
-                    "-preset", preset,
-                    "-tune", "hq",
-                ])
+                options.extend(
+                    [
+                        "-rc",
+                        "vbr",
+                        "-cq",
+                        str(cq),
+                        "-preset",
+                        preset,
+                        "-tune",
+                        "hq",
+                    ]
+                )
         else:
             # libx264 / software encoding
             if self._has_any_flag(existing_args, ["-crf", "-qp", "-b:v"]):
@@ -108,19 +131,37 @@ class FFmpegProvider(Provider):
                 "small": 28,
                 "very_small": 35,
             }
-            crf = self.quality_value if self.quality_value is not None else profile_to_crf.get(profile, 24)
-            preset = self.encoder_preset or ("slow" if profile == "high_quality" else "medium")
+            crf = (
+                self.quality_value
+                if self.quality_value is not None
+                else profile_to_crf.get(profile, 24)
+            )
+            preset = self.encoder_preset or (
+                "slow" if profile == "high_quality" else "medium"
+            )
             options.extend(["-crf", str(crf), "-preset", preset])
             if self.max_video_bitrate:
-                options.extend(["-maxrate", self.max_video_bitrate, "-bufsize", self.max_video_bitrate])
+                options.extend(
+                    [
+                        "-maxrate",
+                        self.max_video_bitrate,
+                        "-bufsize",
+                        self.max_video_bitrate,
+                    ]
+                )
 
-        if not self._has_any_flag(existing_args, ["-b:a", "-acodec", "-c:a"]) and self.audio_bitrate:
+        if (
+            not self._has_any_flag(existing_args, ["-b:a", "-acodec", "-c:a"])
+            and self.audio_bitrate
+        ):
             options.extend(["-b:a", self.audio_bitrate])
 
         return options
 
     @abstractmethod
-    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
+    async def render(
+        self, cmd: FFmpegCommand, output_filename: str, **kwargs
+    ) -> FFmpegResult:
         pass
 
     @staticmethod
@@ -163,7 +204,9 @@ class LocalFFmpeg(FFmpegProvider):
         super().__init__(**kwargs)
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
-    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
+    async def render(
+        self, cmd: FFmpegCommand, output_filename: str, **kwargs
+    ) -> FFmpegResult:
         cmd.video_codec = self.video_codec
 
         output_path = os.path.join(self.OUTPUT_DIR, output_filename)
@@ -221,45 +264,51 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
     ):
         self.endpoint_id = endpoint_id or os.getenv("FFMPEG_ENDPOINT_ID")
         super().__init__(
-            endpoint_id=self.endpoint_id, 
-            timeout=timeout, 
-            api_key=runpod_api_key
+            endpoint_id=self.endpoint_id, timeout=timeout, api_key=runpod_api_key
         )
         FFmpegProvider.__init__(self, download_results=download_results, **kwargs)
-        
+
         # Instantiate your Cloudflare R2 handler if needed for uploads/downloads
         self.r2 = CloudflareR2()
         self.session_id = kwargs.get("session_id", "default")
 
-    async def _prepare_inputs(self, cmd: FFmpegCommand, session_id: str) -> List[Union[str, Dict]]:
+    async def _prepare_inputs(
+        self, cmd: FFmpegCommand, session_id: str
+    ) -> List[Union[str, Dict]]:
         """
-        Processes cmd.inputs. If they are local Path objects, uploads them to R2 
+        Processes cmd.inputs. If they are local Path objects, uploads them to R2
         and gets a presigned URL. If they are already URLs, keeps them as is.
         """
         processed_inputs = []
-        
+
         # You might want to upload concurrency if there are multiple local files
         for input_item in cmd.inputs:
-            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
+            if isinstance(input_item, Path) or (
+                isinstance(input_item, str)
+                and not str(input_item).startswith("http")
+                and os.path.exists(str(input_item))
+            ):
                 # Assuming your CloudflareR2 handler has an upload method that returns a URL
                 # Adjust based on your actual CloudflareR2 implementation
                 remote_key = f"uploads/{session_id}/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
-                
+
                 # Get a presigned GET URL for Runpod to download
                 presigned_url = self.r2.create_presigned_url(remote_key)
                 processed_inputs.append(presigned_url)
-                
+
             elif isinstance(input_item, dict):
                 # If you already pass {"url": "...", "cache_key": "..."} handles caching
                 processed_inputs.append(input_item)
             else:
                 # Already a URL string
                 processed_inputs.append(str(input_item))
-                
+
         return processed_inputs
 
-    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
+    async def render(
+        self, cmd: FFmpegCommand, output_filename: str, **kwargs
+    ) -> FFmpegResult:
         # 1. Prepare inputs (upload local files to R2 if necessary)
         session_id = kwargs.get("session_id", self.session_id)
         prepared_inputs = await self._prepare_inputs(cmd, session_id=session_id)
@@ -284,10 +333,12 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
         # run_async handles the polling and returns the "output" part of the Runpod JSON response
         print(f"[{self.provider_name}] Sending render job to Runpod...")
         result = await self.run_async(payload)
-        
+
         # 5. Handle the result
         if "error" in result:
-            raise Exception(f"Runpod FFmpeg failed: {result['error']}\nLogs: {result.get('logs')}")
+            raise Exception(
+                f"Runpod FFmpeg failed: {result['error']}\nLogs: {result.get('logs')}"
+            )
 
         download_url = self.r2.get_public_url(output_key)
         duration = result.get("duration")  # Extract duration from response
@@ -301,15 +352,16 @@ class RunpodFFmpeg(EndpointCaller, FFmpegProvider):
             download_url=download_url,
             filepath=local_filepath,
             key=output_key,
-            duration=duration
+            duration=duration,
         )
+
 
 class ModalFFmpeg(FFmpegProvider):
     provider_name = "modal_ffmpeg"
 
     def __init__(
         self,
-        endpoint_url: str | None = None, # Your deployed Modal Web Endpoint URL
+        endpoint_url: str | None = None,  # Your deployed Modal Web Endpoint URL
         modal_api_key: str | None = None,
         download_results: bool = True,
         **kwargs,
@@ -317,15 +369,21 @@ class ModalFFmpeg(FFmpegProvider):
         # Format usually looks like: https://yourusername--pdftoreel-ffmpeg-ffmpeg-endpoint.modal.run
         self.endpoint_url = endpoint_url or os.getenv("MODAL_FFMPEG_ENDPOINT_URL")
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
-        
+
         super().__init__(download_results=download_results, **kwargs)
         self.r2 = CloudflareR2()
         self.session_id = kwargs.get("session_id", "default")
 
-    async def _prepare_inputs(self, cmd: FFmpegCommand, session_id: str) -> List[Union[str, Dict]]:
+    async def _prepare_inputs(
+        self, cmd: FFmpegCommand, session_id: str
+    ) -> List[Union[str, Dict]]:
         processed_inputs = []
         for input_item in cmd.inputs:
-            if isinstance(input_item, Path) or (isinstance(input_item, str) and not str(input_item).startswith("http") and os.path.exists(str(input_item))):
+            if isinstance(input_item, Path) or (
+                isinstance(input_item, str)
+                and not str(input_item).startswith("http")
+                and os.path.exists(str(input_item))
+            ):
                 remote_key = f"uploads/{session_id}/{os.path.basename(str(input_item))}"
                 self.r2.upload_file(str(input_item), remote_key)
                 presigned_url = self.r2.create_presigned_url(remote_key)
@@ -341,20 +399,25 @@ class ModalFFmpeg(FFmpegProvider):
         for arg in args:
             new_arg = arg
             import re
+
             path_pattern = r'(/[^"\'\s]+\.(?:ass|srt|vtt|png|jpg|jpeg))'
             matches = re.findall(path_pattern, arg)
-            
+
             for local_path in matches:
                 if os.path.exists(local_path):
-                    remote_key = f"uploads/{session_id}/args/{os.path.basename(local_path)}"
+                    remote_key = (
+                        f"uploads/{session_id}/args/{os.path.basename(local_path)}"
+                    )
                     self.r2.upload_file(local_path, remote_key)
                     presigned_url = self.r2.create_presigned_url(remote_key)
                     new_arg = new_arg.replace(local_path, presigned_url)
-                    
+
             processed_args.append(new_arg)
         return processed_args
 
-    async def render(self, cmd: FFmpegCommand, output_filename: str, **kwargs) -> FFmpegResult:
+    async def render(
+        self, cmd: FFmpegCommand, output_filename: str, **kwargs
+    ) -> FFmpegResult:
         session_id = kwargs.get("session_id", self.session_id)
         prepared_inputs = await self._prepare_inputs(cmd, session_id=session_id)
         prepared_args = self._prepare_args(cmd.args, session_id=session_id)
@@ -370,20 +433,24 @@ class ModalFFmpeg(FFmpegProvider):
                 "ffmpeg_options": self.get_compression_options(codec, prepared_args),
             }
         }
-        
+
         if self.modal_api_key:
             payload["api_key"] = self.modal_api_key
 
         print(f"[{self.provider_name}] Sending render job to Modal.com...")
-        
+
         # Unlike Runpod EndpointCaller, Modal Web Endpoints are purely synchronous HTTP responses!
         # You just POST and await the JSON response without polling /status.
         async with aiohttp.ClientSession() as session:
-            async with session.post(self.endpoint_url, json=payload, timeout=1800) as response:
+            async with session.post(
+                self.endpoint_url, json=payload, timeout=1800
+            ) as response:
                 if not response.ok:
                     text = await response.text()
-                    raise Exception(f"Modal FFmpeg failed with {response.status}: {text}")
-                
+                    raise Exception(
+                        f"Modal FFmpeg failed with {response.status}: {text}"
+                    )
+
                 result = await response.json()
 
         download_url = self.r2.get_public_url(output_key)
@@ -398,5 +465,5 @@ class ModalFFmpeg(FFmpegProvider):
             download_url=download_url,
             filepath=local_filepath,
             key=output_key,
-            duration=duration
+            duration=duration,
         )
