@@ -97,6 +97,52 @@ class VideoTemplateRead(SQLModel):
     preview_url: Optional[str] = None
 
 
+class GenerationConfig(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    # Stores provider/model config for all pipeline stages as JSON
+    data: dict = Field(sa_column=Column(JSON))
+    is_default: bool = Field(default=False)
+
+    def to_config_kwargs(self) -> dict:
+        """Returns kwargs that can be spread into ShortsConfig(avatars=..., video_template=..., **kwargs)."""
+        from aishorts.shorts_generator import (
+            ScriptConfig, FFmpegConfig, ManimConfig,
+            ImagesConfig, LatexConfig, QuestionConfig, SongConfig,
+        )
+        from aishorts import SubtitleConfig
+
+        config_map = {
+            "script_config": ScriptConfig,
+            "subtitle_config": SubtitleConfig,
+            "ffmpeg_config": FFmpegConfig,
+            "manim_config": ManimConfig,
+            "images_config": ImagesConfig,
+            "latex_config": LatexConfig,
+            "question_config": QuestionConfig,
+            "song_config": SongConfig,
+        }
+
+        kwargs = {}
+        for key, cls in config_map.items():
+            if key in self.data:
+                kwargs[key] = cls(**self.data[key])
+        return kwargs
+
+
+class GenerationConfigCreate(SQLModel):
+    name: str
+    data: dict
+    is_default: bool = False
+
+
+class GenerationConfigRead(SQLModel):
+    id: int
+    name: str
+    data: dict
+    is_default: bool
+
+
 class ReelSeries(SQLModel, table=True):
     """
     Represents a generation job that produces one or more reels.
@@ -182,6 +228,7 @@ class GenerateRequest(SQLModel):
     amount: int = 1
     input_text: Optional[str] = None
     files: Optional[List[str]] = None
+    config_name: Optional[str] = None  # If None, uses the default GenerationConfig
 
 
 class AddCreditsRequest(SQLModel):

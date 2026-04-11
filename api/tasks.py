@@ -3,11 +3,11 @@ import logging
 from sqlmodel import Session, select
 from fastapi.concurrency import run_in_threadpool
 from api.database import engine
-from api.models import ReelSeries, Reel, Avatar, VideoTemplate, JobStatus
+from api.models import ReelSeries, Reel, Avatar, VideoTemplate, GenerationConfig, JobStatus
 
 # Import core library
-from aishorts import ShortsGenerator, ShortsConfig, SubtitleConfig, FFmpegConfig, ManimConfig
-from aishorts.shorts_generator import ScriptConfig, PipelineStage
+from aishorts import ShortsGenerator, ShortsConfig
+from aishorts.shorts_generator import PipelineStage
 from typing import Optional
 
 
@@ -100,13 +100,25 @@ def _prepare_generation_config(
 
         video_template = db_template.to_pydantic()
 
+        # Fetch GenerationConfig (by name, or fall back to default)
+        config_name = request_data.get("config_name")
+        if config_name:
+            gen_config = session.exec(
+                select(GenerationConfig).where(GenerationConfig.name == config_name)
+            ).first()
+            if not gen_config:
+                raise ValueError(f"GenerationConfig '{config_name}' not found")
+        else:
+            gen_config = session.exec(
+                select(GenerationConfig).where(GenerationConfig.is_default == True)
+            ).first()
+
+        config_kwargs = gen_config.to_config_kwargs() if gen_config else {}
+
         return ShortsConfig(
             avatars=selected_avatars,
             video_template=video_template,
-            subtitle_config=SubtitleConfig(provider="modal_wav2vec_aligner"),
-            script_config=ScriptConfig(provider="minimax", provider_config={"model":"deepseek-ai/deepseek-v3.2"}),
-            ffmpeg_config=FFmpegConfig(provider="modal_ffmpeg"),
-            manim_config=ManimConfig(provider_config={"model":"z-ai/glm5"})
+            **config_kwargs,
         )
 
 

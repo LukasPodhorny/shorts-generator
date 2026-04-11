@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from api.database import get_session
 from api.auth import get_current_admin_user
-from api.models import Avatar, VideoTemplate, User, AvatarCreate, VideoTemplateCreate
+from api.models import (
+    Avatar, VideoTemplate, User, AvatarCreate, VideoTemplateCreate,
+    GenerationConfig, GenerationConfigCreate,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -71,3 +74,49 @@ def create_or_update_template(
     session.commit()
     session.refresh(new_template)
     return new_template
+
+
+@router.post("/generation-configs", response_model=GenerationConfig)
+def create_or_update_generation_config(
+    config_in: GenerationConfigCreate,
+    session: Session = Depends(get_session),
+    admin_user: User = Depends(get_current_admin_user),
+):
+    """
+    Adds or updates a GenerationConfig (provider/model settings for the pipeline).
+    """
+    # Validate by trying to build the config kwargs
+    try:
+        GenerationConfig(name=config_in.name, data=config_in.data).to_config_kwargs()
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid generation config: {str(e)}"
+        )
+
+    # If marking as default, unset any existing default
+    if config_in.is_default:
+        old_default = session.exec(
+            select(GenerationConfig).where(GenerationConfig.is_default == True)
+        ).first()
+        if old_default:
+            old_default.is_default = False
+            session.add(old_default)
+
+    existing = session.exec(
+        select(GenerationConfig).where(GenerationConfig.name == config_in.name)
+    ).first()
+    if existing:
+        existing.data = config_in.data
+        existing.is_default = config_in.is_default
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    new_config = GenerationConfig(
+        name=config_in.name, data=config_in.data, is_default=config_in.is_default
+    )
+    session.add(new_config)
+    session.commit()
+    session.refresh(new_config)
+    return new_config
