@@ -175,9 +175,11 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
                 video_url = video_url.get("url")
             if not video_url or not isinstance(video_url, str):
                 block_id = item.get("id", "?")
-                raise RuntimeError(
-                    f"Lipsync returned invalid video_url for block {block_id}: {item.get('video_url')!r}"
+                print(
+                    f"WARNING: Lipsync returned no video_url for block {block_id}, "
+                    f"skipping (will use static face fallback)"
                 )
+                return
             filepath = (
                 await download_from_url(video_url, LipsyncProvider.OUTPUT_DIR)
                 if self.download_results
