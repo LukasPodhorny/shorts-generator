@@ -42,6 +42,12 @@ class GameplayTemplate(EditTemplate):
         self.manim_width = template_config.manim_width
         self.manim_style = template_config.manim_style
 
+    def _resolve_url(self, url):
+        """Return a dict-based URL suitable for graph.add_input."""
+        if not url:
+            return None
+        return url if isinstance(url, dict) else {"url": url}
+
     def _get_block_segment(self, block):
         video_path = None
         audio_path = None
@@ -52,11 +58,21 @@ class GameplayTemplate(EditTemplate):
                 seg_type = "video"
                 video_path = block.assets.lipsync_filepath
                 if not os.path.exists(video_path) and block.assets.lipsync_url:
-                    video_path = (
-                        block.assets.lipsync_url
-                        if isinstance(block.assets.lipsync_url, dict)
-                        else {"url": block.assets.lipsync_url}
-                    )
+                    video_path = self._resolve_url(block.assets.lipsync_url)
+            elif block.assets.voice_filepath or block.assets.voice_url:
+                # No lipsync — fall back to static face + voice audio
+                static_path = block.assets.staticface_filepath
+                if not static_path or (
+                    isinstance(static_path, str) and not os.path.exists(static_path)
+                ):
+                    static_path = self._resolve_url(block.assets.staticface_url)
+
+                if static_path:
+                    seg_type = "static_face"
+                    video_path = static_path
+                    audio_path = block.assets.voice_filepath
+                    if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                        audio_path = self._resolve_url(block.assets.voice_url)
 
         elif block.type == "question" and block.assets:
             if block.assets.question_filepath:
@@ -125,10 +141,15 @@ class GameplayTemplate(EditTemplate):
             self.collect_segments_and_timings(reel)
         )
 
+        # Shift subtitles 100px up so they don't cover the avatar's head.
+        # Clone the shared style to avoid mutating it for other templates.
+        subtitle_style = self.subtitle_style.model_copy()
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) + 100
+
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
             transcription=final_subtitles,
-            style=self.subtitle_style,
+            style=subtitle_style,
         ).download()
 
         # --- Build Filter Graph ---
@@ -144,6 +165,35 @@ class GameplayTemplate(EditTemplate):
                 v = v.filter("fps", fps=30)
                 # Scale to square
                 v = v.filter("scale", "1080:1080")
+
+            elif seg["type"] == "static_face":
+                # Static face image + voice audio (lipsync fallback)
+                v, _ = graph.add_input(seg["video"], f"seg_{i}_img")
+                v = v.filter("scale", "1080:1080:force_original_aspect_ratio=decrease")
+                v = v.filter("pad", "1080:1080:-1:-1:color=black@0")
+                v = v.filter("format", "yuva420p")
+                # Loop the static image for the segment duration
+                v = v.filter("loop", loop=-1, size=1, start=0)
+                v = v.filter("fps", fps=30)
+                v = v.filter("trim", duration=seg["duration"])
+                v = v.filter("setpts", "PTS-STARTPTS")
+
+                silence = graph.add_raw(
+                    [],
+                    f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={seg['duration']}",
+                    f"silence_{i}",
+                )
+
+                if seg["audio"]:
+                    _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
+                    a_in = a_in.filter("aformat", channel_layouts="stereo")
+                    a = graph.add_raw(
+                        [silence, a_in],
+                        "amix=inputs=2:duration=first:dropout_transition=0:normalize=0",
+                        f"seg_{i}_mix",
+                    )
+                else:
+                    a = silence
 
             elif seg["type"] == "question":
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
@@ -336,6 +386,12 @@ class AlphaGameplayTemplate(EditTemplate):
         self.manim_width = template_config.manim_width
         self.manim_style = template_config.manim_style
 
+    def _resolve_url(self, url):
+        """Return a dict-based URL suitable for graph.add_input."""
+        if not url:
+            return None
+        return url if isinstance(url, dict) else {"url": url}
+
     def _get_block_segment(self, block):
         video_path = None
         audio_path = None
@@ -346,22 +402,28 @@ class AlphaGameplayTemplate(EditTemplate):
                 seg_type = "video"
                 video_path = block.assets.lipsync_filepath
                 if not os.path.exists(video_path) and block.assets.lipsync_url:
-                    video_path = (
-                        block.assets.lipsync_url
-                        if isinstance(block.assets.lipsync_url, dict)
-                        else {"url": block.assets.lipsync_url}
-                    )
+                    video_path = self._resolve_url(block.assets.lipsync_url)
+            elif block.assets.voice_filepath or block.assets.voice_url:
+                # No lipsync — fall back to static face + voice audio
+                static_path = block.assets.staticface_filepath
+                if not static_path or (
+                    isinstance(static_path, str) and not os.path.exists(static_path)
+                ):
+                    static_path = self._resolve_url(block.assets.staticface_url)
+
+                if static_path:
+                    seg_type = "static_face"
+                    video_path = static_path
+                    audio_path = block.assets.voice_filepath
+                    if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                        audio_path = self._resolve_url(block.assets.voice_url)
 
         elif block.type == "question" and block.assets:
             if block.assets.question_filepath:
                 seg_type = "question"
                 video_path = block.assets.question_filepath
                 if not os.path.exists(video_path) and block.assets.question_url:
-                    video_path = (
-                        block.assets.question_url
-                        if isinstance(block.assets.question_url, dict)
-                        else {"url": block.assets.question_url}
-                    )
+                    video_path = self._resolve_url(block.assets.question_url)
 
                 audio_path = block.assets.voice_filepath
                 if (
@@ -369,11 +431,7 @@ class AlphaGameplayTemplate(EditTemplate):
                     and not os.path.exists(audio_path)
                     and block.assets.voice_url
                 ):
-                    audio_path = (
-                        block.assets.voice_url
-                        if isinstance(block.assets.voice_url, dict)
-                        else {"url": block.assets.voice_url}
-                    )
+                    audio_path = self._resolve_url(block.assets.voice_url)
 
         if seg_type != "none" and video_path:
             try:
@@ -419,10 +477,15 @@ class AlphaGameplayTemplate(EditTemplate):
             self.collect_segments_and_timings(reel)
         )
 
+        # Shift subtitles 100px up so they don't cover the avatar's head.
+        # Clone the shared style to avoid mutating it for other templates.
+        subtitle_style = self.subtitle_style.model_copy()
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) + 100
+
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
             transcription=final_subtitles,
-            style=self.subtitle_style,
+            style=subtitle_style,
         ).download()
 
         # --- Build Filter Graph ---
@@ -454,6 +517,37 @@ class AlphaGameplayTemplate(EditTemplate):
                 # Pad to Full Canvas (Avatar at Bottom)
                 # x=0, y=1920-1080=840
                 v = v.filter("pad", "1080:1920:0:840:color=0x00000000")
+
+            elif seg["type"] == "static_face":
+                # Static face image + voice audio (lipsync fallback)
+                v, _ = graph.add_input(seg["video"], f"seg_{i}_img")
+                v = v.filter("scale", "1080:1080:force_original_aspect_ratio=decrease")
+                v = v.filter("pad", "1080:1080:-1:-1:color=0x00000000")
+                v = v.filter("format", "yuva420p")
+                # Pad to full canvas like lipsync (avatar at bottom)
+                v = v.filter("pad", "1080:1920:0:840:color=0x00000000")
+                # Loop the static image for the segment duration
+                v = v.filter("loop", loop=-1, size=1, start=0)
+                v = v.filter("fps", fps=30)
+                v = v.filter("trim", duration=seg["duration"])
+                v = v.filter("setpts", "PTS-STARTPTS")
+
+                silence = graph.add_raw(
+                    [],
+                    f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={seg['duration']}",
+                    f"silence_{i}",
+                )
+
+                if seg["audio"]:
+                    _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
+                    a_in = a_in.filter("aformat", channel_layouts="stereo")
+                    a = graph.add_raw(
+                        [silence, a_in],
+                        "amix=inputs=2:duration=first:dropout_transition=0:normalize=0",
+                        f"seg_{i}_mix",
+                    )
+                else:
+                    a = silence
 
             elif seg["type"] == "question":
                 v, _ = graph.add_input(seg["video"], f"seg_{i}_v")
