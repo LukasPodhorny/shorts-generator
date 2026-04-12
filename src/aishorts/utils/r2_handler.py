@@ -170,6 +170,8 @@ async def download_from_url(
         url_str = url.get("url")
         if not url_str:
             raise ValueError("URL dictionary missing 'url' key")
+    if not isinstance(url_str, str):
+        raise TypeError(f"Expected URL string, got {type(url_str).__name__}: {url_str!r}")
 
     if full_path:
         filepath = full_path

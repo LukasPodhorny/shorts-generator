@@ -156,7 +156,7 @@ class ReelSeries(SQLModel, table=True):
     thumbnail_url: Optional[str] = None
 
     user: User = Relationship(back_populates="series")
-    reels: List["Reel"] = Relationship(back_populates="series", cascade_delete=True)
+    reels: List["Reel"] = Relationship(back_populates="series", cascade_delete=True, sa_relationship_kwargs={"order_by": "Reel.sequence_number"})
 
 
 class Reel(SQLModel, table=True):
