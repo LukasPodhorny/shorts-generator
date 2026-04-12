@@ -71,7 +71,11 @@ class GameplayTemplate(EditTemplate):
                     seg_type = "static_face"
                     video_path = static_path
                     audio_path = block.assets.voice_filepath
-                    if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                    if (
+                        audio_path
+                        and not os.path.exists(audio_path)
+                        and block.assets.voice_url
+                    ):
                         audio_path = self._resolve_url(block.assets.voice_url)
 
         elif block.type == "question" and block.assets:
@@ -144,7 +148,7 @@ class GameplayTemplate(EditTemplate):
         # Shift subtitles 100px up so they don't cover the avatar's head.
         # Clone the shared style to avoid mutating it for other templates.
         subtitle_style = self.subtitle_style.model_copy()
-        subtitle_style.offset_y = (subtitle_style.offset_y or 0) + 100
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 100
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -415,7 +419,11 @@ class AlphaGameplayTemplate(EditTemplate):
                     seg_type = "static_face"
                     video_path = static_path
                     audio_path = block.assets.voice_filepath
-                    if audio_path and not os.path.exists(audio_path) and block.assets.voice_url:
+                    if (
+                        audio_path
+                        and not os.path.exists(audio_path)
+                        and block.assets.voice_url
+                    ):
                         audio_path = self._resolve_url(block.assets.voice_url)
 
         elif block.type == "question" and block.assets:
