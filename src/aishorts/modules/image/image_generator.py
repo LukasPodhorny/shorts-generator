@@ -129,11 +129,43 @@ class ImageGenerator:
         return output_path
 
     async def populate_reel(self, reel: Reel, **kwargs) -> Reel:
-        """Generates images and populates the reel.blocks[i].assets fields in-place."""
+        """Generates images and populates the reel.blocks[i].assets fields in-place.
+        Falls back to RunPodAI for any images the primary provider couldn't find."""
         func = self.image_gen.populate_reel
 
         # Provider now populates the reel directly
         await await_or_thread(func, reel, self.max_width, self.max_height, **kwargs)
+
+        # Check for missing images and fall back to RunPodAI
+        missing_prompts = []
+        missing_ids = []
+        for i, block in enumerate(reel.blocks):
+            if AssetType.IMAGES in block.valid_assets:
+                for media_item in block.media:
+                    if (
+                        media_item.type == "image"
+                        and media_item.id not in block.assets.media_map
+                    ):
+                        missing_prompts.append(media_item.keywords)
+                        missing_ids.append((i, media_item.id))
+
+        if missing_prompts:
+            from aishorts.modules.image.image_providers import RunPodAI
+
+            print(
+                f"Primary image provider returned no results for "
+                f"{len(missing_prompts)} image(s), falling back to RunPodAI"
+            )
+            fallback = RunPodAI()
+            fallback_results = await fallback.get_images(
+                prompts=missing_prompts, ids=missing_ids
+            )
+            for res in fallback_results:
+                if res:
+                    block_idx, media_id = res.media.id
+                    block = reel.blocks[block_idx]
+                    block.assets.media_map[media_id] = res.media.path
+                    block.assets.media_url_map[media_id] = res.media.url
 
         # We need to iterate blocks to style the images that were just generated
         async def _style_task(path):

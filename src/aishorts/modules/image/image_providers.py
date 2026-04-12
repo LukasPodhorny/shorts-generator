@@ -151,7 +151,7 @@ class Unsplash(ImageProvider):
         max_width: int,
         max_height: int,
     ) -> None:
-        """Fetch images for all queries concurrently, with RunPodAI fallback."""
+        """Fetch images for all queries concurrently"""
 
         queries = []
         ids = []
@@ -167,33 +167,12 @@ class Unsplash(ImageProvider):
             queries=queries, max_width=max_width, max_height=max_height, ids=ids
         )
 
-        # Collect failed items for RunPodAI fallback
-        failed_queries = []
-        failed_ids = []
-
-        for res, query, id_pair in zip(results, queries, ids):
+        for res in results:
             if res:
                 block_idx, media_id = res.media.id
                 block = reel.blocks[block_idx]
                 block.assets.media_map[media_id] = res.media.path
                 block.assets.media_url_map[media_id] = res.media.url
-            else:
-                failed_queries.append(query)
-                failed_ids.append(id_pair)
-
-        # Fallback to RunPodAI for any images Unsplash couldn't find
-        if failed_queries:
-            print(f"Unsplash returned no results for {len(failed_queries)} image(s), falling back to RunPodAI")
-            fallback = RunPodAI()
-            fallback_results = await fallback.get_images(
-                prompts=failed_queries, ids=failed_ids
-            )
-            for res in fallback_results:
-                if res:
-                    block_idx, media_id = res.media.id
-                    block = reel.blocks[block_idx]
-                    block.assets.media_map[media_id] = res.media.path
-                    block.assets.media_url_map[media_id] = res.media.url
 
 
 class RunPodAI(ImageProvider):
@@ -227,7 +206,11 @@ class RunPodAI(ImageProvider):
         strength: float | None = None,
         seed: int = -1,
     ) -> tuple[str, str]:
-        """Generate an image and return (image_url, prompt)."""
+        """Generate an image and return (image_url, prompt).
+
+        The /run endpoint is async — it returns a job ID. We poll /status/{id}
+        until the job completes, then extract the output URL.
+        """
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -246,19 +229,46 @@ class RunPodAI(ImageProvider):
 
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            # Submit the job
             async with session.post(
                 self.base_url, headers=headers, json=payload
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
 
-        # Extract image URL from response
-        # RunPod response format: {"output": "https://..."}
-        image_url = data.get("output")
-        if not image_url:
-            raise RuntimeError(f"No image URL in RunPod response: {data}")
+            # If the response already contains output, return it directly
+            image_url = data.get("output")
+            if image_url:
+                return image_url, prompt
 
-        return image_url, prompt
+            # Otherwise, poll for completion
+            job_id = data.get("id")
+            if not job_id:
+                raise RuntimeError(f"No job ID or output in RunPod response: {data}")
+
+            status_url = f"https://api.runpod.ai/v2/{self.endpoint_id}/status/{job_id}"
+            poll_interval = 1.0
+
+            while True:
+                await asyncio.sleep(poll_interval)
+                async with session.get(status_url, headers=headers) as status_resp:
+                    status_resp.raise_for_status()
+                    status_data = await status_resp.json()
+
+                status = status_data.get("status")
+                if status == "COMPLETED":
+                    image_url = status_data.get("output")
+                    if not image_url:
+                        raise RuntimeError(
+                            f"RunPod job completed but no output: {status_data}"
+                        )
+                    return image_url, prompt
+                elif status in ("FAILED", "CANCELLED", "TIMED_OUT"):
+                    raise RuntimeError(
+                        f"RunPod job {status}: {status_data.get('error', status_data)}"
+                    )
+                # IN_QUEUE / IN_PROGRESS — keep polling
+                poll_interval = min(poll_interval * 1.5, 5.0)
 
     async def _download_image(self, url: str, prompt: str, id: Any) -> ImageResult:
         """Download generated image to local storage."""

@@ -52,10 +52,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
         self, audio_url: str, emotion: str, seed: int, id: int
     ) -> dict:
         avatar = self.avatars[0]
-        
-        face_url = avatar.face_url
-        if isinstance(face_url, dict):
-            face_url = face_url.get("url")
+        face_url = self._extract_url(avatar.face_url)
 
         return {
             "input": {
@@ -78,15 +75,20 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
             }
         }
 
+    @staticmethod
+    def _extract_url(url) -> str | None:
+        """Extract a plain URL string from a str or dict."""
+        if isinstance(url, dict):
+            return url.get("url")
+        return url
+
     def _prepare_list_input(
         self, tts_results: list[TTSResult], emotion: str, seed: int
     ) -> dict:
         avatars_dict = {}
         for avatar in self.avatars:
-            face_url = avatar.face_url
-            if isinstance(face_url, dict):
-                face_url = face_url.get("url")
-                
+            face_url = self._extract_url(avatar.face_url)
+
             avatars_dict[avatar.name] = {
                 "avatar_image": face_url,
                 "seed": seed,
@@ -100,7 +102,7 @@ class FLOATLipsync(EndpointCaller, LipsyncProvider):
                 "dialogues": [
                     {
                         "avatar": result.avatar.name,
-                        "audio_url": result.url,
+                        "audio_url": self._extract_url(result.url),
                         "emotion": emotion,
                         "id": result.id,
                     }
