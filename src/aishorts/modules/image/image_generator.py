@@ -80,29 +80,34 @@ class ImageGenerator:
 
         got_image = False
 
-        # Try to use provider's native size support (like RunPodAI)
-        if hasattr(self.image_gen, 'get_image'):
-            # Use get_image with specific size for AI providers
-            result = await self.image_gen.get_image(
-                prompt=prompt,
-                size=f"{width}*{height}",
-                id="thumbnail"
-            )
-            shutil.move(result.media.path, output_path)
-            got_image = True
-        else:
-            # For providers like Unsplash, generate and crop
-            results = await self.image_gen.get_images(
-                queries=[prompt],
-                max_width=width,
-                max_height=height,
-                ids=["thumbnail"]
-            )
-            if results and results[0]:
-                shutil.move(results[0].media.path, output_path)
-                got_image = True
+        # Try the primary provider. Treat exceptions as "no result" so the
+        # fallback still runs (e.g. RunPod returning an unparseable output shape).
+        try:
+            if hasattr(self.image_gen, 'get_image'):
+                # Use get_image with specific size for AI providers
+                result = await self.image_gen.get_image(
+                    prompt=prompt,
+                    size=f"{width}*{height}",
+                    id="thumbnail"
+                )
+                if result and result.media and result.media.path:
+                    shutil.move(result.media.path, output_path)
+                    got_image = True
+            else:
+                # For providers like Unsplash, generate and crop
+                results = await self.image_gen.get_images(
+                    queries=[prompt],
+                    max_width=width,
+                    max_height=height,
+                    ids=["thumbnail"]
+                )
+                if results and results[0]:
+                    shutil.move(results[0].media.path, output_path)
+                    got_image = True
+        except Exception as e:
+            print(f"Thumbnail: primary provider raised {type(e).__name__}: {e}")
 
-        # Fallback to RunPodAI if primary provider returned nothing
+        # Fallback to RunPodAI if primary provider returned nothing or errored
         if not got_image:
             print(f"Thumbnail: primary provider returned no result, falling back to RunPodAI")
             from aishorts.modules.image.image_providers import RunPodAI

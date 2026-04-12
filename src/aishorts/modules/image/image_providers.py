@@ -175,6 +175,39 @@ class Unsplash(ImageProvider):
                 block.assets.media_url_map[media_id] = res.media.url
 
 
+def _extract_runpod_url(output: Any) -> str | None:
+    """Normalize RunPod worker `output` to a URL string.
+
+    Workers return output in inconsistent shapes depending on version:
+      - "https://..."
+      - ["https://...", ...]
+      - {"url": "..."} / {"image_url": "..."} / {"image": "..."} / {"output": "..."}
+      - [{"image_url": "..."}, ...]
+    Returns the first usable URL string, or None.
+    """
+    if not output:
+        return None
+    if isinstance(output, str):
+        return output
+    if isinstance(output, list):
+        for item in output:
+            url = _extract_runpod_url(item)
+            if url:
+                return url
+        return None
+    if isinstance(output, dict):
+        for key in ("url", "image_url", "image", "output", "imageUrl"):
+            val = output.get(key)
+            if isinstance(val, str) and val:
+                return val
+            if isinstance(val, (list, dict)):
+                url = _extract_runpod_url(val)
+                if url:
+                    return url
+        return None
+    return None
+
+
 class RunPodAI(ImageProvider):
     """AI image generation provider using RunPod's public z-image-turbo endpoint."""
 
@@ -237,7 +270,7 @@ class RunPodAI(ImageProvider):
                 data = await response.json()
 
             # If the response already contains output, return it directly
-            image_url = data.get("output")
+            image_url = _extract_runpod_url(data.get("output"))
             if image_url:
                 return image_url, prompt
 
@@ -257,10 +290,10 @@ class RunPodAI(ImageProvider):
 
                 status = status_data.get("status")
                 if status == "COMPLETED":
-                    image_url = status_data.get("output")
+                    image_url = _extract_runpod_url(status_data.get("output"))
                     if not image_url:
                         raise RuntimeError(
-                            f"RunPod job completed but no output: {status_data}"
+                            f"RunPod job completed but no usable output URL: {status_data}"
                         )
                     return image_url, prompt
                 elif status in ("FAILED", "CANCELLED", "TIMED_OUT"):
