@@ -196,7 +196,7 @@ def _extract_runpod_url(output: Any) -> str | None:
                 return url
         return None
     if isinstance(output, dict):
-        for key in ("url", "image_url", "image", "output", "imageUrl"):
+        for key in ("url", "result", "image_url", "image", "output", "imageUrl"):
             val = output.get(key)
             if isinstance(val, str) and val:
                 return val
