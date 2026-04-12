@@ -25,6 +25,23 @@ def get_wav_length(path: str):
     return duration
 
 
+def normalize_alignment_text(text: str) -> str:
+    """Normalize punctuation that would otherwise collapse adjacent words into one.
+
+    Em-dashes, en-dashes, and ellipses connect words with no whitespace
+    (e.g. "chaos—no", "well…that"). Forced aligners return these as a single
+    token with a single timestamp, so even if we later strip the glyph the two
+    words stay merged (-> "chaosno"). Replacing with ", " makes the aligner
+    treat them as two independent words with independent timings.
+    """
+    return (
+        text.replace("—", ", ")
+            .replace("–", ", ")
+            .replace("…", ", ")
+            .replace("...", ", ")
+    )
+
+
 class SubtitlesProvider(Provider):
     @abstractmethod
     async def populate_reel(self, reel: Reel, **kwargs) -> None:
@@ -123,16 +140,18 @@ class ElevenLabsSubtitles(SubtitlesProvider):
             with open(audio_file, "rb") as f:
                 audio_data = BytesIO(f.read())
 
+            normalized_text = normalize_alignment_text(transcription_text)
+
             transcription = await asyncio.to_thread(
                 self.elevenlabs.forced_alignment.create,
                 file=audio_data,
-                text=transcription_text,
+                text=normalized_text,
             )
 
             transcription_verbose = TranscriptionVerbose(
                 duration=get_wav_length(audio_file),
                 language="english",
-                text=transcription_text,
+                text=normalized_text,
                 words=[],
             )
 
@@ -240,6 +259,8 @@ class ModalWav2VecAligner(SubtitlesProvider):
                 raise ValueError("MODAL_WAV2VEC_ENDPOINT_URL is not set.")
 
             audio_url = await self._prepare_audio(audio_file)
+
+            text = normalize_alignment_text(text)
 
             payload = {"audio_url": audio_url, "text": text}
             if self.modal_api_key:
