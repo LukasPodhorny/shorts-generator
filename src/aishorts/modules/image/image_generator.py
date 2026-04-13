@@ -50,6 +50,8 @@ class ImageGenerator:
                 result.media.path,
                 result.media.path,
                 self.image_style,
+                self.max_width,
+                self.max_height,
             )
 
         await asyncio.gather(*[_style_task(r) for r in results])
@@ -179,6 +181,8 @@ class ImageGenerator:
                 path,
                 path,
                 self.image_style,
+                self.max_width,
+                self.max_height,
             )
 
         # Collect results from the reel for styling
