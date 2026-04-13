@@ -3,7 +3,7 @@ import logging
 from sqlmodel import Session, select
 from fastapi.concurrency import run_in_threadpool
 from api.database import engine
-from api.models import ReelSeries, Reel, Avatar, VideoTemplate, GenerationConfig, JobStatus
+from api.models import ReelSeries, Reel, Avatar, VideoTemplate, GenerationConfig, JobStatus, User
 
 # Import core library
 from aishorts import ShortsGenerator, ShortsConfig
@@ -155,24 +155,38 @@ def _save_generation_results(series_id: int, output):
         session.commit()
 
 
-def _mark_series_failed(series_id: int):
-    """Sync helper to mark series and all its reels as failed."""
+def _mark_series_failed(series_id: int, refund_amount: int = 0):
+    """Sync helper to mark series and all its reels as failed, refunding credits."""
     with Session(engine) as session:
         series = session.get(ReelSeries, series_id)
-        if series:
-            series.status = JobStatus.FAILED
-            session.add(series)
+        if not series:
+            return
 
-            # Mark all reels as failed too
-            reels = session.exec(select(Reel).where(Reel.series_id == series_id)).all()
-            for reel in reels:
-                reel.status = JobStatus.FAILED
-                session.add(reel)
+        # Idempotency: only refund if not already marked FAILED
+        already_failed = series.status == JobStatus.FAILED
 
-            session.commit()
+        series.status = JobStatus.FAILED
+        session.add(series)
+
+        # Mark all reels as failed too
+        reels = session.exec(select(Reel).where(Reel.series_id == series_id)).all()
+        for reel in reels:
+            reel.status = JobStatus.FAILED
+            session.add(reel)
+
+        if refund_amount > 0 and not already_failed:
+            user = session.get(User, series.user_id)
+            if user:
+                user.credits += refund_amount
+                session.add(user)
+                logger.info(
+                    f"Refunded {refund_amount} credits to user {user.id} for failed series {series_id}"
+                )
+
+        session.commit()
 
 
-async def process_reel_task(series_id: int, request_data: dict):
+async def process_reel_task(series_id: int, request_data: dict, total_cost: int = 0):
     """
     Background task to generate shorts and update DB.
     """
@@ -208,4 +222,4 @@ async def process_reel_task(series_id: int, request_data: dict):
 
     except Exception as e:
         logger.exception(f"Job Failed for series {series_id}: {e}")
-        await run_in_threadpool(_mark_series_failed, series_id)
+        await run_in_threadpool(_mark_series_failed, series_id, total_cost)

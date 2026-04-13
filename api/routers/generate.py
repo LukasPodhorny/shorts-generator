@@ -76,7 +76,7 @@ async def start_generation(
     session.commit()
 
     # 6. Start Background Task
-    background_tasks.add_task(process_reel_task, series.id, request.dict())
+    background_tasks.add_task(process_reel_task, series.id, request.dict(), total_cost)
 
     return GenerateResponse(
         message="Generation started",

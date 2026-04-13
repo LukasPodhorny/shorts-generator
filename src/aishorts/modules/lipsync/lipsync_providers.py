@@ -215,6 +215,14 @@ def populate_reel_static_faces(reel: Reel, avatars: list[Avatar]) -> None:
                 elif avatar.static_face_path:
                     # Fallback for local-only
                     block.assets.staticface_filepath = avatar.static_face_path
+                elif avatar.face_url:
+                    # No dedicated static face (e.g. cat avatars) — reuse the regular face image
+                    block.assets.staticface_url = avatar.face_url
+                    url_str = avatar.face_url
+                    if isinstance(url_str, dict):
+                        url_str = url_str.get("url", "")
+                    filename = os.path.basename(urlparse(url_str).path) or f"static_{avatar.name}.png"
+                    block.assets.staticface_filepath = os.path.join("output/static_faces", filename)
 
 
 """
