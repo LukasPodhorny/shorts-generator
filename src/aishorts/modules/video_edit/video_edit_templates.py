@@ -488,7 +488,7 @@ class AlphaGameplayTemplate(EditTemplate):
         # Shift subtitles 100px up so they don't cover the avatar's head.
         # Clone the shared style to avoid mutating it for other templates.
         subtitle_style = self.subtitle_style.model_copy()
-        subtitle_style.offset_y = (subtitle_style.offset_y or 0) + 100
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 100
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
