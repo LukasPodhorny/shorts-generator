@@ -85,12 +85,10 @@ class ImageGenerator:
         # Try the primary provider. Treat exceptions as "no result" so the
         # fallback still runs (e.g. RunPod returning an unparseable output shape).
         try:
-            if hasattr(self.image_gen, 'get_image'):
+            if hasattr(self.image_gen, "get_image"):
                 # Use get_image with specific size for AI providers
                 result = await self.image_gen.get_image(
-                    prompt=prompt,
-                    size=f"{width}*{height}",
-                    id="thumbnail"
+                    prompt=prompt, size=f"{width}*{height}", id="thumbnail"
                 )
                 if result and result.media and result.media.path:
                     shutil.move(result.media.path, output_path)
@@ -101,7 +99,7 @@ class ImageGenerator:
                     queries=[prompt],
                     max_width=width,
                     max_height=height,
-                    ids=["thumbnail"]
+                    ids=["thumbnail"],
                 )
                 if results and results[0]:
                     shutil.move(results[0].media.path, output_path)
@@ -111,13 +109,14 @@ class ImageGenerator:
 
         # Fallback to RunPodAI if primary provider returned nothing or errored
         if not got_image:
-            print(f"Thumbnail: primary provider returned no result, falling back to RunPodAI")
+            print(
+                f"Thumbnail: primary provider returned no result, falling back to RunPodAI"
+            )
             from aishorts.modules.image.image_providers import RunPodAI
+
             fallback = RunPodAI()
             result = await fallback.get_image(
-                prompt=prompt,
-                size=f"{width}*{height}",
-                id="thumbnail"
+                prompt=prompt, size=f"{width}*{height}", id="thumbnail"
             )
             shutil.move(result.media.path, output_path)
 
@@ -164,8 +163,12 @@ class ImageGenerator:
                 f"{len(missing_prompts)} image(s), falling back to RunPodAI"
             )
             fallback = RunPodAI()
+            # Calculate size string for RunPodAI based on max dimensions
+            fallback_size = f"{self.max_width}*{self.max_height}"
             fallback_results = await fallback.get_images(
-                prompts=missing_prompts, ids=missing_ids
+                prompts=missing_prompts,
+                sizes=[fallback_size] * len(missing_prompts),
+                ids=missing_ids,
             )
             for res in fallback_results:
                 if res:
