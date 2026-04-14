@@ -145,10 +145,12 @@ class GameplayTemplate(EditTemplate):
             self.collect_segments_and_timings(reel)
         )
 
-        # Shift subtitles 100px up so they don't cover the avatar's head.
+        # Shift subtitles 200px up so they don't cover the avatar's head.
         # Clone the shared style to avoid mutating it for other templates.
+        # Note: In ASS format with center alignment (5), positive MarginV moves down,
+        # negative moves up. We subtract to move subtitles upward.
         subtitle_style = self.subtitle_style.model_copy()
-        subtitle_style.offset_y = (subtitle_style.offset_y or 0) + 220
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 200
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -485,10 +487,12 @@ class AlphaGameplayTemplate(EditTemplate):
             self.collect_segments_and_timings(reel)
         )
 
-        # Shift subtitles 100px up so they don't cover the avatar's head.
+        # Shift subtitles 200px up so they don't cover the avatar's head.
         # Clone the shared style to avoid mutating it for other templates.
+        # Note: In ASS format with center alignment (5), positive MarginV moves down,
+        # negative moves up. We subtract to move subtitles upward.
         subtitle_style = self.subtitle_style.model_copy()
-        subtitle_style.offset_y = (subtitle_style.offset_y or 0) + 220
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 200
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -847,10 +851,17 @@ class StaticGameplayTemplate(EditTemplate):
             self.collect_segments_and_timings(reel)
         )
 
+        # Shift subtitles 200px up so they don't cover the avatar's head.
+        # Clone the shared style to avoid mutating it for other templates.
+        # Note: In ASS format with center alignment (5), positive MarginV moves down,
+        # negative moves up. We subtract to move subtitles upward.
+        subtitle_style = self.subtitle_style.model_copy()
+        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 200
+
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
             transcription=final_subtitles,
-            style=self.subtitle_style,
+            style=subtitle_style,
         ).download()
 
         # --- Build Filter Graph ---
