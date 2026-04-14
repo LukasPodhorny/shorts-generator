@@ -2,6 +2,7 @@ from aishorts.modules.manim.manim_providers import ManimProvider, ManimResult
 from aishorts.modules.llm.llm_generator import LLMGenerator
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.modules.script.script import Reel
+import ast
 import asyncio
 import re
 import textwrap
@@ -42,7 +43,7 @@ class ManimGenerator:
         # Assume the whole text is code if no blocks found
         return textwrap.dedent(text).strip()
 
-    async def generate(self, prompt: str, retries: int = 5, **kwargs) -> ManimResult:
+    async def generate(self, prompt: str, retries: int = 3, **kwargs) -> ManimResult:
         last_error = None
 
         for attempt in range(1, retries + 1):
@@ -59,6 +60,13 @@ class ManimGenerator:
 
                 if "class GenScene" not in code:
                     raise ValueError("Generated code does not contain 'class GenScene'")
+
+                try:
+                    ast.parse(code)
+                except SyntaxError as se:
+                    raise ValueError(
+                        f"Generated code has a Python syntax error at line {se.lineno}, column {se.offset}: {se.msg}"
+                    ) from se
 
                 func = self.manim_provider.render
                 return await await_or_thread(func, code, **kwargs)
@@ -88,7 +96,13 @@ class ManimGenerator:
 
         # Launch all renders concurrently
         async def _render(block, media_item):
-            result = await self.generate(media_item.prompt, **kwargs)
+            try:
+                result = await self.generate(media_item.prompt, **kwargs)
+            except Exception as e:
+                print(
+                    f"Manim generation failed for media {media_item.id}; skipping: {e}"
+                )
+                return
             block.assets.media_map[media_item.id] = result.media.path
             if result.media.url:
                 block.assets.media_url_map[media_item.id] = result.media.url
