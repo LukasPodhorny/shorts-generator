@@ -492,7 +492,6 @@ class AlphaGameplayTemplate(EditTemplate):
         # Note: In ASS format with center alignment (5), positive MarginV moves down,
         # negative moves up. We subtract to move subtitles upward.
         subtitle_style = self.subtitle_style.model_copy()
-        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 200
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
@@ -856,7 +855,6 @@ class StaticGameplayTemplate(EditTemplate):
         # Note: In ASS format with center alignment (5), positive MarginV moves down,
         # negative moves up. We subtract to move subtitles upward.
         subtitle_style = self.subtitle_style.model_copy()
-        subtitle_style.offset_y = (subtitle_style.offset_y or 0) - 200
 
         # Generate subtitles file
         subs_path = self.transcription_to_ass(
