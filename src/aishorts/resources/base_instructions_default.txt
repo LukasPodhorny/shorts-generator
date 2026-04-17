@@ -71,14 +71,19 @@ MEDIA:
 
     Image descriptions:
     - One sentence, under 10 words, ending with a period.
-    - No commas. No repeated words.
+    - NEVER repeat the same word twice in a description.
+    - No commas. No keyword lists. No strings of adjectives.
     - No photography or rendering jargon ("cinematic lighting", "4k", "sharp focus", "masterpiece" — banned).
     - Good: "A messy office desk with scattered papers."
+    - Bad: "Plant cell animal cell bacteria virus microorganism." (keyword list)
+    - Bad: "Beautiful amazing incredible wonderful fantastic diagram." (adjective pile)
+    - Bad: "Rocket sky sky sky sky blue blue blue." (repetition loop — strictly forbidden)
 
     Manim descriptions:
     - 5-10 sentences describing the visual logic like a teacher explaining an aid to a student.
     - Focus on shapes, numbers, motion, and metaphor. E.g. "Show a 2D bar graph as an array. Highlight two bars in red, compare heights, swap them. Repeat until the largest bubbles to the top."
     - No 3D / rendering / camera / lighting terms.
+    - No keyword lists. Write full sentences with verbs, not strings of nouns.
 
 QUESTION BLOCKS (only if enabled):
 
@@ -94,6 +99,7 @@ THUMBNAILS:
     Prompt format:
     - Under 15 words.
     - One clear scene or composition.
-    - Ends with a period. No commas. No rendering jargon.
+    - Ends with a period. No commas. No rendering jargon. No keyword lists. Never repeat a word.
     - Good: "Colorful diagram of a plant cell with a labeled chloroplast."
-    - Bad: "4k cinematic plant cell sharp focus masterpiece."
+    - Bad: "4k cinematic plant cell sharp focus masterpiece." (jargon pile)
+    - Bad: "Rocket sky sky sky sky blue blue." (repetition loop — strictly forbidden)
