@@ -96,7 +96,7 @@ class MotionGraphicQuestionProvider(QuestionProvider):
                     answer_duration=self.answer_duration,
                 )
 
-                filename = f"{uuid.uuid4()}.mov"
+                filename = f"{uuid.uuid4()}.mp4"
                 output_path = os.path.join(self.OUTPUT_DIR, filename)
 
                 logger.info(

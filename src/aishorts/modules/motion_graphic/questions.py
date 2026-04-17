@@ -10,11 +10,11 @@ class BasicQuestion(MotionGraphic):
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap" rel="stylesheet">
     <style>
-        body { 
-            margin: 0; display: flex; justify-content: center; align-items: center; 
-            height: 100vh; 
-            /* 1. Set background to transparent for the video export */
-            background: transparent; 
+        body {
+            margin: 0; display: flex; justify-content: center; align-items: center;
+            height: 100vh;
+            /* Solid chroma-key color (magenta) — removed by ffmpeg chromakey filter on composite */
+            background: #FF00FF;
             font-family: 'Poppins', sans-serif;
             perspective: 2500px;
             overflow: hidden;
@@ -58,7 +58,6 @@ class BasicQuestion(MotionGraphic):
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 45px 50px rgba(0,0,0,0.4);
         }
         .card-front { background: #F2F2F2; z-index: 2; }
         .card-back { background: #33A3FF; color: white; transform: rotateY(180deg); justify-content: center; align-items: center; padding: 80px; text-align: center; }

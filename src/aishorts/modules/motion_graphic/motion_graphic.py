@@ -72,7 +72,7 @@ class LocalMotionGraphicRenderer(MotionGraphicRenderer):
             await page.evaluate(js_call)
             await page.screenshot(
                 path=os.path.join(output_dir, f"frame_{frame:04d}.png"),
-                omit_background=True,
+                omit_background=False,
             )
 
             if frame % 30 == 0:
@@ -118,11 +118,13 @@ class LocalMotionGraphicRenderer(MotionGraphicRenderer):
             "-i",
             f"{job_output_dir}/frame_%04d.png",
             "-c:v",
-            "prores_ks",
-            "-profile:v",
-            "4444",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
             "-pix_fmt",
-            "yuva444p10le",
+            "yuv420p",
             output_filename,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
