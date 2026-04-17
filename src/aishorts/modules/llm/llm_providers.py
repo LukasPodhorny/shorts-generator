@@ -331,8 +331,8 @@ class Gemini(LLMProvider):
                     response_schema=response_schema,
                     max_output_tokens=self.max_output_tokens,
                     system_instruction=instructions,
-                    frequency_penalty=0.3,
-                    presence_penalty=0.3,
+                    temperature=0.7,
+                    top_p=0.9,
                 ),
             )
 
@@ -362,8 +362,8 @@ class Gemini(LLMProvider):
                 config=types.GenerateContentConfig(
                     max_output_tokens=self.max_output_tokens,
                     system_instruction=instructions,
-                    frequency_penalty=0.3,
-                    presence_penalty=0.3,
+                    temperature=0.7,
+                    top_p=0.9,
                 ),
             )
 
