@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 import boto3
@@ -6,12 +7,23 @@ from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session, select
 from api.database import get_session
 from api.auth import get_current_user
+from api.file_conversion import (
+    OFFICE_EXTENSIONS,
+    ConversionError,
+    convert_office_to_pdf,
+)
 from api.models import UploadedFile, UploadedFileRead, User
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf", ".txt"}
+ALLOWED_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".pdf",
+    ".txt",
+} | OFFICE_EXTENSIONS
 
 
 @router.post("/", response_model=UploadedFileRead)
@@ -38,7 +50,29 @@ async def upload_file(
         session.commit()
 
     try:
-        key = f"uploads/{uid}/{uuid.uuid4()}{file_ext}"
+        stored_filename = file.filename
+        stored_ext = file_ext
+        stored_content_type = file.content_type or "application/octet-stream"
+        upload_body: io.IOBase
+
+        if file_ext in OFFICE_EXTENSIONS:
+            # Convert office docs to PDF so all LLM providers can consume them.
+            original_bytes = await file.read()
+            try:
+                pdf_bytes = await convert_office_to_pdf(original_bytes, file.filename)
+            except ConversionError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to convert document to PDF: {str(e)}",
+                )
+            upload_body = io.BytesIO(pdf_bytes)
+            stored_ext = ".pdf"
+            stored_filename = os.path.splitext(file.filename)[0] + ".pdf"
+            stored_content_type = "application/pdf"
+        else:
+            upload_body = file.file
+
+        key = f"uploads/{uid}/{uuid.uuid4()}{stored_ext}"
 
         s3_client = boto3.client(
             "s3",
@@ -50,7 +84,7 @@ async def upload_file(
         bucket_name = os.getenv("R2_BUCKET")
 
         # Upload file object directly to R2 (running in threadpool to avoid blocking)
-        await run_in_threadpool(s3_client.upload_fileobj, file.file, bucket_name, key)
+        await run_in_threadpool(s3_client.upload_fileobj, upload_body, bucket_name, key)
 
         # Generate a presigned URL for immediate access
         url = await run_in_threadpool(
@@ -62,10 +96,10 @@ async def upload_file(
 
         # Save to Database
         uploaded_file = UploadedFile(
-            filename=file.filename,
+            filename=stored_filename,
             url=url,
             key=key,
-            content_type=file.content_type or "application/octet-stream",
+            content_type=stored_content_type,
             user_id=uid,
         )
         session.add(uploaded_file)
@@ -73,6 +107,8 @@ async def upload_file(
         session.refresh(uploaded_file)
 
         return uploaded_file
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
