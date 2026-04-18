@@ -38,7 +38,6 @@ class BasicQuestion(MotionGraphic):
             line-height: 1;
             opacity: 0;
             transform-origin: bottom center;
-            text-shadow: 20px 20px 40px rgba(0, 0, 0, 0.4);
             backface-visibility: hidden;
             pointer-events: none;
             white-space: nowrap;
@@ -221,18 +220,19 @@ class BasicQuestion(MotionGraphic):
                 const rotZ = -30 + (qSwoop * 42);
                 qMark.style.transform = `translateZ(${zPos}px) translateY(${qFloatY}px) rotateZ(${rotZ + qFloatRot}deg) scale(${qSwoop * 1.1})`;
             } else {
-                // Dynamic Exit
+                // Dynamic Exit — bounce away without fading (opacity stays at 1 so
+                // partial pixels never blend into the magenta chroma-key background).
                 const qExitProgress = Math.min(1, (time - flipStart) / 0.4);
                 const exitEase = qExitProgress * qExitProgress; // Accelerate out
 
-                qMark.style.opacity = Math.max(0, 1 - qExitProgress);
-                
+                qMark.style.opacity = 1;
+
                 // Move Z forward to avoid clipping with the flipping card (which reaches Z~375)
-                const zPos = 150 + (exitEase * 500); 
+                const zPos = 150 + (exitEase * 500);
                 const yPos = qFloatY - (exitEase * 200);
                 const rotZ = 12 + qFloatRot - (exitEase * 45);
                 const scale = 1.1 - (exitEase * 0.5);
-                
+
                 qMark.style.transform = `translateZ(${zPos}px) translateY(${yPos}px) rotateZ(${rotZ}deg) scale(${scale})`;
             }
 

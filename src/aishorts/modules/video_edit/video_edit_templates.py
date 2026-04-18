@@ -206,7 +206,7 @@ class GameplayTemplate(EditTemplate):
                 # Scale question to fit in the square area (with padding if needed)
                 v = v.filter("scale", "1080:1080:force_original_aspect_ratio=decrease")
                 # Key out the magenta background BEFORE pad so pad's black@0 is truly transparent
-                v = v.filter("chromakey", color="0xFF00FF", similarity=0.1, blend=0.05)
+                v = v.filter("chromakey", color="0xFF00FF", similarity=0.18, blend=0.1)
                 v = v.filter("pad", "1080:1080:-1:-1:color=black@0")
                 v = v.filter("format", "yuva420p")
                 # Trim to expected duration to prevent container metadata issues
@@ -567,7 +567,7 @@ class AlphaGameplayTemplate(EditTemplate):
                 # Scale question to fit width (1000px)
                 v = v.filter("scale", "1000:-1")
                 # Key out the magenta background BEFORE pad so pad's black@0 is truly transparent
-                v = v.filter("chromakey", color="0xFF00FF", similarity=0.1, blend=0.05)
+                v = v.filter("chromakey", color="0xFF00FF", similarity=0.18, blend=0.1)
                 v = v.filter("pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0")
                 v = v.filter("format", "yuva420p")
                 # Trim to expected duration to prevent container metadata issues
@@ -893,7 +893,7 @@ class StaticGameplayTemplate(EditTemplate):
                 v = v.filter("fps", fps=30)
                 v = v.filter("scale", "1000:-1")
                 # Key out the magenta background BEFORE pad so pad's black@0 is truly transparent
-                v = v.filter("chromakey", color="0xFF00FF", similarity=0.1, blend=0.05)
+                v = v.filter("chromakey", color="0xFF00FF", similarity=0.18, blend=0.1)
                 v = v.filter("pad", "1080:1920:(ow-iw)/2:(oh-ih)/2-200:color=black@0")
                 v = v.filter("format", "yuva420p")
                 # Trim to expected duration to prevent container metadata issues
