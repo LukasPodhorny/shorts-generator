@@ -84,10 +84,12 @@ MEDIA:
     - Focus on shapes, numbers, motion, and metaphor. E.g. "Show a 2D bar graph as an array. Highlight two bars in red, compare heights, swap them. Repeat until the largest bubbles to the top."
     - No 3D / rendering / camera / lighting terms.
     - No keyword lists. Write full sentences with verbs, not strings of nouns.
+    - REQUIRED: If manim is enabled, you MUST include it at least once in in the reelseries.
 
 QUESTION BLOCKS (only if enabled):
 
-    - Appear only at the very end of the final reel. Never in earlier reels.
+- REQUIRED: If question blocks are enabled, you MUST include at least one question block in the final reel.
+- Appear only at the very end of the final reel. Never in earlier reels.
     - 2-5 questions tied to the series' key ideas.
     - Question text: 5-15 words max. Short, direct, single idea. No preamble, no "Now let's test you" or "Here's a question" inside the question itself — that kind of hand-off lives in the last dialogue block, never in the question text.
     - Answer text: 1-5 words. Plain text answer, not a multiple-choice letter. Never output "A", "B", "C", or "option 2" — there are no options shown to the viewer, so the answer must be the actual fact (e.g. "Mitochondria", "1969", "Gravity").
@@ -115,3 +117,4 @@ THUMBNAILS:
     - Bad: "Chart showing the stages of mitosis with arrows." (schematic — banned)
     - Bad: "4k cinematic plant cell sharp focus masterpiece." (jargon pile)
     - Bad: "Rocket sky sky sky sky blue blue." (repetition loop — strictly forbidden)
+
