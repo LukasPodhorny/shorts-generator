@@ -509,12 +509,35 @@ class Groq(LLMProvider):
         max_output_tokens: int = 50_000,
         api_key: str | None = None,
         base_url: str = "https://api.groq.com/openai/v1",
+        reasoning_effort: str | None = None,
+        reasoning_format: str | None = None,
         **kwargs,
     ):
         self.model = model
         self.max_output_tokens = max_output_tokens
         key = api_key or os.getenv("GROQ_API_KEY")
         self.client = AsyncOpenAI(api_key=key, base_url=base_url)
+
+        # Reasoning models (gpt-oss-*, qwen3-*) emit thinking tokens that can
+        # starve the structured-JSON output budget. Default to low effort and
+        # a hidden format so the JSON schema gets the full token budget.
+        is_reasoning = any(
+            tag in model.lower() for tag in ("gpt-oss", "qwen3", "deepseek-r1")
+        )
+        self.reasoning_effort = reasoning_effort or (
+            "low" if is_reasoning else None
+        )
+        self.reasoning_format = reasoning_format or (
+            "hidden" if is_reasoning else None
+        )
+
+    def _extra_body(self) -> dict:
+        extra: dict = {}
+        if self.reasoning_effort is not None:
+            extra["reasoning_effort"] = self.reasoning_effort
+        if self.reasoning_format is not None:
+            extra["reasoning_format"] = self.reasoning_format
+        return extra
 
     async def _files_to_embedded_context(self, files: list[str]) -> str:
         if not files:
@@ -581,6 +604,7 @@ class Groq(LLMProvider):
             messages=messages,
             response_format=response_schema,
             max_completion_tokens=self.max_output_tokens,
+            extra_body=self._extra_body() or None,
         )
 
         parsed = completion.choices[0].message.parsed
@@ -613,6 +637,142 @@ class Groq(LLMProvider):
             model=self.model,
             messages=messages,
             max_completion_tokens=self.max_output_tokens,
+            extra_body=self._extra_body() or None,
+        )
+        content = completion.choices[0].message.content
+        return (content or "").strip()
+
+
+class Fireworks(LLMProvider):
+    """
+    Fireworks AI via OpenAI-compatible Chat Completions API.
+    Default model is Kimi K2.5 Thinking, which produces reasoning tokens
+    automatically; reasoning_effort can be passed through to throttle them.
+    File uploads are not supported; files are embedded as extracted text.
+    """
+
+    provider_name = "fireworks"
+
+    def __init__(
+        self,
+        model: str = "accounts/fireworks/models/kimi-k2-thinking",
+        max_output_tokens: int = 50_000,
+        api_key: str | None = None,
+        base_url: str = "https://api.fireworks.ai/inference/v1",
+        reasoning_effort: str | None = None,
+        **kwargs,
+    ):
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+        key = api_key or os.getenv("FIREWORKS_API_KEY")
+        self.client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.reasoning_effort = reasoning_effort
+
+    def _extra_body(self) -> dict:
+        extra: dict = {}
+        if self.reasoning_effort is not None:
+            extra["reasoning_effort"] = self.reasoning_effort
+        return extra
+
+    async def _files_to_embedded_context(self, files: list[str]) -> str:
+        if not files:
+            return ""
+
+        parts: list[str] = []
+        async with aiohttp.ClientSession() as session:
+            temp_paths: list[str] = []
+            try:
+                for file_ref in files:
+                    filepath, is_temp = await _ensure_local_file(file_ref, session)
+                    if is_temp:
+                        temp_paths.append(filepath)
+                    label = file_ref if not is_temp else os.path.basename(filepath)
+                    text = await asyncio.to_thread(extract_text, filepath)
+                    parts.append(
+                        f"--- Document: {label} ---\n{text.strip()}\n"
+                    )
+            finally:
+                for p in temp_paths:
+                    try:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except OSError:
+                        pass
+
+        return "\n\n".join(parts)
+
+    def _build_user_content(self, file_context: str, user_input: str | None) -> str:
+        chunks: list[str] = []
+        if file_context:
+            chunks.append(
+                "The following is plain text extracted from the provided file(s). "
+                "Use it as the source material.\n\n"
+                + file_context
+            )
+        if user_input:
+            chunks.append(user_input)
+        return "\n\n".join(chunks)
+
+    async def generate_structure(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        response_schema=None,
+        **kwargs,
+    ) -> ReelSeries:
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+        if response_schema is None:
+            raise ValueError("response_schema is required for structured generation")
+
+        file_context = await self._files_to_embedded_context(files or [])
+        user_content = self._build_user_content(file_context, user_input)
+
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_content},
+        ]
+
+        completion = await self.client.beta.chat.completions.parse(
+            model=self.model,
+            messages=messages,
+            response_format=response_schema,
+            max_completion_tokens=self.max_output_tokens,
+            extra_body=self._extra_body() or None,
+        )
+
+        parsed = completion.choices[0].message.parsed
+        if parsed is None:
+            raise RuntimeError(
+                "Fireworks returned no parsed structured output; "
+                f"finish_reason={completion.choices[0].finish_reason!r}"
+            )
+        return parsed
+
+    async def generate_response(
+        self,
+        instructions: str,
+        files: list[str] | None = None,
+        user_input: str | None = None,
+        **kwargs,
+    ) -> str:
+        if not files and not user_input:
+            raise ValueError("Either 'files' or 'user_input' must be provided")
+
+        file_context = await self._files_to_embedded_context(files or [])
+        user_content = self._build_user_content(file_context, user_input)
+
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_content},
+        ]
+
+        completion = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_completion_tokens=self.max_output_tokens,
+            extra_body=self._extra_body() or None,
         )
         content = completion.choices[0].message.content
         return (content or "").strip()
