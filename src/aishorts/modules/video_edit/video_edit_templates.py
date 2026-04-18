@@ -383,7 +383,8 @@ class AlphaGameplayTemplate(EditTemplate):
     ]
 
     tag_assets = {
-        AssetType.MANIM: True,
+        AssetType.MANIM: False,
+        AssetType.QUESTION: False,
     }
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
@@ -738,8 +739,8 @@ class StaticGameplayTemplate(EditTemplate):
     ]
 
     tag_assets = {
-        AssetType.MANIM: True,
-        AssetType.QUESTION: True,
+        AssetType.MANIM: False,
+        AssetType.QUESTION: False,
     }
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
