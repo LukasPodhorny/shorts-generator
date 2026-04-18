@@ -118,7 +118,6 @@ class ShortsGenerator:
         tts_lemonfox_api_key: str | None = None,
         lipsync_float_api_key: str | None = None,
         subtitles_api_key: str | None = None,
-        llm_api_key: str | None = None,
         image_api_key: str | None = None,
         ffmpeg_api_key: str | None = None,
         minimax_api_key: str | None = None,
@@ -128,7 +127,6 @@ class ShortsGenerator:
         self.tts_lemonfox_api_key = tts_lemonfox_api_key
         self.lipsync_float_api_key = lipsync_float_api_key
         self.subtitles_api_key = subtitles_api_key
-        self.llm_api_key = llm_api_key
         self.image_api_key = image_api_key
         self.ffmpeg_api_key = ffmpeg_api_key
         self.minimax_api_key = minimax_api_key
@@ -183,7 +181,6 @@ class ShortsGenerator:
             generate_question=AssetType.QUESTION in self.required_assets,
             provider=shorts_config.script_config.provider,
             allowed_blocks=self.allowed_blocks,
-            api_key=self.llm_api_key,
             **shorts_config.script_config.provider_config,
         )
 
