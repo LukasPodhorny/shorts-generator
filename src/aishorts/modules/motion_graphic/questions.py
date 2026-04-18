@@ -158,38 +158,36 @@ class BasicQuestion(MotionGraphic):
             // The full JS logic from the original file should be here.
             
             // 1. MIRRORED WRAPPER LOGIC (Pop-In & Pop-Out)
+            // Opacity is held at 1 throughout; scale via easeOutBack (0 → 1 → 0)
+            // handles the visual entrance/exit. Fading opacity would blend partial-
+            // alpha card pixels into the magenta chroma-key background and show up
+            // as pink in the composited video.
             let currentScale = 1;
             let currentRotX = 0;
             let currentRotY = 0;
-            let currentOpacity = 1;
 
             if (time < animTime) {
                 // --- ENTRANCE ---
                 const t = time / animTime;
-                
+
                 currentScale = easeOutBack(t);
                 currentRotX = (1 - t) * -20; // Starts at -20, ends at 0
                 currentRotY = (1 - t) * 15;  // Starts at 15, ends at 0
-                // Opacity fades in during the first 20%
-                currentOpacity = Math.min(1, t * 5);
 
             } else if (time > exitStart) {
                 // --- EXIT (PERFECT MIRROR) ---
                 const t = Math.min(1, (time - exitStart) / animTime);
-                const invT = 1 - t; 
-                
+                const invT = 1 - t;
+
                 // Use the exact same easing function, but backwards (1 -> 0)
-                currentScale = easeOutBack(invT); 
-                
+                currentScale = easeOutBack(invT);
+
                 // Tilt back to the starting angle (0 -> -20)
-                currentRotX = t * -20; 
+                currentRotX = t * -20;
                 currentRotY = t * 15;
-                
-                // 2. FIXED OPACITY LOGIC
-                currentOpacity = Math.min(1, invT * 5);
             }
 
-            wrapper.style.opacity = currentOpacity;
+            wrapper.style.opacity = 1;
             wrapper.style.transform = `scale(${currentScale}) rotateX(${currentRotX}deg) rotateY(${currentRotY}deg)`;
 
             // 3. CONSTANT IDLE FLOAT

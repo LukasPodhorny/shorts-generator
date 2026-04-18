@@ -97,7 +97,7 @@ class TemplateConfig(BaseModel):
     latex_style: Optional[ImageStyle] = Field(default_factory=ImageStyle)
     latex_width: Optional[int] = 600
     latex_height: Optional[int] = 300
-    manim_width: Optional[int] = 900
+    manim_width: Optional[int] = 1000
     manim_style: Optional[ImageStyle] = Field(
         default_factory=lambda: ImageStyle(corner_radius=40)
     )
