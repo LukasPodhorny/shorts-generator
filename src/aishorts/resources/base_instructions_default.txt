@@ -89,17 +89,29 @@ QUESTION BLOCKS (only if enabled):
 
     - Appear only at the very end of the final reel. Never in earlier reels.
     - 2-5 questions tied to the series' key ideas.
+    - Question text: 5-15 words max. Short, direct, single idea. No preamble, no "Now let's test you" or "Here's a question" inside the question itself — that kind of hand-off lives in the last dialogue block, never in the question text.
+    - Answer text: 1-5 words. Plain text answer, not a multiple-choice letter. Never output "A", "B", "C", or "option 2" — there are no options shown to the viewer, so the answer must be the actual fact (e.g. "Mitochondria", "1969", "Gravity").
     - The last dialogue block of the final reel must hand off to the quiz naturally: "Alright, let's see what stuck," "Time to test you," etc.
 
 THUMBNAILS:
 
-    Series thumbnail: one prompt capturing the whole series — eye-catching, representative, works as a standalone click-bait image.
-    Per-reel thumbnail: one prompt specific to that reel's concept. Vary across reels.
+    A thumbnail exists for one reason: make someone stop scrolling and tap. It is a click-bait image, not a teaching aid.
+
+    - No diagrams. No labeled parts. No charts, graphs, arrows, or schematics.
+    - No text, letters, numbers, titles, or captions inside the image. The image model cannot render text reliably, and thumbnails should not rely on text anyway.
+    - Describe a dramatic, curiosity-inducing scene or object — something emotional, weird, beautiful, dangerous, gross, or awe-inspiring. Think scroll-stopper, not textbook figure.
+    - Concrete subjects only. A single vivid scene or object beats an abstract concept.
+
+    Series thumbnail: one prompt capturing the whole series' vibe as a single tempting image.
+    Per-reel thumbnail: one prompt specific to that reel, visually distinct from the series thumbnail and from other reels.
 
     Prompt format:
     - Under 15 words.
     - One clear scene or composition.
     - Ends with a period. No commas. No rendering jargon. No keyword lists. Never repeat a word.
-    - Good: "Colorful diagram of a plant cell with a labeled chloroplast."
+    - Good: "A glowing green chloroplast bursting through cracked dark soil."
+    - Good: "A lone astronaut floating past a massive red planet."
+    - Bad: "Colorful diagram of a plant cell with a labeled chloroplast." (diagram with label — banned)
+    - Bad: "Chart showing the stages of mitosis with arrows." (schematic — banned)
     - Bad: "4k cinematic plant cell sharp focus masterpiece." (jargon pile)
     - Bad: "Rocket sky sky sky sky blue blue." (repetition loop — strictly forbidden)
