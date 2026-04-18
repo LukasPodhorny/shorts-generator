@@ -118,6 +118,7 @@ def _prepare_generation_config(
         return ShortsConfig(
             avatars=selected_avatars,
             video_template=video_template,
+            enabled_tags=request_data.get("enabled_tags"),
             **config_kwargs,
         )
 

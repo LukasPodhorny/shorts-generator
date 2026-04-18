@@ -67,7 +67,7 @@ async def test_generate_shorts_flow(shorts_generator):
 
         # Setup required assets
         mock_template_cls = MagicMock()
-        mock_template_cls.required_assets = [
+        mock_template_cls.resolve_required_assets.return_value = [
             AssetType.SCRIPT,
             AssetType.VOICE,
             AssetType.IMAGES,
@@ -75,6 +75,7 @@ async def test_generate_shorts_flow(shorts_generator):
             AssetType.LIPSYNC,
             AssetType.SUBTITLES,
         ]
+        mock_template_cls.allowed_blocks = []
         mock_edit_template_get.return_value = mock_template_cls
 
         mock_reel = MagicMock()

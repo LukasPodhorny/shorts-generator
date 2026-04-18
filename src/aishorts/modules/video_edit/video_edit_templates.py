@@ -19,16 +19,19 @@ class GameplayTemplate(EditTemplate):
 
     provider_name = "gameplay"
 
-    required_assets = [
+    core_assets = [
         AssetType.SCRIPT,
         AssetType.VOICE,
         AssetType.LIPSYNC,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
-        AssetType.MANIM,
         AssetType.LATEX,
-        AssetType.QUESTION,
     ]
+
+    tag_assets = {
+        AssetType.MANIM: True,
+        AssetType.QUESTION: True,
+    }
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
@@ -370,16 +373,18 @@ class GameplayTemplate(EditTemplate):
 class AlphaGameplayTemplate(EditTemplate):
     provider_name = "alpha_gameplay"
 
-    required_assets = [
+    core_assets = [
         AssetType.SCRIPT,
         AssetType.VOICE,
         AssetType.LIPSYNC,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
-        AssetType.MANIM,
         AssetType.LATEX,
-        # AssetType.QUESTION,
     ]
+
+    tag_assets = {
+        AssetType.MANIM: True,
+    }
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
@@ -723,16 +728,19 @@ class AlphaGameplayTemplate(EditTemplate):
 class StaticGameplayTemplate(EditTemplate):
     provider_name = "static_gameplay"
 
-    required_assets = [
+    core_assets = [
         AssetType.SCRIPT,
         AssetType.VOICE,
         AssetType.STATICFACE,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
-        AssetType.MANIM,
         AssetType.LATEX,
-        AssetType.QUESTION,
     ]
+
+    tag_assets = {
+        AssetType.MANIM: True,
+        AssetType.QUESTION: True,
+    }
 
     allowed_blocks = [BlockType.DIALOGUE, BlockType.QUESTION]
 
@@ -1027,14 +1035,17 @@ class StaticGameplayTemplate(EditTemplate):
 class SongTemplate(EditTemplate):
     provider_name = "song"
 
-    required_assets = [
+    core_assets = [
         AssetType.SCRIPT,
         AssetType.SONG,
         AssetType.SUBTITLES,
         AssetType.IMAGES,
-        AssetType.MANIM,
         AssetType.LATEX,
     ]
+
+    tag_assets = {
+        AssetType.MANIM: True,
+    }
 
     allowed_blocks = [BlockType.SONG]
 

@@ -13,7 +13,7 @@ from aishorts.modules.subtitles.subtitle_generator import SubtitleGenerator
 from aishorts.modules.video_edit.video_edit import VideoTemplate
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.video_edit.video_edit_templates import EditTemplate
-from aishorts.modules.script.script import AssetType
+from aishorts.modules.script.script import AssetType, BlockType
 from importlib.resources import read_text
 from pydantic import BaseModel, Field
 from aishorts.modules.image.image_generator import ImageGenerator
@@ -96,6 +96,9 @@ class FFmpegConfig(BaseModel):
 class ShortsConfig(BaseModel):
     avatars: list[Avatar]
     video_template: VideoTemplate
+    # User-selected optional asset tags (asset_type string values).
+    # None means "use the template's defaults".
+    enabled_tags: list[str] | None = None
     script_config: ScriptConfig = Field(default_factory=ScriptConfig)
     subtitle_config: SubtitleConfig = Field(default_factory=SubtitleConfig)
     ffmpeg_config: FFmpegConfig = Field(default_factory=FFmpegConfig)
@@ -139,13 +142,18 @@ class ShortsGenerator:
         self.video_template = shorts_config.video_template
         self.template_config = self.video_template.template_config
 
-        self.required_assets = EditTemplate.get(
-            self.video_template.edit_template.lower()
-        ).required_assets
-
-        self.allowed_blocks = EditTemplate.get(
-            self.video_template.edit_template.lower()
-        ).allowed_blocks
+        template_cls = EditTemplate.get(self.video_template.edit_template.lower())
+        self.required_assets = template_cls.resolve_required_assets(
+            shorts_config.enabled_tags
+        )
+        # QUESTION blocks and QUESTION assets are tightly coupled: if the
+        # user disabled the QUESTION tag, the script generator must not
+        # emit question blocks.
+        self.allowed_blocks = [
+            b
+            for b in template_cls.allowed_blocks
+            if b != BlockType.QUESTION or AssetType.QUESTION in self.required_assets
+        ]
 
         # --- Setup all the modules ---
 

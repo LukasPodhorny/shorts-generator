@@ -89,12 +89,19 @@ class VideoTemplateCreate(SQLModel):
     data: dict
 
 
+class VideoTemplateTag(SQLModel):
+    """User-toggleable asset tag on a template."""
+    asset_type: str
+    default: bool
+
+
 class VideoTemplateRead(SQLModel):
     """Response model for VideoTemplate with credits and preview"""
     id: int
     name: str
     credits: int
     preview_url: Optional[str] = None
+    tags: List[VideoTemplateTag] = Field(default_factory=list)
 
 
 class GenerationConfig(SQLModel, table=True):
@@ -229,6 +236,8 @@ class GenerateRequest(SQLModel):
     input_text: Optional[str] = None
     files: Optional[List[str]] = None
     config_name: Optional[str] = None  # If None, uses the default GenerationConfig
+    # Asset-type string values the user wants enabled. None = use template defaults.
+    enabled_tags: Optional[List[str]] = None
 
 
 class AddCreditsRequest(SQLModel):

@@ -139,6 +139,23 @@ class EditTemplate(Provider):
     OUTPUT_DIR = os.getenv("VIDEO_OUTPUT_DIR") or "output/videos"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    # Assets that are always generated for this template (hidden from users).
+    core_assets: List[AssetType] = []
+    # User-toggleable tags mapped to their default enabled state.
+    tag_assets: Dict[AssetType, bool] = {}
+    # Block types this template can render.
+    allowed_blocks: List[Any] = []
+
+    @classmethod
+    def resolve_required_assets(
+        cls, enabled_tags: Optional[List[str]]
+    ) -> List[AssetType]:
+        if enabled_tags is None:
+            enabled = [a for a, default in cls.tag_assets.items() if default]
+        else:
+            enabled = [a for a in cls.tag_assets if a.value in enabled_tags]
+        return list(cls.core_assets) + enabled
+
     @abstractmethod
     def compose(self, reel: Reel, **kwargs) -> FFmpegCommand:
         pass
