@@ -156,6 +156,131 @@ class F5TTS(EndpointCaller, TTSProvider):
         await asyncio.gather(*[_download_and_assign(d) for d in results])
 
 
+class ModalF5TTS(TTSProvider):
+    provider_name = "modal_f5tts"
+
+    def __init__(
+        self,
+        avatars: list[Avatar],
+        download_results: bool = True,
+        endpoint_url: str | None = None,
+        modal_api_key: str | None = None,
+        timeout: int = 600,
+        max_parallel_requests: int = 10,
+        **kwargs,
+    ):
+        self.endpoint_url = endpoint_url or os.getenv("MODAL_F5TTS_ENDPOINT_URL")
+        self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
+        self.avatars = avatars
+        self.download_results = download_results
+        self.timeout = timeout
+        self.semaphore = asyncio.Semaphore(max_parallel_requests)
+
+    def _voice_config(self, avatar: Avatar) -> dict:
+        sample_url = avatar.voice.sample_url
+        if isinstance(sample_url, dict):
+            sample_url = sample_url.get("url")
+        return {
+            "voice_reference": sample_url,
+            "ref_text": avatar.voice.sample_transcript or "",
+        }
+
+    async def _call(self, payload: dict) -> list:
+        if not self.endpoint_url:
+            raise ValueError("MODAL_F5TTS_ENDPOINT_URL is not set.")
+
+        if self.modal_api_key:
+            payload = {**payload, "api_key": self.modal_api_key}
+
+        async with self.semaphore:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.endpoint_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=self.timeout),
+                ) as response:
+                    if not response.ok:
+                        text = await response.text()
+                        raise RuntimeError(
+                            f"Modal F5TTS failed with {response.status}: {text}"
+                        )
+                    result = await response.json()
+
+        if isinstance(result, dict) and "error" in result:
+            raise RuntimeError(
+                f"Modal F5TTS error: {result.get('error')}\n"
+                f"{result.get('traceback', '')}"
+            )
+        if not isinstance(result, list):
+            raise RuntimeError(f"Modal F5TTS returned unexpected output: {result}")
+        return result
+
+    async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
+        avatar = self.avatars[0]
+        payload = {
+            "input": {
+                "voices": {avatar.name: self._voice_config(avatar)},
+                "dialogues": [{"voice": avatar.name, "text": text, "id": id}],
+            }
+        }
+        results = await self._call(payload)
+        result_url = results[0]["audio_url"]
+
+        filepath = (
+            await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
+            if self.download_results
+            else None
+        )
+        return TTSResult(
+            filepath=filepath,
+            url=result_url,
+            avatar=avatar,
+            id=results[0].get("id", id),
+            transcription=text,
+        )
+
+    async def populate_reel(self, reel: Reel) -> None:
+        # Maximize Modal autoscaling: one dialogue per request means each block
+        # fans out to its own container. Voice reference is included per call;
+        # the container caches it on first hit.
+        avatars_by_name = {
+            a.name: a
+            for a in self.avatars
+            if a.voice.provider.lower() == "modal_f5tts"
+        }
+
+        targets = [
+            (idx, block)
+            for idx, block in enumerate(reel.blocks)
+            if AssetType.VOICE in block.valid_assets and block.avatar in avatars_by_name
+        ]
+        if not targets:
+            return
+
+        async def process(idx: int, block) -> None:
+            avatar = avatars_by_name[block.avatar]
+            payload = {
+                "input": {
+                    "voices": {avatar.name: self._voice_config(avatar)},
+                    "dialogues": [
+                        {"voice": avatar.name, "text": block.text, "id": idx}
+                    ],
+                }
+            }
+            results = await self._call(payload)
+            dialogue = results[0]
+            if not isinstance(dialogue, dict) or not dialogue.get("audio_url"):
+                raise RuntimeError(
+                    f"Modal F5TTS returned no audio_url for block {idx}: {dialogue}"
+                )
+            result_url = dialogue["audio_url"]
+            filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
+            block.assets.voice_filepath = filepath
+            block.assets.voice_url = result_url
+
+        await asyncio.gather(*[process(idx, block) for idx, block in targets])
+
+
 class LemonFoxTTS(TTSProvider):
     provider_name = "lemonfox"
 

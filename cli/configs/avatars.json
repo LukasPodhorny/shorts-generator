@@ -13,7 +13,7 @@
         },
         "lipsync_provider": "float",
         "voice": {
-            "provider": "f5tts",
+            "provider": "modal_f5tts",
             "voice_id": "adam",
             "sample_url": {
                 "url": "https://files.catbox.moe/hf2bu9.mp3",
@@ -36,7 +36,7 @@
         },
         "lipsync_provider": "float",
         "voice": {
-            "provider": "f5tts",
+            "provider": "modal_f5tts",
             "voice_id": "adam",
             "sample_url": {
                 "url": "https://files.catbox.moe/n77q7o.wav",
