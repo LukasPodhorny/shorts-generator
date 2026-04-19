@@ -219,6 +219,20 @@ class EditTemplate(Provider):
                             )
                             for w in words
                         ]
+
+                        # Force a block boundary: append '.' to the last word if it doesn't
+                        # already end with a break character. '.' is in break_characters so
+                        # group_words_by_chars will split here, and in remove_chars so it's
+                        # invisible in the displayed subtitle.
+                        _break_chars = ".!?;:"
+                        last_w = shifted_words[-1]
+                        if not any(last_w.word.rstrip().endswith(c) for c in _break_chars):
+                            shifted_words[-1] = TranscriptionWord(
+                                word=last_w.word + ".",
+                                start=last_w.start,
+                                end=last_w.end,
+                            )
+
                         final_transcriptions.append(
                             TranscriptionVerbose(
                                 duration=(
