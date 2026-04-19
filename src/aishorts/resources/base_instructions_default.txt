@@ -54,7 +54,7 @@ SONG BLOCKS:
 MEDIA:
 
     Per reel:
-    - 6-12 image_media items.
+    - 4-10 image_media items.
     - manim_media: only for technical topics that require math, geometric, or physics visualization. 1-4 per reel when used. Skip entirely for non-technical topics.
 
     Triggers (word indices inside the block's text, counting from 0, inclusive):
@@ -63,7 +63,7 @@ MEDIA:
     - Images / LaTeX: 20-40 words ideal.
     - Manim: 40-60 words ideal — animations need room to play out.
     - Media must sit on the exact sentences explaining the concept, not before or after.
-    - Multiple media in one block is fine if triggers don't overlap. Never overlap Manim with image or LaTeX.
+    - Multiple media in one block is fine if triggers don't overlap, but usually don't include multiple media in one block unless it's long block. Never overlap Manim with image or LaTeX.
 
     Pacing:
     - Quick reaction blocks stay pure dialogue.

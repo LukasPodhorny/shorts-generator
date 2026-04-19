@@ -45,7 +45,7 @@ async def upload_file(
     # Ensure user exists in DB (JIT provisioning)
     user = session.get(User, uid)
     if not user:
-        user = User(id=uid, email=email, credits=10)
+        user = User(id=uid, email=email, credits=90)
         session.add(user)
         session.commit()
 

@@ -37,7 +37,7 @@ class UserRead(UserBase):
 class User(UserBase, table=True):
     id: str = Field(primary_key=True)  # Firebase UID
     email: Optional[str] = None
-    credits: int = Field(default=10)
+    credits: int = Field(default=90)
     role: UserRole = Field(default=UserRole.USER, sa_column=Column(String))
 
     stripe_customer_id: Optional[str] = Field(default=None, index=True)
@@ -231,8 +231,8 @@ class UploadedFileRead(UploadedFileBase):
 # Request Model for API
 class GenerateRequest(SQLModel):
     template_name: str
-    avatar_names: List[str]
-    amount: int = 1
+    avatar_names: List[str] = Field(max_length=4)
+    amount: int = Field(default=1, ge=1, le=7)
     input_text: Optional[str] = None
     files: Optional[List[str]] = None
     config_name: Optional[str] = None  # If None, uses the default GenerationConfig

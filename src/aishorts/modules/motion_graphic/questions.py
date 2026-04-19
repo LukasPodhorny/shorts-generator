@@ -218,14 +218,12 @@ class BasicQuestion(MotionGraphic):
                 const rotZ = -30 + (qSwoop * 42);
                 qMark.style.transform = `translateZ(${zPos}px) translateY(${qFloatY}px) rotateZ(${rotZ + qFloatRot}deg) scale(${qSwoop * 1.1})`;
             } else {
-                // Dynamic Exit — bounce away without fading (opacity stays at 1 so
-                // partial pixels never blend into the magenta chroma-key background).
+                // Bounce away, then snap to invisible once animation completes
                 const qExitProgress = Math.min(1, (time - flipStart) / 0.4);
-                const exitEase = qExitProgress * qExitProgress; // Accelerate out
+                const exitEase = qExitProgress * qExitProgress;
 
-                qMark.style.opacity = 1;
+                qMark.style.opacity = qExitProgress < 1 ? 1 : 0;
 
-                // Move Z forward to avoid clipping with the flipping card (which reaches Z~375)
                 const zPos = 150 + (exitEase * 500);
                 const yPos = qFloatY - (exitEase * 200);
                 const rotZ = 12 + qFloatRot - (exitEase * 45);

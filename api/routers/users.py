@@ -37,7 +37,7 @@ stripe.api_key = STRIPE_SECRET_KEY
 #     user = session.get(User, uid)
 #     if not user:
 #         # Create user if not exists (first login logic)
-#         user = User(id=uid, email=email, credits=10)
+#         user = User(id=uid, email=email, credits=90)
 #         session.add(user)
 #
 #     user.credits += request.amount
@@ -59,7 +59,7 @@ async def get_me(
     user = session.get(User, uid)
     if not user:
         # Create user if not exists (first login logic)
-        user = User(id=uid, email=email, credits=10)
+        user = User(id=uid, email=email, credits=90)
         session.add(user)
 
     return user
@@ -76,7 +76,7 @@ async def create_checkout_session(
 
     user = session.get(User, uid)
     if not user:
-        user = User(id=uid, email=email, credits=10)
+        user = User(id=uid, email=email, credits=90)
         session.add(user)
         session.commit()
         session.refresh(user)

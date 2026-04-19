@@ -1,3 +1,4 @@
+import logging
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.llm.llm_providers import *
 from aishorts.modules.llm.llm_providers import LLMProvider
@@ -135,6 +136,7 @@ class ScriptGenerator:
         self.generate_manim = generate_manim
         self.allowed_blocks = allowed_blocks
         self.provider = provider.lower()
+        self.logger = logging.getLogger("ScriptGenerator")
 
         cls = LLMProvider.get(self.provider)
         if not cls:
@@ -150,6 +152,7 @@ class ScriptGenerator:
         **kwargs,
     ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
+        self.logger.info("Script generator instructions:\n%s", instructions)
         func = self.llm.generate_structure
         
         return await await_or_thread(

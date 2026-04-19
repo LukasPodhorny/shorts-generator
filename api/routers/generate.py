@@ -35,7 +35,7 @@ async def start_generation(
 
     if not user:
         # Create user if not exists (first login logic)
-        user = User(id=uid, email=email, credits=10)
+        user = User(id=uid, email=email, credits=90)
         session.add(user)
         session.commit()
         session.refresh(user)
