@@ -1,5 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from typing import Optional
+
+import boto3
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session, select
+
 from api.database import get_session
 from api.auth import get_current_admin_user
 from api.models import (
@@ -43,33 +54,138 @@ def create_or_update_avatar(
     return new_avatar
 
 
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "template"
+
+
+def _r2_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=os.getenv("R2_ENDPOINT"),
+        aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+        region_name="auto",
+    )
+
+
+def _public_url(key: str) -> str:
+    domain = os.getenv("R2_PUBLIC_DOMAIN")
+    if domain:
+        return f"https://{domain}/{key}"
+    # Fallback: presigned URL via boto3
+    return _r2_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": os.getenv("R2_BUCKET"), "Key": key},
+        ExpiresIn=604800,
+    )
+
+
+def _extract_thumbnail(video_path: str, thumb_path: str) -> None:
+    # Grab a frame at 1s; first frames are often black/fade-in.
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-ss", "00:00:01",
+            "-i", video_path,
+            "-vframes", "1",
+            "-q:v", "3",
+            thumb_path,
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0 or not os.path.exists(thumb_path):
+        raise RuntimeError(
+            f"ffmpeg failed to extract thumbnail: {result.stderr.decode(errors='ignore')[-500:]}"
+        )
+
+
+async def _upload_preview_and_thumbnail(name: str, preview: UploadFile) -> tuple[str, str]:
+    """Saves upload to tmp, extracts thumbnail, uploads both to R2, returns (preview_url, thumbnail_url)."""
+    slug = _slug(name)
+    bucket = os.getenv("R2_BUCKET")
+    if not bucket:
+        raise HTTPException(status_code=500, detail="R2_BUCKET is not configured")
+
+    tmp_dir = tempfile.mkdtemp(prefix="tpl_preview_")
+    try:
+        video_path = os.path.join(tmp_dir, f"{slug}.mp4")
+        thumb_path = os.path.join(tmp_dir, f"{slug}.jpg")
+
+        with open(video_path, "wb") as f:
+            while chunk := await preview.read(1024 * 1024):
+                f.write(chunk)
+
+        await run_in_threadpool(_extract_thumbnail, video_path, thumb_path)
+
+        video_key = f"templates/{slug}.mp4"
+        thumb_key = f"templates/{slug}.jpg"
+
+        s3 = _r2_client()
+        await run_in_threadpool(
+            s3.upload_file, video_path, bucket, video_key,
+            {"ContentType": "video/mp4"},
+        )
+        await run_in_threadpool(
+            s3.upload_file, thumb_path, bucket, thumb_key,
+            {"ContentType": "image/jpeg"},
+        )
+
+        return _public_url(video_key), _public_url(thumb_key)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 @router.post("/video-templates", response_model=VideoTemplate)
-def create_or_update_template(
-    template_in: VideoTemplateCreate,
+async def create_or_update_template(
+    name: str = Form(...),
+    data: str = Form(...),
+    preview: Optional[UploadFile] = File(None),
     session: Session = Depends(get_session),
     admin_user: User = Depends(get_current_admin_user),
 ):
     """
-    Adds or updates a Video Template configuration.
+    Adds or updates a Video Template. Accepts multipart/form-data:
+      - name: template name
+      - data: JSON-encoded template config
+      - preview (optional): .mp4 preview video. When provided, it is uploaded to R2
+        and a thumbnail (frame at 1s) is generated and uploaded alongside it.
     """
     try:
-        VideoTemplate(name=template_in.name, data=template_in.data).to_pydantic()
+        data_dict = json.loads(data)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"`data` is not valid JSON: {e}")
+
+    try:
+        VideoTemplate(name=name, data=data_dict).to_pydantic()
     except Exception as e:
         raise HTTPException(
             status_code=400, detail=f"Invalid template configuration: {str(e)}"
         )
 
+    preview_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    if preview is not None and preview.filename:
+        preview_url, thumbnail_url = await _upload_preview_and_thumbnail(name, preview)
+
     existing = session.exec(
-        select(VideoTemplate).where(VideoTemplate.name == template_in.name)
+        select(VideoTemplate).where(VideoTemplate.name == name)
     ).first()
     if existing:
-        existing.data = template_in.data
+        existing.data = data_dict
+        if preview_url:
+            existing.preview_url = preview_url
+            existing.thumbnail_url = thumbnail_url
         session.add(existing)
         session.commit()
         session.refresh(existing)
         return existing
 
-    new_template = VideoTemplate(name=template_in.name, data=template_in.data)
+    new_template = VideoTemplate(
+        name=name,
+        data=data_dict,
+        preview_url=preview_url,
+        thumbnail_url=thumbnail_url,
+    )
     session.add(new_template)
     session.commit()
     session.refresh(new_template)

@@ -79,6 +79,7 @@ class VideoTemplate(SQLModel, table=True):
     data: dict = Field(sa_column=Column(JSON))
     credits: int = Field(default=1, description="Credits cost per reel")
     preview_url: Optional[str] = Field(default=None, description="Preview video URL or R2 key")
+    thumbnail_url: Optional[str] = Field(default=None, description="Thumbnail image URL (first frame of preview)")
 
     def to_pydantic(self) -> PydanticVideoTemplate:
         return PydanticVideoTemplate(**self.data)
@@ -101,6 +102,7 @@ class VideoTemplateRead(SQLModel):
     name: str
     credits: int
     preview_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     tags: List[VideoTemplateTag] = Field(default_factory=list)
 
 

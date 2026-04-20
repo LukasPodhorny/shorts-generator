@@ -48,6 +48,7 @@ def list_templates(session: Session = Depends(get_session)):
                 name=t.name,
                 credits=t.credits,
                 preview_url=t.preview_url,
+                thumbnail_url=t.thumbnail_url,
                 tags=tags,
             )
         )
