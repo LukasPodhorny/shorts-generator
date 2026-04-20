@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -54,10 +53,6 @@ def create_or_update_avatar(
     return new_avatar
 
 
-def _slug(name: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "template"
-
-
 def _r2_client():
     return boto3.client(
         "s3",
@@ -101,15 +96,14 @@ def _extract_thumbnail(video_path: str, thumb_path: str) -> None:
 
 async def _upload_preview_and_thumbnail(name: str, preview: UploadFile) -> tuple[str, str]:
     """Saves upload to tmp, extracts thumbnail, uploads both to R2, returns (preview_url, thumbnail_url)."""
-    slug = _slug(name)
     bucket = os.getenv("R2_BUCKET")
     if not bucket:
         raise HTTPException(status_code=500, detail="R2_BUCKET is not configured")
 
     tmp_dir = tempfile.mkdtemp(prefix="tpl_preview_")
     try:
-        video_path = os.path.join(tmp_dir, f"{slug}.mp4")
-        thumb_path = os.path.join(tmp_dir, f"{slug}.jpg")
+        video_path = os.path.join(tmp_dir, f"{name}.mp4")
+        thumb_path = os.path.join(tmp_dir, f"{name}.jpg")
 
         with open(video_path, "wb") as f:
             while chunk := await preview.read(1024 * 1024):
@@ -117,8 +111,8 @@ async def _upload_preview_and_thumbnail(name: str, preview: UploadFile) -> tuple
 
         await run_in_threadpool(_extract_thumbnail, video_path, thumb_path)
 
-        video_key = f"templates/{slug}.mp4"
-        thumb_key = f"templates/{slug}.jpg"
+        video_key = f"assets/preview/{name}.mp4"
+        thumb_key = f"assets/thumbnail/{name}.jpg"
 
         s3 = _r2_client()
         await run_in_threadpool(

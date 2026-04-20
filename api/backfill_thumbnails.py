@@ -7,7 +7,6 @@ Usage:
 """
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -24,10 +23,6 @@ from api.database import engine
 from api.models import VideoTemplate
 
 load_dotenv()
-
-
-def _slug(name: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "template"
 
 
 def _r2_client():
@@ -82,16 +77,15 @@ def process_template(template: VideoTemplate) -> str:
     if not bucket:
         raise RuntimeError("R2_BUCKET is not configured")
 
-    slug = _slug(template.name)
     tmp_dir = tempfile.mkdtemp(prefix="tpl_backfill_")
     try:
-        video_path = os.path.join(tmp_dir, f"{slug}.mp4")
-        thumb_path = os.path.join(tmp_dir, f"{slug}.jpg")
+        video_path = os.path.join(tmp_dir, f"{template.name}.mp4")
+        thumb_path = os.path.join(tmp_dir, f"{template.name}.jpg")
 
         _download(template.preview_url, video_path)
         _extract_thumbnail(video_path, thumb_path)
 
-        thumb_key = f"templates/{slug}.jpg"
+        thumb_key = f"assets/thumbnail/{template.name}.jpg"
         _r2_client().upload_file(
             thumb_path, bucket, thumb_key,
             ExtraArgs={"ContentType": "image/jpeg"},
