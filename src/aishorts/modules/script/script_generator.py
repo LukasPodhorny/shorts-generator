@@ -136,7 +136,7 @@ class ScriptGenerator:
         self.generate_manim = generate_manim
         self.allowed_blocks = allowed_blocks
         self.provider = provider.lower()
-        self.logger = logging.getLogger("ScriptGenerator")
+        self.logger = logging.getLogger("ShortsGenerator.ScriptGenerator")
 
         cls = LLMProvider.get(self.provider)
         if not cls:
