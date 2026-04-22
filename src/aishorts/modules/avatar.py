@@ -7,6 +7,8 @@ class Voice(BaseModel):
     voice_id: Optional[str] = None
     sample_url: Optional[Union[str, Dict]] = None
     sample_transcript: Optional[str] = None
+    exaggeration: Optional[float] = None
+    cfg_weight: Optional[float] = None
 
 
 class Avatar(BaseModel):

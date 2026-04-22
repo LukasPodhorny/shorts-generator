@@ -290,6 +290,148 @@ class ModalF5TTS(TTSProvider):
         await asyncio.gather(*[_apply(r) for r in results])
 
 
+class ModalChatterbox(TTSProvider):
+    provider_name = "modal_chatterbox"
+
+    DEFAULT_EXAGGERATION = 0.5
+    DEFAULT_CFG_WEIGHT = 0.5
+
+    def __init__(
+        self,
+        avatars: list[Avatar],
+        download_results: bool = True,
+        endpoint_url: str | None = None,
+        modal_api_key: str | None = None,
+        timeout: int = 600,
+        max_parallel_requests: int = 10,
+        **kwargs,
+    ):
+        self.endpoint_url = endpoint_url or os.getenv("MODAL_CHATTERBOX_ENDPOINT_URL")
+        self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
+        self.avatars = avatars
+        self.download_results = download_results
+        self.timeout = timeout
+        self.semaphore = asyncio.Semaphore(max_parallel_requests)
+
+    def _voice_config(self, avatar: Avatar) -> dict:
+        sample_url = avatar.voice.sample_url
+        if isinstance(sample_url, dict):
+            sample_url = sample_url.get("url")
+        return {
+            "voice_reference": sample_url,
+            "exaggeration": (
+                avatar.voice.exaggeration
+                if avatar.voice.exaggeration is not None
+                else self.DEFAULT_EXAGGERATION
+            ),
+            "cfg_weight": (
+                avatar.voice.cfg_weight
+                if avatar.voice.cfg_weight is not None
+                else self.DEFAULT_CFG_WEIGHT
+            ),
+        }
+
+    async def _call(self, payload: dict) -> list:
+        if not self.endpoint_url:
+            raise ValueError("MODAL_CHATTERBOX_ENDPOINT_URL is not set.")
+
+        if self.modal_api_key:
+            payload = {**payload, "api_key": self.modal_api_key}
+
+        async with self.semaphore:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.endpoint_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=self.timeout),
+                ) as response:
+                    if not response.ok:
+                        text = await response.text()
+                        raise RuntimeError(
+                            f"Modal Chatterbox failed with {response.status}: {text}"
+                        )
+                    result = await response.json()
+
+        if isinstance(result, dict) and "error" in result:
+            raise RuntimeError(
+                f"Modal Chatterbox error: {result.get('error')}\n"
+                f"{result.get('traceback', '')}"
+            )
+        if not isinstance(result, list):
+            raise RuntimeError(f"Modal Chatterbox returned unexpected output: {result}")
+        return result
+
+    async def generate_voice(self, text: str, id: int = 0) -> TTSResult:
+        avatar = self.avatars[0]
+        payload = {
+            "input": {
+                "voices": {avatar.name: self._voice_config(avatar)},
+                "dialogues": [{"voice": avatar.name, "text": text, "id": id}],
+            }
+        }
+        results = await self._call(payload)
+        result_url = results[0]["audio_url"]
+
+        filepath = (
+            await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
+            if self.download_results
+            else None
+        )
+        return TTSResult(
+            filepath=filepath,
+            url=result_url,
+            avatar=avatar,
+            id=results[0].get("id", id),
+            transcription=text,
+        )
+
+    async def populate_reel(self, reel: Reel) -> None:
+        avatars_by_name = {
+            a.name: a
+            for a in self.avatars
+            if a.voice.provider.lower() == "modal_chatterbox"
+        }
+
+        targets = [
+            (idx, block)
+            for idx, block in enumerate(reel.blocks)
+            if AssetType.VOICE in block.valid_assets and block.avatar in avatars_by_name
+        ]
+        if not targets:
+            return
+
+        voices_used = {
+            block.avatar: self._voice_config(avatars_by_name[block.avatar])
+            for _, block in targets
+        }
+
+        payload = {
+            "input": {
+                "voices": voices_used,
+                "dialogues": [
+                    {"voice": block.avatar, "text": block.text, "id": idx}
+                    for idx, block in targets
+                ],
+            }
+        }
+
+        results = await self._call(payload)
+
+        async def _apply(dialogue: dict) -> None:
+            if not isinstance(dialogue, dict) or not dialogue.get("audio_url"):
+                raise RuntimeError(
+                    f"Modal Chatterbox returned no audio_url: {dialogue}"
+                )
+            idx = dialogue["id"]
+            block = reel.blocks[idx]
+            result_url = dialogue["audio_url"]
+            filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
+            block.assets.voice_filepath = filepath
+            block.assets.voice_url = result_url
+
+        await asyncio.gather(*[_apply(r) for r in results])
+
+
 class LemonFoxTTS(TTSProvider):
     provider_name = "lemonfox"
 
