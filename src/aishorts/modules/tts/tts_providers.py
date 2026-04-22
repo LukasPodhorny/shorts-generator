@@ -240,9 +240,10 @@ class ModalF5TTS(TTSProvider):
         )
 
     async def populate_reel(self, reel: Reel) -> None:
-        # Maximize Modal autoscaling: one dialogue per request means each block
-        # fans out to its own container. Voice reference is included per call;
-        # the container caches it on first hit.
+        # One request per reel: all dialogues for this video are processed
+        # serially inside a single container (which overlaps upload with next
+        # inference via its own thread pool). Parallelism across reels still
+        # happens because `_populate_reels` calls us concurrently per reel.
         avatars_by_name = {
             a.name: a
             for a in self.avatars
@@ -257,28 +258,36 @@ class ModalF5TTS(TTSProvider):
         if not targets:
             return
 
-        async def process(idx: int, block) -> None:
-            avatar = avatars_by_name[block.avatar]
-            payload = {
-                "input": {
-                    "voices": {avatar.name: self._voice_config(avatar)},
-                    "dialogues": [
-                        {"voice": avatar.name, "text": block.text, "id": idx}
-                    ],
-                }
+        voices_used = {
+            block.avatar: self._voice_config(avatars_by_name[block.avatar])
+            for _, block in targets
+        }
+
+        payload = {
+            "input": {
+                "voices": voices_used,
+                "dialogues": [
+                    {"voice": block.avatar, "text": block.text, "id": idx}
+                    for idx, block in targets
+                ],
             }
-            results = await self._call(payload)
-            dialogue = results[0]
+        }
+
+        results = await self._call(payload)
+
+        async def _apply(dialogue: dict) -> None:
             if not isinstance(dialogue, dict) or not dialogue.get("audio_url"):
                 raise RuntimeError(
-                    f"Modal F5TTS returned no audio_url for block {idx}: {dialogue}"
+                    f"Modal F5TTS returned no audio_url: {dialogue}"
                 )
+            idx = dialogue["id"]
+            block = reel.blocks[idx]
             result_url = dialogue["audio_url"]
             filepath = await download_from_url(result_url, TTSProvider.OUTPUT_DIR)
             block.assets.voice_filepath = filepath
             block.assets.voice_url = result_url
 
-        await asyncio.gather(*[process(idx, block) for idx, block in targets])
+        await asyncio.gather(*[_apply(r) for r in results])
 
 
 class LemonFoxTTS(TTSProvider):
