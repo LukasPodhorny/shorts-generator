@@ -1,15 +1,17 @@
 import os
+import re
 import asyncio
 import aiohttp
 from io import BytesIO
 from pathlib import Path
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Tuple, Union, Optional
 from abc import abstractmethod
 
 # Third-party imports
 from openai import AsyncOpenAI
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from elevenlabs.client import ElevenLabs
+from num2words import num2words
 from pydub import AudioSegment
 
 # Project imports (assuming these are available in your environment)
@@ -40,6 +42,64 @@ def normalize_alignment_text(text: str) -> str:
             .replace("…", ", ")
             .replace("...", ", ")
     )
+
+
+# Thousands-grouped numbers like "50 000" or "2 000 000" — must be recognized
+# before plain digit runs so the internal spaces stay inside one integer.
+_THOUSANDS_GROUP_RE = re.compile(r"\d{1,3}(?:\s\d{3})+")
+# A "display token" is the unit that will appear in the final subtitles:
+# either a thousands-grouped number (kept whole) or any run of non-whitespace.
+_DISPLAY_TOKEN_RE = re.compile(r"\d{1,3}(?:\s\d{3})+|\S+")
+_DIGIT_RUN_RE = re.compile(r"\d+")
+
+
+def _spell_integer(digits: str) -> List[str]:
+    """'2026' -> ['two', 'thousand', 'twenty', 'six']."""
+    spoken = num2words(int(digits))
+    cleaned = spoken.replace("-", " ").replace(",", " ").lower()
+    return [w for w in cleaned.split() if w != "and"]
+
+
+def _expand_numbers(text: str) -> str:
+    """Spell out every digit sequence inside text.
+
+    Handles thousands groups first ('50 000' -> 'fifty thousand') so their
+    internal whitespace stays part of a single integer, then any remaining
+    plain digit runs ('2026', '9', '11').
+    """
+    def spell(match):
+        digits = match.group().replace(" ", "")
+        return " " + " ".join(_spell_integer(digits)) + " "
+
+    text = _THOUSANDS_GROUP_RE.sub(spell, text)
+    return _DIGIT_RUN_RE.sub(spell, text)
+
+
+def _normalize_like_aligner(text: str) -> List[str]:
+    """Mirror wav2vec-modal's _normalize_text so we predict its tokenization."""
+    text = text.lower()
+    text = re.sub(r"[^a-z\'\s]", "", text)
+    return text.split()
+
+
+def _build_alignment_plan(text: str) -> Tuple[str, List[Tuple[str, int]]]:
+    """Return (aligner_text, plan).
+
+    aligner_text is what we send to the forced aligner, with digits spelled
+    out so the character-only model can tokenize them. plan is a list of
+    (display_token, n_aligner_words) pairs — the aligner returns exactly
+    sum(n_aligner_words) word spans, and each display_token absorbs that many
+    consecutive spans to produce one subtitle word.
+    """
+    plan: List[Tuple[str, int]] = []
+    aligner_words: List[str] = []
+    for display_token in _DISPLAY_TOKEN_RE.findall(text):
+        words = _normalize_like_aligner(_expand_numbers(display_token))
+        if not words:
+            continue
+        plan.append((display_token, len(words)))
+        aligner_words.extend(words)
+    return " ".join(aligner_words), plan
 
 
 class SubtitlesProvider(Provider):
@@ -239,16 +299,34 @@ class ModalWav2VecAligner(SubtitlesProvider):
             return None
         return single_url[: -len(".modal.run")] + "-batch.modal.run"
 
-    def _segments_to_words(self, segments: List[Dict]) -> List[TranscriptionWord]:
+    def _plan_to_words(
+        self, plan: List[Tuple[str, int]], segments: List[Dict]
+    ) -> List[TranscriptionWord]:
+        expected = sum(n for _, n in plan)
+        if len(segments) != expected:
+            raise ValueError(
+                f"Forced aligner returned {len(segments)} spans but plan "
+                f"expected {expected}. Alignment drifted — display tokens "
+                f"would not map cleanly back onto audio."
+            )
+
+        display = []
+        cursor = 0
+        for token, n in plan:
+            span = segments[cursor : cursor + n]
+            cursor += n
+            display.append(
+                {"word": token, "start": span[0]["start"], "end": span[-1]["end"]}
+            )
+
         words = []
-        for i, seg in enumerate(segments):
-            start = seg["start"]
-            end = seg["end"]
-            if i < len(segments) - 1:
-                next_start = segments[i + 1]["start"]
-                if next_start - end < self.min_silence_duration:
-                    end = next_start
-            words.append(TranscriptionWord(word=seg["word"], start=start, end=end))
+        for i, d in enumerate(display):
+            end = d["end"]
+            if i < len(display) - 1:
+                gap = display[i + 1]["start"] - end
+                if gap < self.min_silence_duration:
+                    end = display[i + 1]["start"]
+            words.append(TranscriptionWord(word=d["word"], start=d["start"], end=end))
         return words
 
     async def _prepare_audio(self, audio_path: Union[str, Path]) -> str:
@@ -286,8 +364,9 @@ class ModalWav2VecAligner(SubtitlesProvider):
             audio_url = await self._prepare_audio(audio_file)
 
             text = normalize_alignment_text(text)
+            aligner_text, plan = _build_alignment_plan(text)
 
-            payload = {"audio_url": audio_url, "text": text}
+            payload = {"audio_url": audio_url, "text": aligner_text}
             if self.modal_api_key:
                 payload["api_key"] = self.modal_api_key
 
@@ -308,7 +387,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
                         )
                     result = await response.json()
                     segments = result.get("segments", [])
-                    words = self._segments_to_words(segments)
+                    words = self._plan_to_words(plan, segments)
 
         # Use the actual audio duration if provided, otherwise use last word's end time
         # This is important because subtitle duration is used to offset the next block,
@@ -381,9 +460,16 @@ class ModalWav2VecAligner(SubtitlesProvider):
         normalized_texts = [
             normalize_alignment_text(r.transcription) for r in tts_results
         ]
+        plans: List[List[Tuple[str, int]]] = []
+        aligner_texts: List[str] = []
+        for text in normalized_texts:
+            aligner_text, plan = _build_alignment_plan(text)
+            aligner_texts.append(aligner_text)
+            plans.append(plan)
+
         items = [
-            {"audio_url": url, "text": text}
-            for (url, _), text in zip(prepped, normalized_texts)
+            {"audio_url": url, "text": aligner_text}
+            for (url, _), aligner_text in zip(prepped, aligner_texts)
         ]
         payload: Dict = {"items": items}
         if self.modal_api_key:
@@ -413,11 +499,11 @@ class ModalWav2VecAligner(SubtitlesProvider):
                 f"{len(tts_results)} items"
             )
 
-        for tts_res, (_, duration), single_res, text in zip(
-            tts_results, prepped, batch_results, normalized_texts
+        for tts_res, (_, duration), single_res, text, plan in zip(
+            tts_results, prepped, batch_results, normalized_texts, plans
         ):
             segments = single_res.get("segments", [])
-            words = self._segments_to_words(segments)
+            words = self._plan_to_words(plan, segments)
             if duration is not None and duration > 0:
                 final_duration = duration
             else:

@@ -16,6 +16,7 @@ dependencies = [
     "firebase-admin==7.3.0",
     "google-genai",
     "matplotlib==3.10.8",
+    "num2words==0.5.14",
     "openai==2.29.0",
     "pillow==12.1.1",
     "playwright==1.58.0",
