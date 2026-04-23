@@ -361,18 +361,48 @@ class ModalFFmpeg(FFmpegProvider):
 
     def __init__(
         self,
-        endpoint_url: str | None = None,  # Your deployed Modal Web Endpoint URL
+        endpoint_url: str | None = None,  # Deprecated: use gpu/cpu urls
+        gpu_endpoint_url: str | None = None,
+        cpu_endpoint_url: str | None = None,
         modal_api_key: str | None = None,
         download_results: bool = True,
         **kwargs,
     ):
-        # Format usually looks like: https://yourusername--pdftoreel-ffmpeg-ffmpeg-endpoint.modal.run
-        self.endpoint_url = endpoint_url or os.getenv("MODAL_FFMPEG_ENDPOINT_URL")
+        # The Modal ffmpeg app now exposes two endpoints: one with an L4 GPU
+        # for NVENC, and a CPU-only one for libx264. Route per-codec so we
+        # don't pay for GPU on software-encoded jobs.
+        # Formats:
+        #   https://<user>--pdftoreel-ffmpeg-ffmpeg-endpoint.modal.run       (GPU)
+        #   https://<user>--pdftoreel-ffmpeg-ffmpeg-cpu-endpoint.modal.run   (CPU)
+        legacy = endpoint_url or os.getenv("MODAL_FFMPEG_ENDPOINT_URL")
+        self.gpu_endpoint_url = (
+            gpu_endpoint_url or os.getenv("MODAL_FFMPEG_GPU_ENDPOINT_URL") or legacy
+        )
+        self.cpu_endpoint_url = (
+            cpu_endpoint_url or os.getenv("MODAL_FFMPEG_CPU_ENDPOINT_URL") or legacy
+        )
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
 
         super().__init__(download_results=download_results, **kwargs)
         self.r2 = CloudflareR2()
         self.session_id = kwargs.get("session_id", "default")
+
+    def _endpoint_for_codec(self, codec: str) -> str:
+        if codec == "h264_nvenc":
+            url = self.gpu_endpoint_url
+            if not url:
+                raise ValueError(
+                    "NVENC requested but no GPU endpoint configured "
+                    "(set MODAL_FFMPEG_GPU_ENDPOINT_URL)"
+                )
+            return url
+        url = self.cpu_endpoint_url
+        if not url:
+            raise ValueError(
+                "No CPU endpoint configured "
+                "(set MODAL_FFMPEG_CPU_ENDPOINT_URL)"
+            )
+        return url
 
     async def _prepare_inputs(
         self, cmd: FFmpegCommand, session_id: str
@@ -424,6 +454,7 @@ class ModalFFmpeg(FFmpegProvider):
         output_key = kwargs.get("output_key", f"videos/output/{output_filename}")
 
         codec = cmd.video_codec or "h264_nvenc"
+        endpoint_url = self._endpoint_for_codec(codec)
         payload = {
             "input": {
                 "inputs": prepared_inputs,
@@ -437,13 +468,16 @@ class ModalFFmpeg(FFmpegProvider):
         if self.modal_api_key:
             payload["api_key"] = self.modal_api_key
 
-        print(f"[{self.provider_name}] Sending render job to Modal.com...")
+        print(
+            f"[{self.provider_name}] Sending {codec} render job to Modal.com "
+            f"({'GPU' if codec == 'h264_nvenc' else 'CPU'} endpoint)..."
+        )
 
         # Unlike Runpod EndpointCaller, Modal Web Endpoints are purely synchronous HTTP responses!
         # You just POST and await the JSON response without polling /status.
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                self.endpoint_url, json=payload, timeout=1800
+                endpoint_url, json=payload, timeout=1800
             ) as response:
                 if not response.ok:
                     text = await response.text()
