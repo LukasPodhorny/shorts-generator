@@ -211,6 +211,7 @@ class ModalWav2VecAligner(SubtitlesProvider):
     def __init__(
         self,
         endpoint_url: Optional[str] = None,
+        batch_endpoint_url: Optional[str] = None,
         modal_api_key: Optional[str] = None,
         r2_provider=None,
         max_concurrent: int = 3,
@@ -219,12 +220,36 @@ class ModalWav2VecAligner(SubtitlesProvider):
     ):
         """Initialize the Wav2Vec Aligner provider."""
         self.endpoint_url = endpoint_url or os.getenv("MODAL_WAV2VEC_ENDPOINT_URL")
+        self.batch_endpoint_url = batch_endpoint_url or os.getenv(
+            "MODAL_WAV2VEC_BATCH_ENDPOINT_URL"
+        ) or self._derive_batch_url(self.endpoint_url)
         self.modal_api_key = modal_api_key or os.getenv("MODAL_API_KEY")
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.min_silence_duration = min_silence_duration
 
         # Use existing R2 handler or initialize the standard one
         self.r2 = r2_provider or CloudflareR2()
+
+    @staticmethod
+    def _derive_batch_url(single_url: Optional[str]) -> Optional[str]:
+        """Modal endpoint URLs follow `...-<method>.modal.run`, so the batch
+        endpoint sits at `...-align-batch.modal.run`. Auto-derive when possible
+        so callers only need to set the single URL."""
+        if not single_url or not single_url.endswith(".modal.run"):
+            return None
+        return single_url[: -len(".modal.run")] + "-batch.modal.run"
+
+    def _segments_to_words(self, segments: List[Dict]) -> List[TranscriptionWord]:
+        words = []
+        for i, seg in enumerate(segments):
+            start = seg["start"]
+            end = seg["end"]
+            if i < len(segments) - 1:
+                next_start = segments[i + 1]["start"]
+                if next_start - end < self.min_silence_duration:
+                    end = next_start
+            words.append(TranscriptionWord(word=seg["word"], start=start, end=end))
+        return words
 
     async def _prepare_audio(self, audio_path: Union[str, Path]) -> str:
         """Uploads local audio to R2 and returns a presigned URL."""
@@ -282,26 +307,8 @@ class ModalWav2VecAligner(SubtitlesProvider):
                             f"Modal Wav2Vec Alignment failed with {response.status}: {err}"
                         )
                     result = await response.json()
-
-                    # Map Modal segments to the standard TranscriptionWord format
-                    # and bridge gaps shorter than min_silence_duration
-                    words = []
                     segments = result.get("segments", [])
-                    for i, seg in enumerate(segments):
-                        word_text = seg["word"]
-                        start = seg["start"]
-                        end = seg["end"]
-
-                        # If there's a next segment, check if we should bridge the gap
-                        if i < len(segments) - 1:
-                            next_start = segments[i + 1]["start"]
-                            gap = next_start - end
-                            if gap < self.min_silence_duration:
-                                end = next_start
-
-                        words.append(
-                            TranscriptionWord(word=word_text, start=start, end=end)
-                        )
+                    words = self._segments_to_words(segments)
 
         # Use the actual audio duration if provided, otherwise use last word's end time
         # This is important because subtitle duration is used to offset the next block,
@@ -319,7 +326,8 @@ class ModalWav2VecAligner(SubtitlesProvider):
         )
 
     async def populate_reel(self, reel: Reel) -> None:
-        """Processes all blocks in a reel that require subtitles."""
+        # One batched call per reel: GPU idle/scaledown dominates cost,
+        # so we want exactly one cold-start amortization per reel.
         tts_results = []
         for i, block in enumerate(reel.blocks):
             if (
@@ -345,20 +353,78 @@ class ModalWav2VecAligner(SubtitlesProvider):
         if not tts_results:
             return
 
-        print(f"[{self.provider_name}] Aligning {len(tts_results)} audio blocks...")
-        
-        async def get_duration_and_align(res):
+        if not self.batch_endpoint_url:
+            raise ValueError(
+                "MODAL_WAV2VEC_BATCH_ENDPOINT_URL is not set and could not be "
+                "derived from MODAL_WAV2VEC_ENDPOINT_URL."
+            )
+
+        print(
+            f"[{self.provider_name}] Aligning {len(tts_results)} audio blocks "
+            f"in one batched request..."
+        )
+
+        async def prep(res: TTSResult):
+            url = await self._prepare_audio(res.url)
             duration = None
-            # Try to get duration from local file
             if res.filepath and os.path.exists(res.filepath):
                 try:
                     duration = get_wav_length(res.filepath)
                 except Exception as e:
-                    print(f"Warning: Could not get duration for {res.filepath}: {e}")
-            return await self.generate_subtitles(res.url, res.transcription, duration)
-        
-        tasks = [get_duration_and_align(res) for res in tts_results]
-        results = await asyncio.gather(*tasks)
+                    print(
+                        f"Warning: Could not get duration for {res.filepath}: {e}"
+                    )
+            return url, duration
 
-        for tts_res, sub_res in zip(tts_results, results):
-            reel.blocks[tts_res.id].assets.subtitles = sub_res
+        prepped = await asyncio.gather(*[prep(r) for r in tts_results])
+
+        normalized_texts = [
+            normalize_alignment_text(r.transcription) for r in tts_results
+        ]
+        items = [
+            {"audio_url": url, "text": text}
+            for (url, _), text in zip(prepped, normalized_texts)
+        ]
+        payload: Dict = {"items": items}
+        if self.modal_api_key:
+            payload["api_key"] = self.modal_api_key
+
+        async with self.semaphore:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.batch_endpoint_url, json=payload, timeout=600
+                ) as response:
+                    print(
+                        f"[{self.provider_name}] Modal batch responded with "
+                        f"status {response.status}"
+                    )
+                    if not response.ok:
+                        err = await response.text()
+                        raise Exception(
+                            f"Modal Wav2Vec batch alignment failed with "
+                            f"{response.status}: {err}"
+                        )
+                    result = await response.json()
+
+        batch_results = result.get("results", [])
+        if len(batch_results) != len(tts_results):
+            raise Exception(
+                f"Modal batch returned {len(batch_results)} results for "
+                f"{len(tts_results)} items"
+            )
+
+        for tts_res, (_, duration), single_res, text in zip(
+            tts_results, prepped, batch_results, normalized_texts
+        ):
+            segments = single_res.get("segments", [])
+            words = self._segments_to_words(segments)
+            if duration is not None and duration > 0:
+                final_duration = duration
+            else:
+                final_duration = segments[-1]["end"] if segments else 0.0
+            reel.blocks[tts_res.id].assets.subtitles = TranscriptionVerbose(
+                duration=final_duration,
+                language="english",
+                text=text,
+                words=words,
+            )
