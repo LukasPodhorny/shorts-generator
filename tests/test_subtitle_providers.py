@@ -6,6 +6,7 @@ from aishorts.modules.subtitles.subtitle_providers import (
     ModalWav2VecAligner,
     _build_alignment_plan,
     _spell_integer,
+    expand_numbers_for_speech,
     get_wav_length,
 )
 from openai.types.audio import TranscriptionVerbose
@@ -169,6 +170,24 @@ def test_build_alignment_plan(text, expected_aligner, expected_plan):
     assert plan == expected_plan
     # Invariant: the aligner word count equals the sum of plan absorption counts.
     assert len(aligner_text.split()) == sum(n for _, n in plan)
+
+
+@pytest.mark.parametrize(
+    "raw, spoken",
+    [
+        ("I have 50000 dollars", "I have fifty thousand dollars"),
+        ("I have 50 000 dollars", "I have fifty thousand dollars"),
+        ("That costs 50000$", "That costs fifty thousand $"),
+        ("Remember 2026", "Remember two thousand twenty six"),
+        ("2 000 000 people", "two million people"),
+        ("around 3.14", "around three point one four"),
+        ("pi is 3.14159", "pi is three point one four one five nine"),
+        ("no numbers here", "no numbers here"),
+        ("", ""),
+    ],
+)
+def test_expand_numbers_for_speech(raw, spoken):
+    assert expand_numbers_for_speech(raw) == spoken
 
 
 def test_spell_integer_strips_and_and_hyphens():

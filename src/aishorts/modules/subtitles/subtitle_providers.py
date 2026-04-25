@@ -44,6 +44,10 @@ def normalize_alignment_text(text: str) -> str:
     )
 
 
+# Decimals: '3.14' -> 'three point one four' (post-decimal digits spoken
+# individually, the human/TTS convention). Must run before _DIGIT_RUN_RE so
+# the integer part isn't consumed first.
+_DECIMAL_RE = re.compile(r"\d+\.\d+")
 # Thousands-grouped numbers like "50 000" or "2 000 000" — must be recognized
 # before plain digit runs so the internal spaces stay inside one integer.
 _THOUSANDS_GROUP_RE = re.compile(r"\d{1,3}(?:\s\d{3})+")
@@ -60,19 +64,38 @@ def _spell_integer(digits: str) -> List[str]:
     return [w for w in cleaned.split() if w != "and"]
 
 
-def _expand_numbers(text: str) -> str:
-    """Spell out every digit sequence inside text.
+def _spell_decimal(s: str) -> List[str]:
+    """'3.14' -> ['three', 'point', 'one', 'four']."""
+    int_part, frac_part = s.split(".")
+    words = _spell_integer(int_part) + ["point"]
+    for digit in frac_part:
+        words.extend(_spell_integer(digit))
+    return words
 
-    Handles thousands groups first ('50 000' -> 'fifty thousand') so their
-    internal whitespace stays part of a single integer, then any remaining
-    plain digit runs ('2026', '9', '11').
+
+def expand_numbers_for_speech(text: str) -> str:
+    """Spell out every digit sequence in text so TTS and forced alignment
+    pronounce numbers identically and predictably.
+
+    Handles, in order:
+      decimals      ('3.14'    -> 'three point one four')
+      thousands     ('50 000'  -> 'fifty thousand')
+      plain digits  ('2026'    -> 'two thousand twenty six')
+
+    Non-digit characters (case, punctuation) are preserved; runs of whitespace
+    introduced by substitution are collapsed.
     """
-    def spell(match):
+    def spell_int_run(match):
         digits = match.group().replace(" ", "")
         return " " + " ".join(_spell_integer(digits)) + " "
 
-    text = _THOUSANDS_GROUP_RE.sub(spell, text)
-    return _DIGIT_RUN_RE.sub(spell, text)
+    def spell_dec_run(match):
+        return " " + " ".join(_spell_decimal(match.group())) + " "
+
+    text = _DECIMAL_RE.sub(spell_dec_run, text)
+    text = _THOUSANDS_GROUP_RE.sub(spell_int_run, text)
+    text = _DIGIT_RUN_RE.sub(spell_int_run, text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _normalize_like_aligner(text: str) -> List[str]:
@@ -94,7 +117,7 @@ def _build_alignment_plan(text: str) -> Tuple[str, List[Tuple[str, int]]]:
     plan: List[Tuple[str, int]] = []
     aligner_words: List[str] = []
     for display_token in _DISPLAY_TOKEN_RE.findall(text):
-        words = _normalize_like_aligner(_expand_numbers(display_token))
+        words = _normalize_like_aligner(expand_numbers_for_speech(display_token))
         if not words:
             continue
         plan.append((display_token, len(words)))
