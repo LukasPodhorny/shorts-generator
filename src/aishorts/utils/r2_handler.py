@@ -86,6 +86,23 @@ class CloudflareR2:
         self.client.upload_file(file_path, self.bucket, key)
         return self.get_public_url(key)
 
+    def download_file(self, key: str, dest_path: str) -> str:
+        """Downloads an object from R2 to a local path."""
+        parent = os.path.dirname(dest_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        self.client.download_file(self.bucket, key, dest_path)
+        return dest_path
+
+    def list_keys(self, prefix: str) -> list[str]:
+        """Lists all keys in the bucket with the given prefix."""
+        keys: list[str] = []
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                keys.append(obj["Key"])
+        return keys
+
     def create_presigned_url(self, key: str, expires_in=604800) -> str:
         """Generates a temporary download link."""
         return self.client.generate_presigned_url(

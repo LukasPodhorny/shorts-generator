@@ -260,30 +260,147 @@ class ShortsGenerator:
         self.logger.setLevel(logging.INFO)
 
         if not self.logger.handlers:
-            os.makedirs("logs", exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # File Handler
-            fh = logging.FileHandler(f"logs/run_{timestamp}.log")
-            fh.setFormatter(
-                logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-            )
-            self.logger.addHandler(fh)
-
-            # Stream Handler (console output)
             sh = logging.StreamHandler()
             sh.setFormatter(logging.Formatter("%(message)s"))
             self.logger.addHandler(sh)
 
-    def _save_debug_state(self, reel_series: ReelSeries, stage: PipelineStage):
+        self._current_session_id: str | None = None
+        self._session_log_handler: logging.FileHandler | None = None
+
+    def _session_dir(self, session_id: str) -> str:
+        return os.path.join("logs", session_id)
+
+    def _session_log_path(self, session_id: str) -> str:
+        return os.path.join(self._session_dir(session_id), "run.log")
+
+    def _attach_session_log(self, session_id: str):
+        """Attach a file handler that mirrors run logs into logs/{session_id}/run.log."""
+        os.makedirs(self._session_dir(session_id), exist_ok=True)
+        handler = logging.FileHandler(self._session_log_path(session_id))
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
+        self._current_session_id = session_id
+        self._session_log_handler = handler
+
+    def _detach_session_log(self):
+        if self._session_log_handler is not None:
+            try:
+                self._session_log_handler.flush()
+                self.logger.removeHandler(self._session_log_handler)
+                self._session_log_handler.close()
+            finally:
+                self._session_log_handler = None
+        self._current_session_id = None
+
+    def _r2_log_key(self, session_id: str, filename: str) -> str:
+        return f"logs/{session_id}/{filename}"
+
+    def _upload_session_artifact(self, local_path: str, key: str):
+        """Best-effort upload of a session artifact (pkl/log) to R2."""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = f"logs/{stage.name.lower()}_stage_{timestamp}.pkl"
+            r2 = CloudflareR2()
+            r2.upload_file(local_path, key)
+            self.logger.info(f"Uploaded artifact to R2: {key}")
+        except Exception as e:
+            self.logger.warning(f"Failed to upload artifact {local_path} to R2: {e}")
+
+    def _save_debug_state(self, reel_series: ReelSeries, stage: PipelineStage):
+        session_id = self._current_session_id
+        if session_id is None:
+            self.logger.warning("No session_id set; skipping checkpoint save.")
+            return
+        try:
+            session_dir = self._session_dir(session_id)
+            os.makedirs(session_dir, exist_ok=True)
+            filename = f"{stage.name.lower()}_stage.pkl"
+            filepath = os.path.join(session_dir, filename)
             with open(filepath, "wb") as f:
                 pickle.dump(reel_series, f)
             self.logger.info(f"Saved checkpoint: {filepath}")
         except Exception as e:
             self.logger.error(f"Failed to save checkpoint: {e}")
+            return
+
+        self._upload_session_artifact(filepath, self._r2_log_key(session_id, filename))
+        log_path = self._session_log_path(session_id)
+        if os.path.exists(log_path):
+            self._upload_session_artifact(
+                log_path, self._r2_log_key(session_id, "run.log")
+            )
+
+    def _resolve_resume_source(self, resume_from: str) -> str:
+        """Resolves --resume_from into a local pkl path.
+
+        Accepts: local path, R2 URL (http/https), R2 key ending in .pkl, or a
+        bare session_id (looks up logs/{session_id}/ in R2 and picks the
+        highest-numbered stage).
+        """
+        if os.path.exists(resume_from):
+            return resume_from
+
+        def _pick_latest(paths: list[str]) -> str:
+            def stage_rank(p: str) -> int:
+                name = os.path.basename(p).split("_")[0].upper()
+                try:
+                    return int(PipelineStage[name])
+                except KeyError:
+                    return -1
+            return max(paths, key=stage_rank)
+
+        local_session_dir = os.path.join("logs", resume_from)
+        if os.path.isdir(local_session_dir):
+            local_pkls = [
+                os.path.join(local_session_dir, f)
+                for f in os.listdir(local_session_dir)
+                if f.endswith(".pkl")
+            ]
+            if local_pkls:
+                chosen = _pick_latest(local_pkls)
+                self.logger.info(f"Resuming from local session checkpoint: {chosen}")
+                return chosen
+
+        download_dir = os.path.join("logs", "_resume")
+        os.makedirs(download_dir, exist_ok=True)
+
+        if resume_from.startswith(("http://", "https://")):
+            from urllib.parse import urlparse
+            import requests
+
+            parsed = urlparse(resume_from)
+            filename = os.path.basename(parsed.path) or "checkpoint.pkl"
+            local_path = os.path.join(download_dir, filename)
+            self.logger.info(f"Downloading checkpoint from URL: {resume_from}")
+            response = requests.get(resume_from, stream=True, timeout=60)
+            response.raise_for_status()
+            with open(local_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return local_path
+
+        r2 = CloudflareR2()
+
+        if resume_from.endswith(".pkl"):
+            key = resume_from
+            local_path = os.path.join(download_dir, os.path.basename(key))
+            self.logger.info(f"Downloading checkpoint from R2: {key}")
+            r2.download_file(key, local_path)
+            return local_path
+
+        prefix = f"logs/{resume_from}/"
+        self.logger.info(f"Looking up latest checkpoint under R2 prefix: {prefix}")
+        keys = [k for k in r2.list_keys(prefix) if k.endswith(".pkl")]
+        if not keys:
+            raise FileNotFoundError(
+                f"No checkpoints found locally or in R2 for: {resume_from}"
+            )
+
+        best_key = _pick_latest(keys)
+        local_path = os.path.join(download_dir, os.path.basename(best_key))
+        self.logger.info(f"Selected latest stage checkpoint: {best_key}")
+        r2.download_file(best_key, local_path)
+        return local_path
 
     def _load_checkpoint(self, path: str) -> tuple[ReelSeries, PipelineStage]:
         """Loads the pickle and determines the stage from the filename."""
@@ -384,6 +501,7 @@ class ShortsGenerator:
         # Generate a unique session ID for this run
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = f"run_{timestamp}_{uuid.uuid4().hex[:8]}"
+        self._attach_session_log(session_id)
         self.logger.info(f"Starting generation session: {session_id}")
 
         reel_outputs = []
@@ -392,10 +510,8 @@ class ShortsGenerator:
         try:
             # --- 1. Load Checkpoint Logic ---
             if resume_from:
-                if not os.path.exists(resume_from):
-                    raise FileNotFoundError(f"Checkpoint file not found: {resume_from}")
-
-                reel_series, loaded_stage = self._load_checkpoint(resume_from)
+                resolved_path = self._resolve_resume_source(resume_from)
+                reel_series, loaded_stage = self._load_checkpoint(resolved_path)
 
                 # Re-download assets that were previously generated but are missing locally
                 # (essential for ephemeral environments like Railway).
@@ -608,13 +724,23 @@ class ShortsGenerator:
 
         finally:
             # --- 7. Cleanup ---
-            await self._cleanup_assets(
-                reel_series=reel_series,
-                reel_outputs=reel_outputs,
-                intermediate_keys=intermediate_keys,
-                session_id=session_id,
-                keep_assets=keep_assets,
-            )
+            try:
+                await self._cleanup_assets(
+                    reel_series=reel_series,
+                    reel_outputs=reel_outputs,
+                    intermediate_keys=intermediate_keys,
+                    session_id=session_id,
+                    keep_assets=keep_assets,
+                )
+            finally:
+                log_path = self._session_log_path(session_id)
+                if self._session_log_handler is not None:
+                    self._session_log_handler.flush()
+                if os.path.exists(log_path):
+                    self._upload_session_artifact(
+                        log_path, self._r2_log_key(session_id, "run.log")
+                    )
+                self._detach_session_log()
 
     async def _cleanup_assets(
         self,
