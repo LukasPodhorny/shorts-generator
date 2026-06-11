@@ -423,7 +423,7 @@ class Minimax(LLMProvider):
         chunks: list[str] = []
         if file_context:
             chunks.append(
-                "The following is plain text extracted from the provided file(s). "
+                "The following is Markdown converted from the provided file(s). "
                 "Use it as the source material.\n\n"
                 + file_context
             )
@@ -570,7 +570,7 @@ class Groq(LLMProvider):
         chunks: list[str] = []
         if file_context:
             chunks.append(
-                "The following is plain text extracted from the provided file(s). "
+                "The following is Markdown converted from the provided file(s). "
                 "Use it as the source material.\n\n"
                 + file_context
             )
@@ -705,7 +705,7 @@ class Fireworks(LLMProvider):
         chunks: list[str] = []
         if file_context:
             chunks.append(
-                "The following is plain text extracted from the provided file(s). "
+                "The following is Markdown converted from the provided file(s). "
                 "Use it as the source material.\n\n"
                 + file_context
             )

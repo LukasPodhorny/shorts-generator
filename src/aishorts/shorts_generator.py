@@ -347,6 +347,7 @@ class ShortsGenerator:
                     return int(PipelineStage[name])
                 except KeyError:
                     return -1
+
             return max(paths, key=stage_rank)
 
         local_session_dir = os.path.join("logs", resume_from)
@@ -491,8 +492,9 @@ class ShortsGenerator:
         resume_from: str | None = None,
         mock_script: str | None = None,
         keep_assets: bool = False,
-        status_callback: Callable[[PipelineStage, ReelSeries | None], Awaitable[None]]
-        | None = None,
+        status_callback: (
+            Callable[[PipelineStage, ReelSeries | None], Awaitable[None]] | None
+        ) = None,
     ) -> ReelSeriesOutput:
 
         current_stage = PipelineStage.SCRIPT
@@ -588,17 +590,21 @@ class ShortsGenerator:
                     try:
                         series_thumb_path = os.path.join(
                             self.image_gen.image_gen.OUTPUT_DIR,
-                            f"series_thumb_{uuid.uuid4().hex}.png"
+                            f"series_thumb_{uuid.uuid4().hex}.png",
                         )
                         await self.image_gen.generate_thumbnail(
                             prompt=thumbnail_source,
                             output_path=series_thumb_path,
                         )
-                        series_thumb_key = f"generated/thumbnails/{uuid.uuid4().hex}.png"
+                        series_thumb_key = (
+                            f"generated/thumbnails/{uuid.uuid4().hex}.png"
+                        )
                         series_thumbnail_url = await asyncio.to_thread(
                             r2.upload_file, series_thumb_path, series_thumb_key
                         )
-                        self.logger.info(f"Series thumbnail uploaded: {series_thumbnail_url}")
+                        self.logger.info(
+                            f"Series thumbnail uploaded: {series_thumbnail_url}"
+                        )
                         if os.path.exists(series_thumb_path):
                             os.remove(series_thumb_path)
                     except Exception as e:
@@ -611,7 +617,7 @@ class ShortsGenerator:
                     try:
                         reel_thumb_path = os.path.join(
                             self.image_gen.image_gen.OUTPUT_DIR,
-                            f"reel_thumb_{uuid.uuid4().hex}.png"
+                            f"reel_thumb_{uuid.uuid4().hex}.png",
                         )
                         await self.image_gen.generate_thumbnail(
                             prompt=reel_thumb_source,
@@ -625,12 +631,17 @@ class ShortsGenerator:
                         if os.path.exists(reel_thumb_path):
                             os.remove(reel_thumb_path)
                     except Exception as e:
-                        self.logger.warning(f"Failed to generate thumbnail for reel {i}: {e}")
+                        self.logger.warning(
+                            f"Failed to generate thumbnail for reel {i}: {e}"
+                        )
 
                 # Generate series + all reel thumbnails concurrently
                 await asyncio.gather(
                     _gen_series_thumb(),
-                    *[_gen_reel_thumb(i, reel) for i, reel in enumerate(reel_series.reels)]
+                    *[
+                        _gen_reel_thumb(i, reel)
+                        for i, reel in enumerate(reel_series.reels)
+                    ],
                 )
 
                 # Store thumbnail URLs in reel_series for callback
@@ -706,7 +717,7 @@ class ShortsGenerator:
                     local_path=result.filepath or "",
                     presigned_url=presigned_url,
                     thumbnail_url=reel_thumbnails.get(i),
-					duration=getattr(result, "duration", None),
+                    duration=getattr(result, "duration", None),
                 )
 
             compose_results = await asyncio.gather(
@@ -719,7 +730,7 @@ class ShortsGenerator:
             return ReelSeriesOutput(
                 topic=reel_series.topic,
                 thumbnail_url=series_thumbnail_url,
-                reels=reel_outputs
+                reels=reel_outputs,
             )
 
         finally:
