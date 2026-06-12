@@ -221,10 +221,20 @@ class ContentIngestor:
         for file_ref in files or []:
             label = os.path.basename(urlparse(file_ref).path) or file_ref
             markdown = await self.file_to_markdown(file_ref)
+            self.logger.info(
+                "Ingested file %s -> %d chars of Markdown", label, len(markdown)
+            )
+            if not markdown:
+                self.logger.warning("File %s produced empty Markdown", file_ref)
             parts.append(f"--- Document: {label} ---\n{markdown}\n")
 
         for url in links or []:
             markdown = await self.link_to_markdown(url)
+            self.logger.info(
+                "Ingested link %s -> %d chars of Markdown", url, len(markdown)
+            )
+            if not markdown:
+                self.logger.warning("Link %s produced empty Markdown", url)
             parts.append(f"--- Link: {url} ---\n{markdown}\n")
 
         return "\n\n".join(parts)

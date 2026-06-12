@@ -3,8 +3,11 @@ from pydantic import BaseModel
 from aishorts.modules.provider import Provider
 from aishorts.modules.ingest import ContentIngestor
 from abc import abstractmethod
+import logging
 import os
 from google import genai
+
+logger = logging.getLogger("ShortsGenerator.LLMProvider")
 
 
 class LLMProvider(Provider):
@@ -57,7 +60,16 @@ class LLMProvider(Provider):
             )
         if user_input:
             chunks.append(user_input)
-        return "\n\n".join(chunks)
+        user_content = "\n\n".join(chunks)
+
+        preview_limit = 2000
+        logger.info(
+            "LLM user content (%d chars total, showing first %d):\n%s",
+            len(user_content),
+            min(len(user_content), preview_limit),
+            user_content[:preview_limit],
+        )
+        return user_content
 
     @abstractmethod
     async def generate_structure(

@@ -155,6 +155,10 @@ class ScriptGenerator:
     ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
         self.logger.info("Script generator instructions:\n%s", instructions)
+        self.logger.info(
+            "Script generator sources: files=%s links=%s", files, links
+        )
+        self.logger.info("Script generator user_input:\n%s", user_input)
         func = self.llm.generate_structure
 
         return await await_or_thread(
