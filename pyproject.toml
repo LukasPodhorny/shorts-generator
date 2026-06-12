@@ -16,6 +16,7 @@ dependencies = [
     "firebase-admin==7.3.0",
     "google-genai",
     "markitdown[pdf,docx,pptx,xlsx,xls,outlook,audio-transcription,youtube-transcription]==0.1.6",
+    "youtube-transcript-api>=1.2.2",
     "matplotlib==3.10.8",
     "num2words==0.5.14",
     "openai==2.29.0",

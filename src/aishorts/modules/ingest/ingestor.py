@@ -24,7 +24,14 @@ import aiohttp
 from markitdown import MarkItDown, UnsupportedFormatException
 
 DEFAULT_VISION_MODEL = "gemma-4-31b-it"
+DEFAULT_YOUTUBE_MODEL = "gemini-3.1-flash-lite"
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+DEFAULT_YOUTUBE_PROMPT = (
+    "Watch this video and output Markdown with: the video title as a heading, "
+    "a one-paragraph summary, then the full spoken transcript. Output nothing "
+    "else."
+)
 
 DEFAULT_IMAGE_PROMPT = (
     "Describe this image in detail so it can be used as source material for a "
@@ -147,9 +154,11 @@ class ContentIngestor:
         self.vision_model = vision_model or os.getenv(
             "MARKITDOWN_VISION_MODEL", DEFAULT_VISION_MODEL
         )
+        self.youtube_model = os.getenv("INGEST_YOUTUBE_MODEL", DEFAULT_YOUTUBE_MODEL)
         self._gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         self.image_prompt = image_prompt or DEFAULT_IMAGE_PROMPT
         self._markitdown: MarkItDown | None = None
+        self._genai_client = None
         self.logger = logging.getLogger("ShortsGenerator.ContentIngestor")
 
     def _get_markitdown(self) -> MarkItDown:
@@ -204,10 +213,56 @@ class ContentIngestor:
                 except OSError:
                     pass
 
+    @staticmethod
+    def _is_youtube_url(url: str) -> bool:
+        host = (urlparse(url).hostname or "").lower()
+        return host in ("youtube.com", "youtu.be") or host.endswith(
+            (".youtube.com", ".youtu.be")
+        )
+
+    async def _youtube_to_markdown(self, url: str) -> str:
+        """Transcribe a YouTube video with Gemini's native YouTube ingestion.
+
+        Google fetches the video server-side, so this works from datacenter
+        IPs where YouTube blocks direct page/transcript scraping (which makes
+        MarkItDown's YouTube converter fall back to useless cookie-wall HTML).
+        """
+        from google import genai
+        from google.genai import types
+
+        if self._genai_client is None:
+            self._genai_client = genai.Client(api_key=self._gemini_api_key)
+
+        response = await self._genai_client.aio.models.generate_content(
+            model=self.youtube_model,
+            contents=types.Content(
+                parts=[
+                    types.Part(file_data=types.FileData(file_uri=url)),
+                    types.Part(text=DEFAULT_YOUTUBE_PROMPT),
+                ]
+            ),
+        )
+        markdown = (response.text or "").strip()
+        if not markdown:
+            raise ValueError(f"Gemini returned no transcript for {url}")
+        return markdown
+
     async def link_to_markdown(self, url: str) -> str:
         """Convert a web link (website, YouTube video, Wikipedia, RSS, ...)."""
         if not url.startswith(("http://", "https://")):
             raise ValueError(f"Links must be http(s) URLs, got: {url}")
+
+        if self._is_youtube_url(url) and self._gemini_api_key:
+            try:
+                return await self._youtube_to_markdown(url)
+            except Exception:
+                self.logger.warning(
+                    "Gemini YouTube ingestion failed for %s; "
+                    "falling back to MarkItDown",
+                    url,
+                    exc_info=True,
+                )
+
         return await asyncio.to_thread(self._convert, url)
 
     async def build_context(

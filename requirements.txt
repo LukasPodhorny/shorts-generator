@@ -8,6 +8,7 @@ fastapi==0.135.2
 firebase-admin==7.3.0
 google-genai
 markitdown[pdf,docx,pptx,xlsx,xls,outlook,audio-transcription,youtube-transcription]==0.1.6
+youtube-transcript-api>=1.2.2
 matplotlib==3.10.8
 openai==2.29.0
 pillow==12.1.1

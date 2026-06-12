@@ -225,7 +225,7 @@ Shared abstraction for text models; used by the script generator and the Manim c
 `ContentIngestor` converts every input source to Markdown with [MarkItDown](https://github.com/microsoft/markitdown):
 
 - **files** — local paths, http(s) URLs, or R2 keys (non-absolute non-URL strings are presigned from R2); remote refs are temp-downloaded first. Formats: pdf, docx, pptx, xlsx/xls, csv, json, xml, html, epub, ipynb, Outlook .msg, txt/md, images, audio (wav/mp3/m4a → transcription).
-- **links** — web URLs converted in place so MarkItDown's URL-aware converters apply: YouTube (metadata + transcript), Wikipedia, RSS/Atom, Bing SERP, generic HTML. Fetched with a browser User-Agent (some sites 403 the python-requests default).
+- **links** — web URLs converted in place so MarkItDown's URL-aware converters apply: Wikipedia, RSS/Atom, Bing SERP, generic HTML. Fetched with a browser User-Agent (some sites 403 the python-requests default). **YouTube links** bypass MarkItDown and are transcribed natively by Gemini (`gemini-3.1-flash-lite`, override with `INGEST_YOUTUBE_MODEL`) — Google fetches the video server-side, so it works from datacenter IPs where YouTube blocks scraping (MarkItDown's converter is the no-key fallback).
 - **images** — described by a vision LLM plugged into MarkItDown's `llm_client` hook: `gemma-4-31b-it` through the Gemini API's OpenAI-compatible endpoint (`GEMINI_API_KEY`; override the model with `MARKITDOWN_VISION_MODEL`). Gemma's `<thought>…</thought>` reasoning blocks are stripped from captions. Without a key, images degrade to metadata only.
 
 ### 4.2 Script (`modules/script/`)
