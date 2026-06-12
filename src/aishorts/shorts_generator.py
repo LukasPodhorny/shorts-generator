@@ -488,6 +488,7 @@ class ShortsGenerator:
         self,
         amount: int = 1,
         files: list[str] | None = None,
+        links: list[str] | None = None,
         user_input: str | None = None,
         resume_from: str | None = None,
         mock_script: str | None = None,
@@ -553,7 +554,10 @@ class ShortsGenerator:
                         reel_series = ReelSeries.model_validate_json(reel_json)
                     else:
                         reel_series = await self.script_gen.generate_script(
-                            num_reels=amount, files=files, user_input=user_input
+                            num_reels=amount,
+                            files=files,
+                            links=links,
+                            user_input=user_input,
                         )
 
                     self.logger.info(
@@ -872,6 +876,7 @@ class ShortsGenerator:
         self,
         amount: int = 1,
         files: list[str] | None = None,
+        links: list[str] | None = None,
         user_input: str | None = None,
         resume_from: str | None = None,
         mock_script: str | None = None,
@@ -881,6 +886,7 @@ class ShortsGenerator:
             self.generate_shorts_async(
                 amount=amount,
                 files=files,
+                links=links,
                 user_input=user_input,
                 resume_from=resume_from,
                 mock_script=mock_script,

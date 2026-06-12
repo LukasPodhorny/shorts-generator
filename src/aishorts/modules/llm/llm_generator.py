@@ -23,8 +23,16 @@ class LLMGenerator:
         self,
         instructions: str | None = None,
         files: list[str] | None = None,
+        links: list[str] | None = None,
         user_input: str | None = None,
         **kwargs,
     ) -> str:
         func = self.llm.generate_response
-        return await await_or_thread(func, instructions, files, user_input, **kwargs)
+        return await await_or_thread(
+            func,
+            instructions=instructions,
+            files=files,
+            links=links,
+            user_input=user_input,
+            **kwargs,
+        )

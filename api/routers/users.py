@@ -61,6 +61,8 @@ async def get_me(
         # Create user if not exists (first login logic)
         user = User(id=uid, email=email, credits=90)
         session.add(user)
+        session.commit()
+        session.refresh(user)
 
     return user
 
@@ -133,7 +135,7 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                 user.subscription_status = "active"
                 user.plan_id = plan_id
 
-                plan = session.get(SubscriptionPlan, plan_id)
+                plan = session.get(SubscriptionPlan, plan_id) if plan_id else None
                 if plan:
                     user.credits += plan.credits
                 session.add(user)

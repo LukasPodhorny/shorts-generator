@@ -147,9 +147,21 @@ class RealLatex(LatexProvider):
             with open(tex_path, "w") as f:
                 f.write(latex_content)
 
-            # Compile LaTeX -> PDF
+            # Compile LaTeX -> PDF.
+            # The LaTeX body is LLM-generated from (potentially attacker-
+            # influenced) user input, so harden the compile:
+            #   -no-shell-escape disables \write18 shell execution
+            #   -interaction=nonstopmode avoids hanging on prompts
+            # Note: \input/\openin can still read files, so the LaTeX is run in
+            # an isolated tmp dir with no sensitive contents.
             result = subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", tex_path],
+                [
+                    "pdflatex",
+                    "-no-shell-escape",
+                    "-interaction=nonstopmode",
+                    "-halt-on-error",
+                    tex_path,
+                ],
                 cwd=tmp,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

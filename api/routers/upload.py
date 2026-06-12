@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import uuid
 import boto3
@@ -8,7 +9,7 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.auth import get_current_user
 from api.file_conversion import (
-    OFFICE_EXTENSIONS,
+    LEGACY_OFFICE_EXTENSIONS,
     ConversionError,
     convert_office_to_pdf,
 )
@@ -16,14 +17,39 @@ from api.models import UploadedFile, UploadedFileRead, User
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
+logger = logging.getLogger(__name__)
 
+
+# Everything below (except the legacy office formats) is converted to Markdown
+# by the ingest layer (MarkItDown) at generation time.
 ALLOWED_EXTENSIONS = {
+    # documents
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx",
+    ".pptx",
+    ".xlsx",
+    ".xls",
+    ".csv",
+    ".json",
+    ".xml",
+    ".html",
+    ".htm",
+    ".epub",
+    ".ipynb",
+    ".msg",
+    # images (described via vision LLM)
     ".jpg",
     ".jpeg",
     ".png",
-    ".pdf",
-    ".txt",
-} | OFFICE_EXTENSIONS
+    # audio (transcribed)
+    ".mp3",
+    ".wav",
+    ".m4a",
+} | LEGACY_OFFICE_EXTENSIONS
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 @router.post("/", response_model=UploadedFileRead)
@@ -38,6 +64,12 @@ async def upload_file(
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="File type not allowed")
+
+    if file.size is not None and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB",
+        )
 
     uid = user_token["uid"]
     email = user_token.get("email")
@@ -55,8 +87,8 @@ async def upload_file(
         stored_content_type = file.content_type or "application/octet-stream"
         upload_body: io.IOBase
 
-        if file_ext in OFFICE_EXTENSIONS:
-            # Convert office docs to PDF so all LLM providers can consume them.
+        if file_ext in LEGACY_OFFICE_EXTENSIONS:
+            # Convert legacy office docs (which MarkItDown can't read) to PDF.
             original_bytes = await file.read()
             try:
                 pdf_bytes = await convert_office_to_pdf(original_bytes, file.filename)
@@ -109,8 +141,9 @@ async def upload_file(
         return uploaded_file
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+    except Exception:
+        logger.exception("File upload failed")
+        raise HTTPException(status_code=500, detail="File upload failed")
 
 
 @router.get("/{file_id}", response_model=UploadedFileRead)
@@ -163,9 +196,10 @@ async def delete_uploaded_file(
         await run_in_threadpool(
             s3_client.delete_object, Bucket=bucket_name, Key=file_record.key
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to delete file from storage")
         raise HTTPException(
-            status_code=500, detail=f"Failed to delete file from storage: {str(e)}"
+            status_code=500, detail="Failed to delete file from storage"
         )
 
     # Delete from DB

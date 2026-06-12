@@ -214,6 +214,7 @@ async def process_reel_task(series_id: int, request_data: dict, total_cost: int 
         output = await shorts_generator.generate_shorts_async(
             amount=request_data.get("amount", 1),
             files=request_data.get("files"),
+            links=request_data.get("links"),
             user_input=request_data.get("input_text"),
             status_callback=status_callback,
         )

@@ -27,6 +27,14 @@ venv/
 env/
 ENV/
 
+# Secrets - never bake credentials into the image
+firebase_credentials.json
+*.pem
+
+# VCS / tooling
+.git/
+.aider*
+
 # Local databases and logs
 *.db
 *.sqlite3

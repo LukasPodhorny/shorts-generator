@@ -40,6 +40,7 @@ class ScriptGenerator:
         # Build avatar instruction text
         # ------------------------------
         avatar_sections = []
+        
         for avatar in self.avatars:
             avatar_sections.append(f"- Avatar '{avatar.name}': {avatar.instructions}")
         avatar_block = "AVATARS:\n" + "\n".join(avatar_sections)
@@ -148,13 +149,20 @@ class ScriptGenerator:
         self,
         num_reels: int = 1,
         files: list[str] | None = None,
+        links: list[str] | None = None,
         user_input: str | None = None,
         **kwargs,
     ) -> ReelSeries:
         instructions = self._generate_instructions(num_reels)
         self.logger.info("Script generator instructions:\n%s", instructions)
         func = self.llm.generate_structure
-        
+
         return await await_or_thread(
-            func, instructions, files, user_input, ReelSeries, **kwargs
+            func,
+            instructions=instructions,
+            files=files,
+            links=links,
+            user_input=user_input,
+            response_schema=ReelSeries,
+            **kwargs,
         )

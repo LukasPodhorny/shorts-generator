@@ -146,9 +146,11 @@ class GenerationConfigCreate(SQLModel):
 
 
 class GenerationConfigRead(SQLModel):
+    # Intentionally excludes `data`: it holds provider configuration
+    # (endpoints, model settings, possibly credentials) and is served on a
+    # public, unauthenticated endpoint.
     id: int
     name: str
-    data: dict
     is_default: bool
 
 
@@ -237,6 +239,8 @@ class GenerateRequest(SQLModel):
     amount: int = Field(default=1, ge=1, le=7)
     input_text: Optional[str] = None
     files: Optional[List[str]] = None
+    # Web URLs used as source material (websites, YouTube videos, Wikipedia, ...)
+    links: Optional[List[str]] = Field(default=None, max_length=10)
     config_name: Optional[str] = None  # If None, uses the default GenerationConfig
     # Asset-type string values the user wants enabled. None = use template defaults.
     enabled_tags: Optional[List[str]] = None

@@ -6,6 +6,11 @@ import uuid
 
 OFFICE_EXTENSIONS = {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".ods", ".odp", ".rtf"}
 
+# Formats MarkItDown cannot read directly; these still need LibreOffice -> PDF.
+# Modern formats (.docx, .pptx, .xlsx, .xls) are stored as-is and converted to
+# Markdown by the ingest layer at generation time.
+LEGACY_OFFICE_EXTENSIONS = {".doc", ".ppt", ".odt", ".ods", ".odp", ".rtf"}
+
 
 class ConversionError(RuntimeError):
     pass

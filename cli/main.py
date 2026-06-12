@@ -29,6 +29,13 @@ def main():
     parser.add_argument("--mock_script", type=str, required=False)
     parser.add_argument("--files", type=str, nargs="+", required=False)
     parser.add_argument(
+        "--links",
+        type=str,
+        nargs="+",
+        required=False,
+        help="Web URLs to use as source material (websites, YouTube videos, Wikipedia, ...)",
+    )
+    parser.add_argument(
         "--avatars",
         type=str,
         nargs="+",
@@ -77,6 +84,7 @@ def main():
     shorts_generator.generate_shorts(
         amount=args.amount,
         files=args.files,
+        links=args.links,
         user_input=args.input,
         resume_from=args.resume_from,
         mock_script=args.mock_script,

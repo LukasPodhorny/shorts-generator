@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -144,6 +145,14 @@ async def create_or_update_template(
       - preview (optional): .mp4 preview video. When provided, it is uploaded to R2
         and a thumbnail (frame at 1s) is generated and uploaded alongside it.
     """
+    # name is used in filesystem paths and R2 object keys; reject separators
+    # and traversal sequences.
+    if not re.fullmatch(r"[\w .-]+", name) or ".." in name:
+        raise HTTPException(
+            status_code=400,
+            detail="Template name may only contain letters, digits, spaces, '_', '.' and '-'",
+        )
+
     try:
         data_dict = json.loads(data)
     except json.JSONDecodeError as e:

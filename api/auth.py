@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import firebase_admin
 from firebase_admin import auth, credentials
 from fastapi import Depends, HTTPException, status
@@ -28,23 +29,32 @@ if not firebase_admin._apps:
 
 security = HTTPBearer()
 
+logger = logging.getLogger(__name__)
+
+
+def verify_token(token: str) -> dict:
+    """
+    Verifies a Firebase JWT and returns the decoded token (dict).
+    Raises HTTPException(401) on failure without leaking verifier internals.
+    """
+    try:
+        return auth.verify_id_token(token)
+    except Exception as e:
+        logger.warning(f"Token verification failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """
-    Verifies the Firebase JWT and returns the decoded token (dict).
+    Verifies the Firebase JWT from the Authorization header.
     """
-    token = credentials.credentials
-    try:
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    return verify_token(credentials.credentials)
 
 
 def get_current_admin_user(
