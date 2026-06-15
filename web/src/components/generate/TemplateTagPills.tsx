@@ -92,8 +92,8 @@ function Pill({
 }) {
   const [hovered, setHovered] = useState(false);
   const title = enabled
-    ? `${style.label} on — click to turn off`
-    : `${style.label} off — click to turn on`;
+    ? `${style.label} on - click to turn off`
+    : `${style.label} off - click to turn on`;
 
   return (
     <button
