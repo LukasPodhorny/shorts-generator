@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/*
+ * Design tokens ported 1:1 from the Flutter app's constants.dart (AppColors).
+ * Exposed as Tailwind theme values so utilities like `bg-surface1`,
+ * `text-textSecondary`, `text-neon` map straight to the originals.
+ */
+@theme {
+  --font-sans: 'Inter Variable', 'Inter', system-ui, sans-serif;
+
+  /* Backgrounds & surfaces */
+  --color-background: #0f0f0f;
+  --color-scaffold: #1e1e1e;
+  --color-surface1: #171717;
+  --color-surface2: #222222;
+  --color-surface3: #2c2c2c;
+  --color-surface4: #373737;
+
+  /* Text */
+  --color-textPrimary: #e3e3e3;
+  --color-textSecondary: #a3a3a3;
+
+  /* Accents */
+  --color-neon: #34cb36;
+  --color-accentPink: #ff4081;
+  --color-accentRed: #ea4335;
+
+  /* Semantic */
+  --color-error: #f2555a;
+
+  /* Shimmer */
+  --color-shimmerBase: #424242;
+  --color-shimmerHighlight: #616161;
+
+  /* Desktop-specific */
+  --color-freeTierPurple: #bb86fc;
+
+  /* Text selection */
+  --color-selectionBlue: #2196f3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-textPrimary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--color-selectionBlue) 40%, transparent);
+}
+
+/* Enabled buttons get a pointer cursor by default (matches the Flutter
+   SystemMouseCursors.click on tappable widgets). */
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* Thin dark scrollbars to match the Flutter ScrollbarTheme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-surface3) 60%, transparent) transparent;
+}
+
+/* Animated "generating" gradient (port of GeneratingThumbnail). */
+@keyframes generating-pan {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+.generating-gradient {
+  background-image: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460, #1a1a2e);
+  background-size: 300% 300%;
+  animation: generating-pan 3s ease-in-out infinite;
+}
+
+/* Video player scrubber (ports the Flutter SliderTheme: neon active track,
+   white38 inactive track, rounded neon thumb). The played portion is driven
+   by the inline `--progress` variable set from the current time. */
+.video-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.video-scrubber::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-neon) 0%,
+    var(--color-neon) var(--progress, 0%),
+    rgba(255, 255, 255, 0.38) var(--progress, 0%),
+    rgba(255, 255, 255, 0.38) 100%
+  );
+}
+.video-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -4.5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-neon);
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  transition: box-shadow 0.12s ease;
+}
+/* Ring only appears while hovering the knob itself, or while dragging. */
+.video-scrubber::-webkit-slider-thumb:hover,
+.video-scrubber:active::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.25);
+}
+.video-scrubber::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.38);
+}
+.video-scrubber::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-neon);
+}
+.video-scrubber::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-neon);
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  transition: box-shadow 0.12s ease;
+}
+.video-scrubber::-moz-range-thumb:hover,
+.video-scrubber:active::-moz-range-thumb {
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.25);
+}

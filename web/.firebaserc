@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "pdf-to-reel-auth"
+  },
+  "targets": {
+    "pdf-to-reel-auth": {
+      "hosting": {
+        "app": [
+          "pdftoreel-app"
+        ]
+      }
+    }
+  }
+}
