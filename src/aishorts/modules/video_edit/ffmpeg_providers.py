@@ -190,7 +190,7 @@ class FFmpegProvider(Provider):
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
             )
             return True
-        except:
+        except Exception:
             return False
 
 

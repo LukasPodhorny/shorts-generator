@@ -4,7 +4,7 @@ import type { EmblaCarouselType } from 'embla-carousel';
 import { useTemplates } from '@/hooks/queries';
 import { useUiStore } from '@/store/uiStore';
 import { useElementSize } from '@/hooks/useElementSize';
-import { Spinner } from '@/components/ui/Spinner';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { MaskIcon } from '@/components/ui/MaskIcon';
 import { TemplateCard } from './TemplateCard';
 import { CarouselDots } from './CarouselDots';
@@ -40,6 +40,55 @@ function CarouselArrow({ flipped, onClick }: { flipped: boolean; onClick: () => 
         style={{ transform: flipped ? 'scaleX(-1)' : undefined }}
       />
     </button>
+  );
+}
+
+// Loading placeholder that mirrors the carousel layout: a centered row of 9:16
+// card blocks (center one enlarged, neighbors shrunk/clipped) above a dots row.
+function TemplateCarouselSkeleton({
+  heightFraction = 0.82,
+  enlargeFactor = 0.16,
+}: {
+  heightFraction?: number;
+  enlargeFactor?: number;
+}) {
+  const { ref: areaRef, height: areaHeight } = useElementSize<HTMLDivElement>();
+  const cardHeight = Math.max(120, Math.min(areaHeight * heightFraction, areaHeight - DOTS_ROW));
+  const cardWidth = cardHeight * (9 / 16);
+  const positions = [-2, -1, 0, 1, 2];
+  const DOT_COUNT = 5;
+  return (
+    <div ref={areaRef} className="flex h-full w-full flex-col items-center justify-center">
+      <div className="relative flex w-full items-center">
+        <div className="w-full overflow-hidden">
+          <div className="flex items-center justify-center" style={{ height: cardHeight }}>
+            {positions.map((p) => {
+              const centered = p === 0;
+              const scale = 1 - enlargeFactor + enlargeFactor * (centered ? 1 : 0);
+              return (
+                <div
+                  key={p}
+                  className="flex shrink-0 items-center justify-center"
+                  style={{ flex: `0 0 ${cardWidth + GAP}px` }}
+                >
+                  <Skeleton style={{ width: cardWidth, height: cardHeight, transform: `scale(${scale})`, borderRadius: 30 }} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center pt-4">
+        {Array.from({ length: DOT_COUNT }).map((_, i) => (
+          <Skeleton
+            key={i}
+            className="mx-[5px] rounded-lg"
+            style={{ width: i === Math.floor(DOT_COUNT / 2) ? 28 : 10, height: 10 }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -138,11 +187,7 @@ export function TemplateCarousel({
   }, [emblaApi, cardWidth, slides.length]);
 
   if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner size={50} />
-      </div>
-    );
+    return <TemplateCarouselSkeleton heightFraction={heightFraction} enlargeFactor={enlargeFactor} />;
   }
   if (isError) {
     return (

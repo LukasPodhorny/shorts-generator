@@ -314,10 +314,10 @@ class ShortsGenerator:
         try:
             session_dir = self._session_dir(session_id)
             os.makedirs(session_dir, exist_ok=True)
-            filename = f"{stage.name.lower()}_stage.pkl"
+            filename = f"{stage.name.lower()}_stage.json"
             filepath = os.path.join(session_dir, filename)
-            with open(filepath, "wb") as f:
-                pickle.dump(reel_series, f)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(reel_series.model_dump_json(indent=2))
             self.logger.info(f"Saved checkpoint: {filepath}")
         except Exception as e:
             self.logger.error(f"Failed to save checkpoint: {e}")
@@ -330,35 +330,40 @@ class ShortsGenerator:
                 log_path, self._r2_log_key(session_id, "run.log")
             )
 
-    def _resolve_resume_source(self, resume_from: str) -> str:
-        """Resolves --resume_from into a local pkl path.
+    # Checkpoint file extensions, JSON first (legacy pickles still load).
+    _CHECKPOINT_EXTS = (".json", ".pkl")
 
-        Accepts: local path, R2 URL (http/https), R2 key ending in .pkl, or a
-        bare session_id (looks up logs/{session_id}/ in R2 and picks the
+    def _resolve_resume_source(self, resume_from: str) -> str:
+        """Resolves --resume_from into a local checkpoint path.
+
+        Accepts: local path, R2 URL (http/https), R2 key ending in .json/.pkl, or
+        a bare session_id (looks up logs/{session_id}/ in R2 and picks the
         highest-numbered stage).
         """
         if os.path.exists(resume_from):
             return resume_from
 
         def _pick_latest(paths: list[str]) -> str:
-            def stage_rank(p: str) -> int:
+            def rank(p: str) -> tuple[int, int]:
                 name = os.path.basename(p).split("_")[0].upper()
                 try:
-                    return int(PipelineStage[name])
+                    stage = int(PipelineStage[name])
                 except KeyError:
-                    return -1
+                    stage = -1
+                # Prefer JSON over a legacy pickle of the same stage.
+                return (stage, 1 if p.endswith(".json") else 0)
 
-            return max(paths, key=stage_rank)
+            return max(paths, key=rank)
 
         local_session_dir = os.path.join("logs", resume_from)
         if os.path.isdir(local_session_dir):
-            local_pkls = [
+            local_checkpoints = [
                 os.path.join(local_session_dir, f)
                 for f in os.listdir(local_session_dir)
-                if f.endswith(".pkl")
+                if f.endswith(self._CHECKPOINT_EXTS)
             ]
-            if local_pkls:
-                chosen = _pick_latest(local_pkls)
+            if local_checkpoints:
+                chosen = _pick_latest(local_checkpoints)
                 self.logger.info(f"Resuming from local session checkpoint: {chosen}")
                 return chosen
 
@@ -370,7 +375,7 @@ class ShortsGenerator:
             import requests
 
             parsed = urlparse(resume_from)
-            filename = os.path.basename(parsed.path) or "checkpoint.pkl"
+            filename = os.path.basename(parsed.path) or "checkpoint.json"
             local_path = os.path.join(download_dir, filename)
             self.logger.info(f"Downloading checkpoint from URL: {resume_from}")
             response = requests.get(resume_from, stream=True, timeout=60)
@@ -382,7 +387,7 @@ class ShortsGenerator:
 
         r2 = CloudflareR2()
 
-        if resume_from.endswith(".pkl"):
+        if resume_from.endswith(self._CHECKPOINT_EXTS):
             key = resume_from
             local_path = os.path.join(download_dir, os.path.basename(key))
             self.logger.info(f"Downloading checkpoint from R2: {key}")
@@ -391,7 +396,7 @@ class ShortsGenerator:
 
         prefix = f"logs/{resume_from}/"
         self.logger.info(f"Looking up latest checkpoint under R2 prefix: {prefix}")
-        keys = [k for k in r2.list_keys(prefix) if k.endswith(".pkl")]
+        keys = [k for k in r2.list_keys(prefix) if k.endswith(self._CHECKPOINT_EXTS)]
         if not keys:
             raise FileNotFoundError(
                 f"No checkpoints found locally or in R2 for: {resume_from}"
@@ -403,11 +408,36 @@ class ShortsGenerator:
         r2.download_file(best_key, local_path)
         return local_path
 
+    def _stage_from_filename(self, path: str) -> PipelineStage:
+        """Parse the pipeline stage from a checkpoint filename (`{stage}_stage.*`)."""
+        name = os.path.basename(path).split("_")[0].upper()
+        try:
+            return PipelineStage[name]
+        except KeyError:
+            self.logger.warning(
+                f"Unknown stage '{name}' in filename. Defaulting to SCRIPT."
+            )
+            return PipelineStage.SCRIPT
+
     def _load_checkpoint(self, path: str) -> tuple[ReelSeries, PipelineStage]:
-        """Loads the pickle and determines the stage from the filename."""
+        """Loads a checkpoint (JSON, or legacy pickle) and reads its stage."""
         self.logger.info(f"Resuming from checkpoint: {path}")
 
-        # Ensure all related models are rebuilt before validation to handle Union types properly
+        if path.endswith(".pkl"):
+            reel_series = self._load_legacy_pickle(path)
+        else:
+            with open(path, "r", encoding="utf-8") as f:
+                reel_series = ReelSeries.model_validate_json(f.read())
+
+        return reel_series, self._stage_from_filename(path)
+
+    def _load_legacy_pickle(self, path: str) -> ReelSeries:
+        """Load a pre-JSON pickled checkpoint, re-validating against the current schema.
+
+        Kept for backwards compatibility with checkpoints written before the switch
+        to JSON. New checkpoints are JSON and load via the clean path above.
+        """
+        # Rebuild related models so Union types resolve before validation.
         from aishorts.modules.script.script import (
             ReelSeries,
             Reel,
@@ -419,57 +449,29 @@ class ShortsGenerator:
         for model in [DialogueBlock, QuestionBlock, SongBlock, Reel, ReelSeries]:
             try:
                 model.model_rebuild()
-            except:
+            except Exception:
                 pass
 
         with open(path, "rb") as f:
             obj = pickle.load(f)
 
-            # Use a safer way to get the dictionary data without triggering full serialization
-            # which might fail if the unpickled object's internal Pydantic state is corrupted.
-            if isinstance(obj, ReelSeries):
-                # If it's already a ReelSeries, we still want to re-validate it
-                # to ensure all fields from the NEW schema are present.
-                try:
-                    data = obj.model_dump()
-                except (TypeError, AttributeError):
-                    # Fallback if model_dump fails due to MockValSer or similar
-                    import json
-
-                    try:
-                        # try legacy dict() if available
-                        data = obj.dict() if hasattr(obj, "dict") else obj.__dict__
-                    except:
-                        data = obj
-            elif hasattr(obj, "__dict__"):
-                data = obj.__dict__
-            else:
-                data = obj
-
-            # Final attempt: if it's a dict or we extracted one, validate it
+        if isinstance(obj, ReelSeries):
             try:
-                reel_series = ReelSeries.model_validate(data)
-            except Exception as e:
-                self.logger.error(f"Failed to validate checkpoint data: {e}")
-                # If validation fails, try to return the object as is if it looks like a ReelSeries
-                if hasattr(obj, "reels") and hasattr(obj, "topic"):
-                    reel_series = obj
-                else:
-                    raise e
+                data = obj.model_dump()
+            except (TypeError, AttributeError):
+                data = obj.dict() if hasattr(obj, "dict") else obj.__dict__
+        elif hasattr(obj, "__dict__"):
+            data = obj.__dict__
+        else:
+            data = obj
 
-        filename = os.path.basename(path)
-
-        # Assuming format "{stage}_stage_{timestamp}.pkl"
-        parts = filename.split("_")
         try:
-            stage = PipelineStage[parts[0].upper()]
-        except KeyError:
-            self.logger.warning(
-                f"Unknown stage '{parts[0]}' in filename. Defaulting to SCRIPT."
-            )
-            stage = PipelineStage.SCRIPT
-
-        return reel_series, stage
+            return ReelSeries.model_validate(data)
+        except Exception as e:
+            self.logger.error(f"Failed to validate checkpoint data: {e}")
+            if hasattr(obj, "reels") and hasattr(obj, "topic"):
+                return obj
+            raise
 
     async def _populate_reels(self, reel_series: ReelSeries, generators: dict):
         """Helper to run generators concurrently for all reels."""
@@ -812,7 +814,7 @@ class ShortsGenerator:
                                     key = CloudflareR2.get_key_from_url(url, r2.bucket)
                                     if key and not key.startswith("generated/"):
                                         r2_to_delete.add(key)
-                                except:
+                                except Exception:
                                     pass
 
                     # Media Map (Images, LaTeX, Manim)
@@ -827,7 +829,7 @@ class ShortsGenerator:
                                     key = CloudflareR2.get_key_from_url(url, r2.bucket)
                                     if key and not key.startswith("generated/"):
                                         r2_to_delete.add(key)
-                                except:
+                                except Exception:
                                     pass
 
         # 2. Collect any local final outputs for deletion (avoid persisting local final files).

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, ClassVar, Any, Dict, Union
 from pydantic.json_schema import SkipJsonSchema
+from openai.types.audio import TranscriptionVerbose
 from enum import Enum
 import uuid
 
@@ -64,7 +65,8 @@ class BlockAssets(BaseModel):
     lipsync_url: Optional[Union[str, dict]] = None
     staticface_filepath: Optional[str] = None
     staticface_url: Optional[Union[str, dict]] = None
-    subtitles: Optional[Any] = None
+    # Word-level timestamps; typed so it round-trips through JSON checkpoints.
+    subtitles: Optional[TranscriptionVerbose] = None
     question_filepath: Optional[str] = None
     question_url: Optional[Union[str, dict]] = None
     song_filepath: Optional[str] = None

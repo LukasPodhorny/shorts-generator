@@ -1,0 +1,1 @@
+- Do not use em dashes (—) in user-facing content: the presentation website, the webapp UI, marketing copy, or anything an end user reads. Em dashes there read as AI-generated. Use regular hyphens or restructure the sentence. This does not apply to internal code comments or docs.

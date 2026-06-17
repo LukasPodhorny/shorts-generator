@@ -31,10 +31,6 @@ class LatexGenerator:
         self.provider = provider.lower()
 
         cls = LatexProvider.get(self.provider)
-
-        if not cls:
-            raise ValueError(f"Unknown LaTex provider '{provider}'")
-
         self.latex_gen = cls(**kwargs)
 
     async def get_images(

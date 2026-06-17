@@ -8,10 +8,6 @@ class QuestionGenerator:
         self.provider = provider.lower()
 
         cls = QuestionProvider.get(self.provider)
-
-        if not cls:
-            raise ValueError(f"Unknown Question provider '{provider}'")
-
         self.question_gen = cls(**kwargs)
 
     async def populate_reel(self, reel: Reel, **kwargs) -> Reel:

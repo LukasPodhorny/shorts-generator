@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import os
+import logging
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 import subprocess
 from pydantic import BaseModel, Field
@@ -10,6 +11,19 @@ from typing import List, Union, Dict, Optional, Any
 from pathlib import Path
 from aishorts.utils.image_utils import ImageStyle
 from aishorts.modules.script.script import Reel, Block, AssetType
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_media_url(url: Union[str, dict, None]) -> Optional[dict]:
+    """Normalize a str|dict URL into the dict form FilterGraph.add_input expects.
+
+    A bare URL string would otherwise be wrapped in a Path by add_input, so URLs
+    must be passed as dicts. Local paths are passed through unchanged elsewhere.
+    """
+    if not url:
+        return None
+    return url if isinstance(url, dict) else {"url": url}
 
 
 @dataclass
@@ -145,6 +159,8 @@ class EditTemplate(Provider):
     tag_assets: Dict[AssetType, bool] = {}
     # Block types this template can render.
     allowed_blocks: List[Any] = []
+    # Easing used for the media overlay fade in/out (slide is always quart).
+    media_fade_easing: str = "linear"
 
     @classmethod
     def resolve_required_assets(
@@ -177,8 +193,9 @@ class EditTemplate(Provider):
         final_transcriptions = []
         current_time = 0.0
 
-        print(
-            f"DEBUG: collect_segments_and_timings starting for reel with {len(reel.blocks)} blocks"
+        logger.debug(
+            "collect_segments_and_timings starting for reel with %d blocks",
+            len(reel.blocks),
         )
 
         for b_idx, block in enumerate(reel.blocks):
@@ -187,14 +204,20 @@ class EditTemplate(Provider):
             if seg_info:
                 segments.append(seg_info)
                 duration = seg_info.get("duration", 0.0)
-                print(
-                    f"  Block {b_idx} ({block.type}): Added to video ({duration:.2f}s)"
+                logger.debug(
+                    "  Block %d (%s): Added to video (%.2fs)",
+                    b_idx,
+                    block.type,
+                    duration,
                 )
             else:
                 duration = 0.0
                 block_text = getattr(block, "text", "N/A")[:50]
-                print(
-                    f"  Block {b_idx} ({block.type}): Skipped (no video asset) - '{block_text}...'"
+                logger.debug(
+                    "  Block %d (%s): Skipped (no video asset) - '%s...'",
+                    b_idx,
+                    block.type,
+                    block_text,
                 )
 
             # Handle Subtitles
@@ -253,24 +276,31 @@ class EditTemplate(Provider):
                                 words=shifted_words,
                             )
                         )
-                        print(
-                            f"Block {b_idx} ({block.type}): Subtitles found ({len(words)} words)."
+                        logger.debug(
+                            "Block %d (%s): Subtitles found (%d words).",
+                            b_idx,
+                            block.type,
+                            len(words),
                         )
                     else:
-                        print(
-                            f"Block {b_idx} ({block.type}): Subtitles present but no words found."
+                        logger.debug(
+                            "Block %d (%s): Subtitles present but no words found.",
+                            b_idx,
+                            block.type,
                         )
                 else:
-                    print(
-                        f"Block {b_idx} ({block.type}): block.assets.subtitles is empty."
+                    logger.debug(
+                        "Block %d (%s): block.assets.subtitles is empty.",
+                        b_idx,
+                        block.type,
                     )
             else:
-                print(f"Block {b_idx} ({block.type}): block.assets is None.")
+                logger.debug("Block %d (%s): block.assets is None.", b_idx, block.type)
 
             # IMPORTANT: Always increment current_time by the segment duration
             current_time += duration
 
-        print(f"Total transcriptions collected: {len(final_transcriptions)}")
+        logger.debug("Total transcriptions collected: %d", len(final_transcriptions))
         final_subtitles = self.merge_transcriptions(final_transcriptions)
 
         # Pass final_transcriptions (the list of shifted absolute transcriptions per block)
@@ -436,54 +466,12 @@ class EditTemplate(Provider):
             error_msg = e.stderr.strip() if e.stderr else str(e)
             raise RuntimeError(f"ffprobe failed for {video_path}: {error_msg}") from e
 
-    def convert_to_absolute_timing(
-        self, subtitles: List[TranscriptionVerbose]
-    ) -> List[TranscriptionVerbose]:
-        """
-        Convert relative word timings in each TranscriptionVerbose to absolute timings
-        based on the video's total timeline.
-
-        Args:
-            subtitles: List of TranscriptionVerbose objects with relative timings
-
-        Returns:
-            List of TranscriptionVerbose objects with absolute timings
-        """
-        result = []
-        cumulative_time = 0.0
-
-        for transcription in subtitles:
-            # Create a new TranscriptionVerbose with adjusted word timings
-            adjusted_words = []
-
-            for word in transcription.words:
-                adjusted_word = TranscriptionWord(
-                    end=word.end + cumulative_time,
-                    start=word.start + cumulative_time,
-                    word=word.word,
-                )
-                adjusted_words.append(adjusted_word)
-
-            adjusted_transcription = TranscriptionVerbose(
-                duration=transcription.duration,
-                language=transcription.language,
-                text=transcription.text,
-                segments=transcription.segments,
-                usage=transcription.usage,
-                words=adjusted_words,
-            )
-
-            result.append(adjusted_transcription)
-            cumulative_time += transcription.duration
-
-        return result
-
     def merge_transcriptions(
         self, subtitles: List[TranscriptionVerbose]
     ) -> TranscriptionVerbose:
         """
         Merge multiple TranscriptionVerbose objects into a single one.
-        Assumes timings are already in absolute format (use convert_to_absolute_timing first).
+        Assumes the per-block timings have already been shifted to absolute format.
 
         Args:
             subtitles: List of TranscriptionVerbose objects to merge
@@ -538,8 +526,10 @@ class EditTemplate(Provider):
         media_timings = []
         dialogue_idx = 0
 
-        print(
-            f"DEBUG: extract_media_timings starting. Blocks: {len(blocks)}, Subtitles: {len(absolute_subtitles)}"
+        logger.debug(
+            "extract_media_timings starting. Blocks: %d, Subtitles: %d",
+            len(blocks),
+            len(absolute_subtitles),
         )
 
         for b_idx, block in enumerate(blocks):
@@ -548,7 +538,7 @@ class EditTemplate(Provider):
             # Dialogue items in absolute_subtitles only exist for blocks that HAD subtitles
             if has_subtitles:
                 if dialogue_idx >= len(absolute_subtitles):
-                    print(f"  Warning: dialogue_idx {dialogue_idx} out of range")
+                    logger.warning("dialogue_idx %d out of range", dialogue_idx)
                     break
 
                 absolute_trans = absolute_subtitles[dialogue_idx]
@@ -558,8 +548,12 @@ class EditTemplate(Provider):
                 if not media_list:
                     continue
 
-                print(
-                    f"  Block {b_idx} ({block.type}) has {len(media_list)} media items. IDs in media_map: {list(block.assets.media_map.keys())}"
+                logger.debug(
+                    "  Block %d (%s) has %d media items. IDs in media_map: %s",
+                    b_idx,
+                    block.type,
+                    len(media_list),
+                    list(block.assets.media_map.keys()),
                 )
 
                 for m_idx, media_item in enumerate(media_list):
@@ -568,8 +562,11 @@ class EditTemplate(Provider):
                     url = block.assets.media_url_map.get(media_item.id)
 
                     if not (filepath or url):
-                        print(
-                            f"    Media {m_idx} ({media_item.type}) skipped: ID {media_item.id} not found in maps."
+                        logger.debug(
+                            "    Media %d (%s) skipped: ID %s not found in maps.",
+                            m_idx,
+                            media_item.type,
+                            media_item.id,
                         )
                         continue
 
@@ -582,8 +579,12 @@ class EditTemplate(Provider):
                         if start_word_idx >= len(
                             absolute_trans.words
                         ) or end_word_idx >= len(absolute_trans.words):
-                            print(
-                                f"    Media {m_idx} trigger [{start_word_idx}, {end_word_idx}] out of range ({len(absolute_trans.words)} words). Falling back to full block."
+                            logger.debug(
+                                "    Media %d trigger [%d, %d] out of range (%d words). Falling back to full block.",
+                                m_idx,
+                                start_word_idx,
+                                end_word_idx,
+                                len(absolute_trans.words),
                             )
                             start_time = absolute_trans.words[0].start
                             end_time = absolute_trans.words[-1].end
@@ -591,8 +592,10 @@ class EditTemplate(Provider):
                             start_time = absolute_trans.words[start_word_idx].start
                             end_time = absolute_trans.words[end_word_idx].end
                     else:
-                        print(
-                            f"    Media {m_idx} ({media_item.type}) has NO TRIGGER. Defaulting to full block timing."
+                        logger.debug(
+                            "    Media %d (%s) has NO TRIGGER. Defaulting to full block timing.",
+                            m_idx,
+                            media_item.type,
                         )
                         # Fallback: display for the whole block
                         if absolute_trans.words:
@@ -600,8 +603,9 @@ class EditTemplate(Provider):
                             end_time = absolute_trans.words[-1].end
                         else:
                             # If no words at all (shouldn't happen if has_subtitles is true), skip
-                            print(
-                                f"    Media {m_idx} skipped: No words in transcription to calculate fallback."
+                            logger.debug(
+                                "    Media %d skipped: No words in transcription to calculate fallback.",
+                                m_idx,
                             )
                             continue
 
@@ -613,19 +617,156 @@ class EditTemplate(Provider):
                         url=url,
                     )
                     media_timings.append(timing)
-                    print(
-                        f"    Media {m_idx} ({timing.media_type}) EXTRACTED: {timing.start_time:.2f}s - {timing.end_time:.2f}s"
+                    logger.debug(
+                        "    Media %d (%s) EXTRACTED: %.2fs - %.2fs",
+                        m_idx,
+                        timing.media_type,
+                        timing.start_time,
+                        timing.end_time,
                     )
             else:
                 # If block has media but no subtitles, we should log it
                 media_list = getattr(block, "media", [])
                 if media_list:
-                    print(
-                        f"Block {b_idx} ({block.type}) has {len(media_list)} media items but NO SUBTITLES. Skipping media extraction."
+                    logger.debug(
+                        "Block %d (%s) has %d media items but NO SUBTITLES. Skipping media extraction.",
+                        b_idx,
+                        block.type,
+                        len(media_list),
                     )
 
-        print(f"Total media timings extracted: {len(media_timings)}")
+        logger.debug("Total media timings extracted: %d", len(media_timings))
         return media_timings
+
+    # --- Shared filter-graph building blocks used by the concrete templates ---
+
+    def _segment_audio(self, graph: "FilterGraph", seg: dict, i: int) -> "FilterNode":
+        """Silence-padded audio for a non-lipsync segment, mixed with voice if present.
+
+        Generates silence for the exact segment duration so the timeline stays in
+        sync, then mixes the voiceover on top (amix with normalize=0 to preserve
+        the voice level).
+        """
+        silence = graph.add_raw(
+            [],
+            f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={seg['duration']}",
+            f"silence_{i}",
+        )
+        if seg.get("audio"):
+            _, a_in = graph.add_input(seg["audio"], f"seg_{i}_a")
+            a_in = a_in.filter("aformat", channel_layouts="stereo")
+            return graph.add_raw(
+                [silence, a_in],
+                "amix=inputs=2:duration=first:dropout_transition=0:normalize=0",
+                f"seg_{i}_mix",
+            )
+        return silence
+
+    def _concat_av(
+        self, graph: "FilterGraph", v_nodes: list, a_nodes: list
+    ) -> tuple["FilterNode", "FilterNode"]:
+        """Concatenate per-segment video/audio nodes and loudness-normalize audio."""
+        concat_v = graph.add_raw(
+            v_nodes, f"concat=n={len(v_nodes)}:v=1:a=0", "lip_concat_v"
+        )
+        concat_a = graph.add_raw(
+            a_nodes, f"concat=n={len(a_nodes)}:v=0:a=1", "lip_concat_a"
+        )
+        concat_a = concat_a.filter("loudnorm", I="-16", TP="-1.5", LRA="11")
+        return concat_v, concat_a
+
+    def _build_background(
+        self, graph: "FilterGraph", current_time: float, apply_fps: bool = True
+    ) -> "FilterNode":
+        """Scale/crop the background video to 1080x1920 trimmed to the timeline."""
+        bg_v, _ = graph.add_input(self.bg_video, "bg_video")
+        if apply_fps:
+            bg_v = bg_v.filter("fps", fps=30)
+        bg_v = bg_v.filter("trim", end=current_time).filter("setpts", "PTS-STARTPTS")
+        bg_v = bg_v.filter("scale", "1080:1920:force_original_aspect_ratio=increase")
+        bg_v = bg_v.filter("crop", "1080:1920")
+        return bg_v
+
+    def _overlay_media(
+        self, graph: "FilterGraph", main_v: "FilterNode", media_timings: list
+    ) -> "FilterNode":
+        """Overlay every media item (image/latex/manim) with fade + horizontal slide."""
+        for i, media in enumerate(media_timings):
+            input_path = media.filepath
+            if not os.path.isfile(media.filepath):
+                if media.url:
+                    input_path = resolve_media_url(media.url)
+                else:
+                    logger.warning(
+                        "Skipping media %d (%s): file not found and no URL provided.",
+                        i,
+                        media.media_type,
+                    )
+                    continue
+
+            media_v, _ = graph.add_input(input_path, f"media_{i}")
+            display_end_time = media.end_time
+
+            if media.media_type == "manim":
+                # Manim is a video: scale to width, shift to its start time.
+                manim_duration = (
+                    self.get_video_duration(media.filepath)
+                    if os.path.isfile(media.filepath)
+                    else (media.end_time - media.start_time)
+                )
+                display_end_time = media.start_time + manim_duration
+
+                media_v = (
+                    media_v.filter("format", "yuva420p")
+                    .filter("fps", fps=30)
+                    .filter("scale", f"{self.manim_width}:-1")
+                )
+                if self.manim_style and self.manim_style.corner_radius > 0:
+                    media_v = Animator.rounded_corners(
+                        media_v, self.manim_style.corner_radius
+                    )
+                media_v = media_v.filter("setpts", f"PTS-STARTPTS+{media.start_time}/TB")
+                is_static = False
+            else:
+                # Images/Latex are static.
+                is_static = True
+
+            media_v = Animator.fade(
+                media_v,
+                start_time=media.start_time,
+                end_time=display_end_time,
+                duration=0.4,
+                is_static=is_static,
+                easing=self.media_fade_easing,
+            )
+            x_expr = Animator.slide_horizontal(
+                start_time=media.start_time,
+                end_time=display_end_time,
+                duration=0.4,
+                enter_from="left",
+                exit_to="right",
+            )
+            main_v = graph.add_raw(
+                [main_v, media_v],
+                f"overlay=x='{x_expr}':y=100:enable='between(t,{media.start_time},{display_end_time})':eof_action=pass",
+            )
+        return main_v
+
+    def _mix_music(
+        self, graph: "FilterGraph", final_audio: "FilterNode", current_time: float
+    ) -> "FilterNode":
+        """Mix the template's background music (at 0.2 volume) under the audio, if any."""
+        if not getattr(self, "music", None):
+            return final_audio
+        _, music_a = graph.add_input(self.music, "music")
+        music_a = (
+            music_a.filter("atrim", end=current_time)
+            .filter("asetpts", "PTS-STARTPTS")
+            .filter("volume", "0.2")
+        )
+        return graph.add_raw(
+            [final_audio, music_a], "amix=inputs=2:normalize=0", "audio_mix"
+        )
 
 
 class FilterNode:

@@ -28,8 +28,9 @@ DEFAULT_YOUTUBE_MODEL = "gemini-3.1-flash-lite"
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 DEFAULT_YOUTUBE_PROMPT = (
-    "Watch this video and output Markdown with: the video title as a heading, "
-    "a one-paragraph summary, then the full spoken transcript. Output nothing "
+    "Transcribe this video. Output only the full, verbatim spoken transcript "
+    "as plain text. Do not add a title, heading, summary, description, "
+    "commentary, or any interpretation. Output the spoken words and nothing "
     "else."
 )
 

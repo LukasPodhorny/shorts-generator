@@ -5,7 +5,7 @@ import { useScrollRestoration } from '@/hooks/useScrollRestoration';
 import { seriesCardTitle, seriesCardSubtitle } from '@/lib/videoLabels';
 import { MediaCard } from '@/components/videos/MediaCard';
 import { MediaGrid } from '@/components/videos/MediaGrid';
-import { Spinner } from '@/components/ui/Spinner';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { ActionButton } from '@/components/ui/ActionButton';
 
 function EmptyState({ onGenerate }: { onGenerate: () => void }) {
@@ -35,6 +35,16 @@ function EmptyState({ onGenerate }: { onGenerate: () => void }) {
   );
 }
 
+// A single reel-shaped (0.6 aspect) shimmer placeholder, used both for the
+// initial load and for the trailing "loading more" cards during pagination.
+function SkeletonCard() {
+  return (
+    <div className="w-full" style={{ aspectRatio: '0.6' }}>
+      <Skeleton className="h-full w-full rounded-[30px]" />
+    </div>
+  );
+}
+
 // Port of the series list in videos_screen: paginated, polled grid of series.
 export default function VideosScreen() {
   const navigate = useNavigate();
@@ -46,11 +56,18 @@ export default function VideosScreen() {
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        void fetchNextPage();
-      }
-    });
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      // Prefetch the next page ~800px before the sentinel scrolls into view so
+      // the grid keeps growing ahead of the user instead of stalling on a
+      // loader at the very bottom. Root is the overflow-y-auto scroll container
+      // (the sentinel's DOM parent), not the viewport.
+      { root: el.parentElement, rootMargin: '800px 0px' },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
@@ -89,18 +106,19 @@ export default function VideosScreen() {
                   />
                 </button>
               ))}
+              {/* Trailing placeholders flow into the same grid while the next
+                  page loads, matching the initial-load skeletons. */}
+              {isFetchingNextPage &&
+                Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={`next-${i}`} />)}
             </MediaGrid>
             <div ref={sentinelRef} className="h-px" />
-            {isFetchingNextPage && (
-              <div className="flex justify-center p-4">
-                <Spinner />
-              </div>
-            )}
           </>
         ) : isLoading ? (
-          <div className="flex h-full items-center justify-center">
-            <Spinner size={50} />
-          </div>
+          <MediaGrid>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </MediaGrid>
         ) : isError ? (
           <div className="flex h-full items-center justify-center text-error">
             Error loading reels: {String(error)}

@@ -3,7 +3,7 @@ import { useAvatars } from '@/hooks/queries';
 import { useUiStore } from '@/store/uiStore';
 import { toast } from '@/store/toastStore';
 import { avatarDisplayName } from '@/types/models';
-import { Spinner } from '@/components/ui/Spinner';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorIcon } from '@/components/ui/icons';
 import { AvatarCircle } from './AvatarCircle';
 
@@ -35,8 +35,10 @@ export function AvatarSelectionGrid() {
           aren't clipped by the scroll container edges. */}
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {isLoading && (
-          <div className="flex h-full items-center justify-center">
-            <Spinner size={50} />
+          <div className="grid grid-cols-4 gap-1.5">
+            {Array.from({ length: 16 }).map((_, i) => (
+              <Skeleton key={i} className="aspect-square w-full rounded-full" />
+            ))}
           </div>
         )}
         {isError && (

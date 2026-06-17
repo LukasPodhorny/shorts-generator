@@ -21,10 +21,6 @@ class SubtitleGenerator:
         self.provider = provider.lower()
 
         cls = SubtitlesProvider.get(self.provider)
-
-        if not cls:
-            raise ValueError(f"Unknown Subtitle provider '{provider}'")
-
         self.subtitle = cls(**kwargs)
 
     async def generate_subtitles(self, audio_file: str, **kwargs) -> str:

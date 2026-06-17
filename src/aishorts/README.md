@@ -33,7 +33,7 @@ output = generator.generate_shorts(amount=1, user_input="Explain photosynthesis"
  user_input / files / links ──► SCRIPT stage   ScriptGenerator ──► LLMProvider (gemini/chatgpt/...)
                               │                 produces a ReelSeries (Pydantic, validated JSON)
                               │
-                        [checkpoint .pkl ──► R2]          (thumbnails generated concurrently)
+                        [checkpoint .json ──► R2]         (thumbnails generated concurrently)
                               │
                         PRIMARY stage     per reel, concurrently:
                               │             VoiceGenerator    (TTS audio per block)
@@ -62,7 +62,7 @@ Two patterns make up almost everything in this package:
 
 2. **Generator façades** (`XGenerator` classes) — each module exposes a small `*Generator` class that selects a provider from config, normalizes parameters, and exposes `populate_reel(reel)`. Providers may be sync or async; `utils/async_utils.await_or_thread` awaits coroutines directly and pushes sync functions to a thread, so the pipeline stays non-blocking either way.
 
-**The `populate_reel` contract:** every generator/provider mutates the `Reel` *in place*, writing the produced artifacts into `block.assets` (a `BlockAssets`). Each asset is stored as a **pair**: a local `*_filepath` and a remote `*_url` (R2 or provider URL). Downstream consumers always prefer the local file and fall back to the URL — this is what makes checkpoint/resume work on ephemeral hosts (Railway), where local files are gone but URLs survive inside the pickle.
+**The `populate_reel` contract:** every generator/provider mutates the `Reel` *in place*, writing the produced artifacts into `block.assets` (a `BlockAssets`). Each asset is stored as a **pair**: a local `*_filepath` and a remote `*_url` (R2 or provider URL). Downstream consumers always prefer the local file and fall back to the URL — this is what makes checkpoint/resume work on ephemeral hosts (Railway), where local files are gone but URLs survive inside the checkpoint.
 
 URLs may be plain strings or dicts of the form `{"url": "...", "cache_key": "..."}`. The dict form is understood everywhere (`download_from_url`, `FilterGraph.add_input`, remote FFmpeg workers); `cache_key` lets remote render workers cache large static inputs like background videos (see `utils/upload_asset.py`, which prints this snippet on upload).
 
@@ -70,7 +70,7 @@ URLs may be plain strings or dicts of the form `{"url": "...", "cache_key": "...
 
 ## 2. Data Model (`modules/script/script.py`)
 
-The `ReelSeries` is the single document that flows through the whole pipeline. The LLM produces it (it is also the structured-output JSON schema), every stage enriches it, checkpoints pickle it.
+The `ReelSeries` is the single document that flows through the whole pipeline. The LLM produces it (it is also the structured-output JSON schema), every stage enriches it, checkpoints serialize it to JSON.
 
 ```
 ReelSeries
@@ -190,15 +190,15 @@ Execution order:
 
 ### Checkpoints & resume
 
-After each stage the whole `ReelSeries` is pickled to `logs/{session_id}/{stage}_stage.pkl` and uploaded to R2 (`logs/{session_id}/...`). `resume_from` accepts, in priority order:
+After each stage the whole `ReelSeries` is serialized as JSON to `logs/{session_id}/{stage}_stage.json` and uploaded to R2 (`logs/{session_id}/...`). `resume_from` accepts, in priority order:
 
-1. a local `.pkl` path;
+1. a local `.json` (or legacy `.pkl`) path;
 2. a local session dir (`logs/{session_id}/` — picks the highest stage present);
-3. an HTTP(S) URL to a `.pkl`;
-4. an R2 key ending in `.pkl`;
+3. an HTTP(S) URL to a `.json`/`.pkl`;
+4. an R2 key ending in `.json`/`.pkl`;
 5. a bare session id — lists `logs/{session_id}/` in R2 and picks the highest stage.
 
-The stage is parsed from the filename; the pipeline resumes *after* the loaded stage. Before resuming, `VideoGenerator.ensure_assets_local` re-downloads every asset whose `*_filepath` is missing locally but has a `*_url` — required on ephemeral hosts. `_load_checkpoint` re-validates the unpickled object against the *current* Pydantic schema (with several fallbacks) so old checkpoints survive model evolution.
+The stage is parsed from the filename; the pipeline resumes *after* the loaded stage. Before resuming, `VideoGenerator.ensure_assets_local` re-downloads every asset whose `*_filepath` is missing locally but has a `*_url` — required on ephemeral hosts. `_load_checkpoint` validates JSON against the *current* Pydantic schema via `model_validate_json`, so checkpoints survive model evolution; legacy `.pkl` checkpoints still load through `_load_legacy_pickle` (unpickle + re-validate against the current schema).
 
 ---
 
@@ -383,7 +383,7 @@ Local (all relative to CWD; everything under `output/` is deleted by cleanup):
 | `output/songs/` | songs | `SONG_OUTPUT_DIR` |
 | `output/videos/` | final renders (when downloaded) | `VIDEO_OUTPUT_DIR` |
 | `output/static_faces/` | downloaded static faces | — |
-| `logs/{session_id}/` | `run.log` + `{stage}_stage.pkl` checkpoints | — |
+| `logs/{session_id}/` | `run.log` + `{stage}_stage.json` checkpoints | — |
 | `logs/_resume/` | downloaded checkpoints | — |
 
 R2 key prefixes:

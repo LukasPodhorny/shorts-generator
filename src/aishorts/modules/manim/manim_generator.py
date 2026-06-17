@@ -23,9 +23,6 @@ class ManimGenerator:
         self.base_instructions = base_instructions
 
         cls = ManimProvider.get(self.provider_name)
-        if not cls:
-            raise ValueError(f"Unknown Manim provider '{provider}'")
-
         self.manim_provider = cls(**kwargs)
         self.llm_gen = LLMGenerator(provider=llm_provider, **kwargs)
 

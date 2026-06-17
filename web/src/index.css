@@ -89,6 +89,28 @@ button:not(:disabled) {
   animation: generating-pan 3s ease-in-out infinite;
 }
 
+/* Skeleton placeholder shimmer (uses the ported shimmerBase/Highlight tokens).
+   A highlight band sweeps left-to-right across a base-colored block. */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background-color: var(--color-shimmerBase);
+  background-image: linear-gradient(
+    90deg,
+    var(--color-shimmerBase) 0%,
+    var(--color-shimmerHighlight) 50%,
+    var(--color-shimmerBase) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
 /* Video player scrubber (ports the Flutter SliderTheme: neon active track,
    white38 inactive track, rounded neon thumb). The played portion is driven
    by the inline `--progress` variable set from the current time. */

@@ -20,7 +20,6 @@ class LipsyncGenerator:
     """
 
     def __init__(self, avatars: list[Avatar], **kwargs):
-
         self.avatars = avatars
         provider_classes = set(
             [
@@ -29,19 +28,9 @@ class LipsyncGenerator:
             ]
         )
 
-        self.avatars = avatars
-
         self.provider_instances = [
             cls(avatars=avatars, **kwargs) for cls in provider_classes
         ]
-
-        """
-        cls = LIPSYNC_PROVIDERS.get(provider)
-        if not cls:
-            raise ValueError(f"Unknown Lipsync provider '{provider}'")
-
-        self.tts = cls(avatar=self.avatar, **kwargs)
-        """
 
     async def generate_lipsync(
         self, audio_url: str, id: int = 0, **kwargs

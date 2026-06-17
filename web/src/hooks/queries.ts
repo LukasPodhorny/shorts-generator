@@ -14,7 +14,10 @@ import {
 import { useAuth } from '@/auth/AuthProvider';
 import type { VideoSeries } from '@/types/models';
 
-const SERIES_PAGE_SIZE = 10;
+// Page size for the videos grid. Sized to comfortably fill the widest grid
+// (up to 6 columns) with a few rows so the first screen is full and we make
+// fewer round-trips (each 5s poll refetches every loaded page).
+const SERIES_PAGE_SIZE = 20;
 
 export function useUserProfile() {
   const { user } = useAuth();
@@ -47,8 +50,9 @@ export function useAvatars() {
 }
 
 /**
- * Paginated series list (replaces SeriesListNotifier). Pages of 10; a short
- * page signals the end. Polls every 5s while any series/reel is unfinished —
+ * Paginated series list (replaces SeriesListNotifier). Pages of
+ * SERIES_PAGE_SIZE; a short page signals the end. Polls every 5s while any
+ * series/reel is unfinished -
  * matching the Flutter videos_screen 5s Timer.periodic.
  */
 export function useSeriesList(pollingEnabled: boolean) {

@@ -140,9 +140,6 @@ class ScriptGenerator:
         self.logger = logging.getLogger("ShortsGenerator.ScriptGenerator")
 
         cls = LLMProvider.get(self.provider)
-        if not cls:
-            raise ValueError(f"Unknown LLM provider '{self.provider}'")
-
         self.llm = cls(**kwargs)
 
     async def generate_script(

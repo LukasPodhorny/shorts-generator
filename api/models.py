@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Union, Literal
 from datetime import datetime
 from enum import Enum
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON, String
@@ -244,6 +244,36 @@ class GenerateRequest(SQLModel):
     config_name: Optional[str] = None  # If None, uses the default GenerationConfig
     # Asset-type string values the user wants enabled. None = use template defaults.
     enabled_tags: Optional[List[str]] = None
+
+
+# --- Chatbot / intent-parse entry point (/api/plan) ---
+# The chat UI tracks the text box and attachments separately, so the request
+# body arrives already structured: the instruction in one field, the attached
+# sources as their own labeled list. The parser is *told* which sources exist
+# via this list; it never extracts file keys or links out of the prose.
+class AttachedFile(SQLModel):
+    type: Literal["file"] = "file"
+    name: str
+    key: str  # an UploadedFile key the user owns (supplied by the UI, not typed)
+
+
+class AttachedLink(SQLModel):
+    type: Literal["link"] = "link"
+    url: str
+
+
+class PlanRequest(SQLModel):
+    # The freeform user message from the chat box.
+    instruction: str
+    # Sources the user attached through the UI (owned file keys and/or links).
+    attachments: List[Union[AttachedFile, AttachedLink]] = Field(default_factory=list)
+    # Explicit manual choices the user made in the UI. Any field set here is
+    # final: the parser fills only what the user left unspecified.
+    template_name: Optional[str] = None
+    avatar_names: Optional[List[str]] = Field(default=None, max_length=4)
+    amount: Optional[int] = Field(default=None, ge=1, le=7)
+    enabled_tags: Optional[List[str]] = None
+    config_name: Optional[str] = None
 
 
 class AddCreditsRequest(SQLModel):

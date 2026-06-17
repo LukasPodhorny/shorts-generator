@@ -28,10 +28,6 @@ class ImageGenerator:
         self.max_height = max_height
 
         cls = ImageProvider.get(self.provider)
-
-        if not cls:
-            raise ValueError(f"Unknown Image provider '{provider}'")
-
         self.image_gen = cls(max_concurrent_downloads, api_key, **kwargs)
 
     async def get_images(self, queries: list[str], **kwargs) -> list[ImageResult]:

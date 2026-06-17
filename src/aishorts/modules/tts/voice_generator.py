@@ -26,7 +26,6 @@ class VoiceGenerator:
         provider_classes = set(
             [
                 TTSProvider.get(avatar.voice.provider.lower())
-                # TTS_PROVIDERS.get(avatar.voice.provider.lower())
                 for avatar in self.avatars
             ]
         )

@@ -14,9 +14,6 @@ class LLMGenerator:
         self.provider = provider.lower()
 
         cls = LLMProvider.get(self.provider)
-        if not cls:
-            raise ValueError(f"Unknown LLM provider '{self.provider}'")
-
         self.llm = cls(**kwargs)
 
     async def generate_response(

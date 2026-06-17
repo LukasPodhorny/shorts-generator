@@ -51,13 +51,21 @@ def _validate_links(links: list[str]) -> None:
             )
 
 
-@router.post("/generate", response_model=GenerateResponse)
-async def start_generation(
+def create_generation(
+    *,
     request: GenerateRequest,
+    user_token: dict,
+    session: Session,
     background_tasks: BackgroundTasks,
-    user_token: dict = Depends(get_current_user),
-    session: Session = Depends(get_session),
 ) -> GenerateResponse:
+    """Shared generation entry point used by both /api/generate and /api/plan.
+
+    Holds all the logic the HTTP handlers must share: JIT user provisioning,
+    file-ownership validation, link allow-listing/SSRF guard, template lookup +
+    cost calc, atomic credit check-and-deduct, ReelSeries/Reel row creation, and
+    BackgroundTasks dispatch. Callers pass a validated GenerateRequest; the
+    natural-language entry point builds that request before calling here.
+    """
     uid = user_token["uid"]
     email = user_token.get("email")
 
@@ -140,6 +148,21 @@ async def start_generation(
         message="Generation started",
         series_id=series.id,
         remaining_credits=user.credits,
+    )
+
+
+@router.post("/generate", response_model=GenerateResponse)
+async def start_generation(
+    request: GenerateRequest,
+    background_tasks: BackgroundTasks,
+    user_token: dict = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> GenerateResponse:
+    return create_generation(
+        request=request,
+        user_token=user_token,
+        session=session,
+        background_tasks=background_tasks,
     )
 
 
