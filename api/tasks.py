@@ -39,7 +39,7 @@ def _update_series_status(series_id: int, stage: PipelineStage, reel_series=None
         # Update reel titles, descriptions, and thumbnails after SCRIPT stage
         if reel_series and reel_series.reels:
             db_reels = session.exec(
-                select(Reel).where(Reel.series_id == series_id).order_by(Reel.sequence_number)
+                select(Reel).where(Reel.series_id == series_id).order_by(Reel.sequence_number)  # pyright: ignore[reportArgumentType] -- SQLAlchemy column at runtime; checker sees int
             ).all()
 
             for i, generated_reel in enumerate(reel_series.reels):
@@ -136,7 +136,7 @@ def _save_generation_results(series_id: int, output):
         session.add(series)
 
         # 4. Upload and Update Reels
-        reels = session.exec(select(Reel).where(Reel.series_id == series_id).order_by(Reel.sequence_number)).all()
+        reels = session.exec(select(Reel).where(Reel.series_id == series_id).order_by(Reel.sequence_number)).all()  # pyright: ignore[reportArgumentType] -- SQLAlchemy column at runtime; checker sees int
 
         for i, reel_out in enumerate(output.reels):
             if i < len(reels):

@@ -9,8 +9,14 @@ import { useLogout } from '@/components/layout/useLogout';
 
 function tabForPath(pathname: string): SidebarTab {
   if (pathname.startsWith('/videos')) return 'videos';
+  if (pathname.startsWith('/studio')) return 'studio';
   if (pathname.startsWith('/account')) return 'account';
   return 'generate';
+}
+
+function pathForTab(tab: SidebarTab): string {
+  if (tab === 'generate') return '/';
+  return `/${tab}`;
 }
 
 // The authenticated shell: desktop sidebar + content, or mobile top bar +
@@ -28,7 +34,7 @@ export function AppShell() {
       <div className="flex h-full w-full bg-background">
         <DesktopSidebar
           activeTab={tabForPath(pathname)}
-          onNavigate={(tab) => navigate(tab === 'generate' ? '/' : `/${tab}`)}
+          onNavigate={(tab) => navigate(pathForTab(tab))}
           onLogout={() => setLogoutOpen(true)}
         />
         <div className="min-w-0 flex-1">

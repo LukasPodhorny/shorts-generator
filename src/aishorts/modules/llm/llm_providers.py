@@ -23,6 +23,13 @@ class LLMProvider(Provider):
     # Shared lazily-created ingestor (holds the MarkItDown + vision client).
     _ingestor: ContentIngestor | None = None
 
+    def __init__(self, model: str | None = None) -> None:
+        # Shared constructor contract: every concrete LLM provider accepts a
+        # `model` keyword. Subclasses override this with their own signature;
+        # this body only runs for subclasses without one (none are
+        # instantiated directly).
+        self.model: str = model or ""
+
     @classmethod
     def ingestor(cls) -> ContentIngestor:
         if LLMProvider._ingestor is None:

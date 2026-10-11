@@ -83,17 +83,30 @@ function Pill({
   style,
   enabled,
   scale,
+  solid,
   onClick,
 }: {
   style: TagStyle;
   enabled: boolean;
   scale: number;
+  solid: boolean;
   onClick: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const title = enabled
     ? `${style.label} on - click to turn off`
     : `${style.label} off - click to turn on`;
+
+  // On the carousel the pills sit over video, so they use a dark glass blur.
+  // In the picker they sit on the modal surface (surface1), so use a solid fill
+  // one surface above (surface2) to stay visible.
+  const bg = solid
+    ? hovered
+      ? 'var(--color-surface3)'
+      : 'var(--color-surface2)'
+    : hovered
+      ? 'rgba(20,20,20,0.72)'
+      : 'rgba(20,20,20,0.6)';
 
   return (
     <button
@@ -111,9 +124,9 @@ function Pill({
       style={{
         padding: `${8 * scale}px ${13 * scale}px ${8 * scale}px ${8 * scale}px`,
         gap: 6 * scale,
-        backgroundColor: hovered ? 'rgba(20,20,20,0.72)' : 'rgba(20,20,20,0.6)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        backgroundColor: bg,
+        backdropFilter: solid ? undefined : 'blur(8px)',
+        WebkitBackdropFilter: solid ? undefined : 'blur(8px)',
         transition: 'background-color 150ms ease',
       }}
     >
@@ -137,9 +150,12 @@ function Pill({
 export function TemplateTagPills({
   template,
   scale = 1,
+  solid = false,
 }: {
   template: VideoTemplate;
   scale?: number;
+  /** Solid surface fill instead of the dark-glass blur (for the template picker). */
+  solid?: boolean;
 }) {
   const enabledMap = useUiStore((s) => s.enabledTagsByTemplate);
   const setEnabledTags = useUiStore((s) => s.setEnabledTags);
@@ -156,6 +172,7 @@ export function TemplateTagPills({
           style={styleFor(tag.assetType)}
           enabled={enabled.has(tag.assetType)}
           scale={scale}
+          solid={solid}
           onClick={() => {
             const current = new Set(enabledMap[template.name] ?? defaultEnabledSet(template));
             if (current.has(tag.assetType)) current.delete(tag.assetType);

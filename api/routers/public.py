@@ -30,6 +30,7 @@ def list_templates(session: Session = Depends(get_session)):
     db_templates = session.exec(select(VideoTemplate)).all()
     result = []
     for t in db_templates:
+        assert t.id is not None  # rows read from the DB always have a PK
         tags: list[VideoTemplateTag] = []
         edit_template_name = (t.data or {}).get("edit_template", "")
         if edit_template_name:

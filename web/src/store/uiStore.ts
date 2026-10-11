@@ -18,10 +18,16 @@ interface UiState {
   sourceLinks: string[];
   // Per-template enabled tags: template.name -> set of enabled asset_type.
   enabledTagsByTemplate: Record<string, Set<string>>;
+  // Chat (/plan) flow only: an explicit reel-count override. null means "let
+  // the AI decide", so the parser fills `amount` itself. Kept separate from
+  // reelCount (which the classic studio screen always sends as 1..7).
+  amountOverride: number | null;
 
   setReelCount: (n: number) => void;
+  setAmountOverride: (n: number | null) => void;
   toggleAvatar: (name: string) => boolean; // returns false if at max
   selectTemplate: (template: VideoTemplate) => void;
+  clearTemplate: () => void;
   setPromptText: (text: string) => void;
   addUploadedFileKey: (key: string) => void;
   removeUploadedFileKeyAt: (index: number) => void;
@@ -41,8 +47,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   uploadedFileKeys: [],
   sourceLinks: [],
   enabledTagsByTemplate: {},
+  amountOverride: null,
 
   setReelCount: (n) => set({ reelCount: Math.max(1, Math.min(7, n)) }),
+
+  setAmountOverride: (n) =>
+    set({ amountOverride: n == null ? null : Math.max(1, Math.min(7, n)) }),
 
   toggleAvatar: (name) => {
     const current = get().selectedAvatarNames;
@@ -60,6 +70,8 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   selectTemplate: (template) =>
     set({ selectedTemplate: template, selectedTemplateName: template.name }),
+
+  clearTemplate: () => set({ selectedTemplate: null, selectedTemplateName: null }),
 
   setPromptText: (text) => set({ promptText: text }),
 
@@ -87,7 +99,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     })),
 
   resetGenerationInputs: () =>
-    set({ promptText: '', uploadedFileKeys: [], sourceLinks: [] }),
+    set({ promptText: '', uploadedFileKeys: [], sourceLinks: [], amountOverride: null }),
 
   resetOnLogout: () =>
     set({
@@ -98,5 +110,6 @@ export const useUiStore = create<UiState>((set, get) => ({
       uploadedFileKeys: [],
       sourceLinks: [],
       enabledTagsByTemplate: {},
+      amountOverride: null,
     }),
 }));

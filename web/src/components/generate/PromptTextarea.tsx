@@ -11,6 +11,7 @@ export function PromptTextarea({
   onChange,
   onFocus,
   onBlur,
+  onKeyDown,
   placeholder,
   maxLines = 3,
   textareaRef,
@@ -19,6 +20,7 @@ export function PromptTextarea({
   onChange: (v: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   maxLines?: number;
   textareaRef?: Ref<HTMLTextAreaElement>;
@@ -50,10 +52,11 @@ export function PromptTextarea({
       onChange={(e) => onChange(e.target.value)}
       onFocus={onFocus}
       onBlur={onBlur}
+      onKeyDown={onKeyDown}
       rows={1}
       placeholder={placeholder}
       style={{ height: LINE_HEIGHT + PAD_Y, maxHeight, lineHeight: `${LINE_HEIGHT}px` }}
-      className="block w-full resize-none overflow-y-auto bg-transparent px-2 pb-3 pt-2 text-sm font-medium text-textPrimary caret-textPrimary outline-none placeholder:font-medium placeholder:text-textSecondary"
+      className="block w-full resize-none overflow-y-auto bg-transparent px-2 pb-3 pt-2 text-base font-normal text-textPrimary caret-textPrimary outline-none placeholder:font-normal placeholder:text-textSecondary"
     />
   );
 }

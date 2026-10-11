@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { MaskIcon, CreditIcon } from '@/components/ui/MaskIcon';
 import { Avatar } from '@/components/ui/Avatar';
+import { TuneIcon } from '@/components/ui/icons';
 import { useUserProfile } from '@/hooks/queries';
 import { useAuth } from '@/auth/AuthProvider';
 
-export type SidebarTab = 'generate' | 'videos' | 'account';
+export type SidebarTab = 'generate' | 'studio' | 'videos' | 'account';
 
 function NavItem({
   icon,
@@ -84,6 +85,12 @@ export function DesktopSidebar({
         label="Generate"
         selected={activeTab === 'generate'}
         onClick={() => onNavigate('generate')}
+      />
+      <NavItem
+        iconNode={<TuneIcon size={22} style={{ color: 'var(--color-textPrimary)' }} />}
+        label="Studio"
+        selected={activeTab === 'studio'}
+        onClick={() => onNavigate('studio')}
       />
       <NavItem
         icon="/icons/video_icon.svg"

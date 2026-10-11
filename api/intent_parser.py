@@ -2,12 +2,17 @@
 
 This is a *parser*, not a chatbot, and it is deliberately an API-level concern
 (not part of the core `aishorts` library, which stays ignorant that freeform
-prompts exist). Given a user's freeform instruction plus a labeled list of
-sources they attached through the UI, it emits configuration knobs only -- the
-fields needed to build a `GenerateRequest`. It never emits source content and
-never fetches or transcribes anything: attached links pass through as strings
-and attached file keys pass through as references, to be ingested downstream by
-the library exactly as the /api/generate path does today.
+prompts exist). It emits configuration knobs only -- template, avatars, amount,
+enabled tags -- the fields needed to build a `GenerateRequest`. It never emits
+source content.
+
+Sources are NOT its job: by the time the parser runs, links have already been
+pulled from the prose (by regex, in `source_ingest`) and ingested to Markdown
+alongside any UI-attached files. The parser is handed a short preview of that
+ingested material purely to judge the topic/audience and pick a fitting
+template and avatars; it does not route, fetch, or attach anything. This is the
+fix for the old failure mode where a link typed into the chat was dropped
+because the parser was (correctly) told not to read URLs out of prose.
 
 The model choice is wired through env vars (mirroring the ingestor's
 INGEST_YOUTUBE_MODEL pattern), not hardcoded; the API key is resolved by the
@@ -21,6 +26,7 @@ from importlib.resources import read_text
 from pydantic import BaseModel, Field
 
 from aishorts.modules.llm.llm_providers import LLMProvider
+from api.models import PlanRequest
 
 logger = logging.getLogger("ShortsGenerator.IntentParser")
 
@@ -79,31 +85,35 @@ def _parser_provider() -> LLMProvider:
     model = os.getenv("INTENT_PARSER_MODEL", DEFAULT_PARSER_MODEL)
     cls = LLMProvider.get(provider)
     # Provider resolves its own API key from the environment; nothing hardcoded.
-    return cls(model=model)
+    # (pyright: ignore -- the registry only holds concrete providers; the
+    # abstract base never sets provider_name so it can never come back here.)
+    return cls(model=model)  # pyright: ignore[reportAbstractUsage]
 
 
 def _system_prompt() -> str:
     return read_text("aishorts.resources", "intent_parser_default.txt")
 
 
-def _serialize_input(plan, catalog: PlanCatalog) -> str:
-    """Build the parser's user content: instruction + labeled sources + catalog.
+def _serialize_input(
+    plan: PlanRequest, catalog: PlanCatalog, source_preview: str | None
+) -> str:
+    """Build the parser's user content: instruction + source preview + catalog.
 
-    The sources arrive already separated from the prose (the chat UI tracks them
-    independently), so we hand the parser a clean labeled list rather than
-    asking it to dig keys/links out of the instruction text.
+    Sources are already fetched and converted upstream; we pass only a truncated
+    preview of the resulting Markdown so the parser can judge topic/audience.
+    The parser neither routes nor attaches sources, so there is no source list.
     """
     lines: list[str] = []
     lines.append("INSTRUCTION:")
     lines.append(plan.instruction.strip() or "(none)")
 
-    lines.append("\nATTACHED SOURCES:")
-    if plan.attachments:
-        for src in plan.attachments:
-            if src.type == "file":
-                lines.append(f'- {{type: "file", name: "{src.name}", key: "{src.key}"}}')
-            else:
-                lines.append(f'- {{type: "link", url: "{src.url}"}}')
+    lines.append(
+        "\nSOURCE MATERIAL (preview, already ingested upstream; may be truncated):"
+    )
+    preview = (source_preview or "").strip()
+    if preview:
+        limit = 4000
+        lines.append(preview[:limit] + ("..." if len(preview) > limit else ""))
     else:
         lines.append("(none)")
 
@@ -159,17 +169,21 @@ def _validate_against_catalog(parsed: ParsedPlan, catalog: PlanCatalog) -> None:
             )
 
 
-async def parse_intent(plan, catalog: PlanCatalog) -> ParsedPlan:
+async def parse_intent(
+    plan: PlanRequest, catalog: PlanCatalog, source_preview: str | None = None
+) -> ParsedPlan:
     """Run the structured-output parse, retrying once on a validation failure.
 
     Uses function-calling / structured output against ``ParsedPlan`` (no
-    prompt-and-hope JSON, no keyword scanning). On a schema or catalog
-    validation error, retries once with the error fed back; a second failure
-    raises ``IntentParseError`` for the route to turn into a clean 4xx.
+    prompt-and-hope JSON, no keyword scanning). ``source_preview`` is a
+    truncated slice of the already-ingested source Markdown, used only to inform
+    template/avatar/tag choice. On a schema or catalog validation error, retries
+    once with the error fed back; a second failure raises ``IntentParseError``
+    for the route to turn into a clean 4xx.
     """
     provider = _parser_provider()
     instructions = _system_prompt()
-    user_input = _serialize_input(plan, catalog)
+    user_input = _serialize_input(plan, catalog, source_preview)
 
     last_error: Exception | None = None
     for attempt in range(2):
@@ -180,13 +194,17 @@ async def parse_intent(plan, catalog: PlanCatalog) -> ParsedPlan:
                 "Return a corrected config that fixes this."
             )
         try:
-            parsed = await provider.generate_structure(
+            raw = await provider.generate_structure(
                 instructions=instructions,
                 user_input=prompt,
-                files=None,  # never ingest here; sources are routed, not fetched
+                files=None,  # parser sees text only; sources ingested upstream
                 links=None,
                 response_schema=ParsedPlan,
             )
+            # Normalize the provider's BaseModel to our schema (a no-op when
+            # the provider honored response_schema, which it must for the
+            # catalog check below to be meaningful).
+            parsed = ParsedPlan.model_validate(raw)
             _validate_against_catalog(parsed, catalog)
             return parsed
         except Exception as e:  # ValidationError, catalog mismatch, provider error

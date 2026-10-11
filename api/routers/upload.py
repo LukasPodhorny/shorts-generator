@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import uuid
+from typing import BinaryIO
 import boto3
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
 from fastapi.concurrency import run_in_threadpool
@@ -85,7 +86,7 @@ async def upload_file(
         stored_filename = file.filename
         stored_ext = file_ext
         stored_content_type = file.content_type or "application/octet-stream"
-        upload_body: io.IOBase
+        upload_body: BinaryIO
 
         if file_ext in LEGACY_OFFICE_EXTENSIONS:
             # Convert legacy office docs (which MarkItDown can't read) to PDF.
@@ -138,7 +139,7 @@ async def upload_file(
         session.commit()
         session.refresh(uploaded_file)
 
-        return uploaded_file
+        return UploadedFileRead.model_validate(uploaded_file, from_attributes=True)
     except HTTPException:
         raise
     except Exception:
@@ -163,7 +164,7 @@ async def get_uploaded_file(
     if not file_record:
         raise HTTPException(status_code=404, detail="File not found")
 
-    return file_record
+    return UploadedFileRead.model_validate(file_record, from_attributes=True)
 
 
 @router.delete("/{file_id}")

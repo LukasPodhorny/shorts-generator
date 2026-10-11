@@ -115,12 +115,14 @@ def create_generation(
 
     # 3 + 4. Atomically check and deduct credits. The conditional UPDATE avoids
     # a read-modify-write race where concurrent requests could overdraw credits.
+    # (pyright: ignore -- `User.id`/`User.credits` are SQLAlchemy column
+    # expressions at runtime; the checker only sees the plain str/int types.)
     result = session.execute(
         update(User)
-        .where(User.id == uid, User.credits >= total_cost)
+        .where(User.id == uid, User.credits >= total_cost)  # pyright: ignore[reportArgumentType]
         .values(credits=User.credits - total_cost)
     )
-    if result.rowcount == 0:
+    if result.rowcount == 0:  # pyright: ignore[reportAttributeAccessIssue] -- present on the returned result at runtime
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -133,6 +135,7 @@ def create_generation(
     session.commit()
     session.refresh(series)
     session.refresh(user)
+    assert series.id is not None  # PK assigned by the commit+refresh above
 
     # Create placeholder reels
     for i in range(request.amount):
@@ -177,7 +180,7 @@ async def check_status(
     if not series or series.user_id != uid:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    return series
+    return ReelSeriesRead.model_validate(series, from_attributes=True)
 
 
 @router.get("/status/{series_id}/stream")
@@ -256,11 +259,14 @@ async def list_user_series(
     statement = (
         select(ReelSeries)
         .where(ReelSeries.user_id == uid)
-        .order_by(ReelSeries.created_at.desc())
+        .order_by(ReelSeries.created_at.desc())  # pyright: ignore[reportAttributeAccessIssue] -- SQLAlchemy column at runtime; checker sees datetime
         .offset(offset)
         .limit(limit)
     )
-    return session.exec(statement).all()
+    return [
+        ReelSeriesRead.model_validate(s, from_attributes=True)
+        for s in session.exec(statement).all()
+    ]
 
 
 @router.get("/series/{series_id}", response_model=ReelSeriesRead)
@@ -280,7 +286,7 @@ async def get_series(
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    return series
+    return ReelSeriesRead.model_validate(series, from_attributes=True)
 
 
 @router.delete("/series/{series_id}")

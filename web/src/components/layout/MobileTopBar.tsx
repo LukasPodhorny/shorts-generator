@@ -12,7 +12,8 @@ export function MobileTopBar({ onOpenDrawer }: { onOpenDrawer: () => void }) {
   const { pathname } = useLocation();
   const { user } = useAuth();
   const { data: profile } = useUserProfile();
-  const isGenerate = pathname === '/';
+  const onGenerate = pathname === '/';
+  const onVideos = pathname.startsWith('/videos');
 
   return (
     <div className="px-[18px] pt-2.5">
@@ -32,7 +33,7 @@ export function MobileTopBar({ onOpenDrawer }: { onOpenDrawer: () => void }) {
 
         <div className="flex h-10 w-[184px] overflow-hidden rounded-3xl">
           {(['generate', 'videos'] as const).map((tab) => {
-            const active = tab === 'generate' ? isGenerate : !isGenerate;
+            const active = tab === 'generate' ? onGenerate : onVideos;
             return (
               <button
                 key={tab}

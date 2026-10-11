@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { useUserProfile } from '@/hooks/queries';
-import { PersonIcon } from '@/components/ui/icons';
+import { PersonIcon, TuneIcon } from '@/components/ui/icons';
 import { MaskIcon } from '@/components/ui/MaskIcon';
 import { Avatar } from '@/components/ui/Avatar';
 
@@ -18,6 +19,7 @@ export function ProfileDrawer({
 }) {
   const { user } = useAuth();
   const { data: profile } = useUserProfile();
+  const navigate = useNavigate();
 
   return createPortal(
     <div
@@ -50,6 +52,17 @@ export function ProfileDrawer({
         </div>
 
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            navigate('/studio');
+          }}
+          className="flex items-center gap-3 px-6 py-5 text-left text-textPrimary"
+        >
+          <TuneIcon size={22} style={{ color: 'var(--color-textPrimary)' }} />
+          <span className="text-base font-medium">Studio</span>
+        </button>
         <div className="h-px bg-surface1" />
         <button
           type="button"

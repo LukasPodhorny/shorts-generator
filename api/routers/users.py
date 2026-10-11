@@ -1,5 +1,6 @@
 import os
 import stripe
+from stripe._error import SignatureVerificationError
 from fastapi import APIRouter, Depends, Request, Header, HTTPException
 from sqlmodel import Session, select
 from api.database import get_session
@@ -84,7 +85,14 @@ async def create_checkout_session(
         session.refresh(user)
 
     if not user.stripe_customer_id:
-        customer = stripe.Customer.create(email=email, metadata={"user_id": uid})
+        # email is optional in the token (and in Stripe): omit it when unknown
+        # rather than sending null.
+        if email:
+            customer = stripe.Customer.create(
+                email=email, metadata={"user_id": uid}
+            )
+        else:
+            customer = stripe.Customer.create(metadata={"user_id": uid})
         user.stripe_customer_id = customer.id
         session.add(user)
         session.commit()
@@ -105,6 +113,10 @@ async def create_checkout_session(
             client_reference_id=uid,
             metadata={"plan_id": request.price_id},
         )
+        if not checkout_session.url:
+            raise HTTPException(
+                status_code=502, detail="Stripe did not return a checkout URL"
+            )
         return CreateCheckoutResponse(url=checkout_session.url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -119,7 +131,7 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
         event = stripe.Webhook.construct_event(
             payload, sig_header, STRIPE_WEBHOOK_SECRET
         )
-    except (ValueError, stripe.error.SignatureVerificationError):
+    except (ValueError, SignatureVerificationError):
         raise HTTPException(status_code=400, detail="Invalid payload or signature")
 
     if event["type"] == "checkout.session.completed":

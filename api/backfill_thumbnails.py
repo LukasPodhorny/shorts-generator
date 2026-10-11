@@ -73,6 +73,8 @@ def _extract_thumbnail(video_path: str, thumb_path: str) -> None:
 
 
 def process_template(template: VideoTemplate) -> str:
+    if not template.preview_url:
+        raise RuntimeError(f"Template {template.name!r} has no preview_url")
     bucket = os.getenv("R2_BUCKET")
     if not bucket:
         raise RuntimeError("R2_BUCKET is not configured")
@@ -104,9 +106,11 @@ def main():
     args = parser.parse_args()
 
     with Session(engine) as session:
-        stmt = select(VideoTemplate).where(VideoTemplate.preview_url.is_not(None))
+        # (pyright: ignore -- `.is_` / `.is_not` are SQLAlchemy column
+        # methods at runtime; the checker sees plain Optional[str].)
+        stmt = select(VideoTemplate).where(VideoTemplate.preview_url.is_not(None))  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
         if not args.force:
-            stmt = stmt.where(VideoTemplate.thumbnail_url.is_(None))
+            stmt = stmt.where(VideoTemplate.thumbnail_url.is_(None))  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
 
         templates = session.exec(stmt).all()
         if not templates:

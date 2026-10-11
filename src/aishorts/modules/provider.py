@@ -1,10 +1,13 @@
 from abc import ABC
-from typing import ClassVar
+from typing import ClassVar, TypeVar, cast
 from dataclasses import dataclass
 import os
 import aiohttp
 import aiofiles
 import asyncio
+
+
+_T = TypeVar("_T", bound="Provider")
 
 
 class Provider(ABC):
@@ -45,12 +48,15 @@ class Provider(ABC):
             )
 
     @classmethod
-    def get(cls, name: str) -> type["Provider"]:
+    def get(cls: type[_T], name: str) -> type[_T]:
         """Get a specific provider by name."""
         if name not in cls._registry:
             available = list(cls._registry.keys())
             raise ValueError(f"Unknown {cls.__name__} '{name}'. Available: {available}")
-        return cls._registry[name]
+        # Each provider family registers only its own subclasses, so the
+        # lookup always returns a `cls` subclass; the registry dict itself is
+        # typed at the base for lack of a per-family generic.
+        return cast(type[_T], cls._registry[name])
 
     @classmethod
     def get_all(cls) -> dict[str, type["Provider"]]:

@@ -8,6 +8,7 @@ import CreatePasswordScreen from '@/screens/auth/CreatePasswordScreen';
 import EmailLoginScreen from '@/screens/auth/EmailLoginScreen';
 import LoginPasswordScreen from '@/screens/auth/LoginPasswordScreen';
 import VerifyEmailScreen from '@/screens/auth/VerifyEmailScreen';
+import ChatGenerate from '@/screens/generate/ChatGenerate';
 import GenerateScreen from '@/screens/generate/GenerateScreen';
 import VideosScreen from '@/screens/videos/VideosScreen';
 import SeriesDetailScreen from '@/screens/videos/SeriesDetailScreen';
@@ -34,7 +35,8 @@ export default function App() {
         <Route path="/preview/generate-bare" element={<PreviewGenerate />} />
         <Route element={<SeedSeriesLayout />}>
           <Route path="/preview" element={<AppShell />}>
-            <Route path="generate" element={<GenerateScreen />} />
+            <Route path="generate" element={<ChatGenerate />} />
+            <Route path="studio" element={<GenerateScreen />} />
             <Route path="videos" element={<VideosScreen />} />
             <Route path="videos/:seriesId" element={<SeriesDetailScreen />} />
             <Route path="account" element={<AccountScreen />} />
@@ -74,7 +76,8 @@ export default function App() {
       {/* Full-screen player, outside the shell. */}
       <Route path="/videos/:seriesId/:reelId" element={<VideoPlayerScreen />} />
       <Route element={<AppShell />}>
-        <Route index element={<GenerateScreen />} />
+        <Route index element={<ChatGenerate />} />
+        <Route path="studio" element={<GenerateScreen />} />
         <Route path="videos" element={<VideosScreen />} />
         <Route path="videos/:seriesId" element={<SeriesDetailScreen />} />
         <Route path="account" element={<AccountScreen />} />

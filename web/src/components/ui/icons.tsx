@@ -68,6 +68,53 @@ export const PersonIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const ArrowUpIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4 4.5 11.5 5.9 12.9 11 7.8V20h2V7.8l5.1 5.1 1.4-1.4z" />
+  </Svg>
+);
+
+/** Film/clapper glyph used for the template picker control. */
+export const TemplateIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m0 2v3h3V6zm5 0v3h3V6zm5 0v3h3V6zM4 11v7h16v-7zm5 1.5 5 2.5-5 2.5z" />
+  </Svg>
+);
+
+/** Sliders/tune glyph for the studio (advanced) tab (Material `tune`). */
+export const TuneIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+  </Svg>
+);
+
+export const CheckIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" />
+  </Svg>
+);
+
+/** A bold, sharp 4-point sparkle filling most of the viewbox (inset edges). */
+export const SparkleIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 2.5 14.4 9.6 21.5 12 14.4 14.4 12 21.5 9.6 14.4 2.5 12 9.6 9.6Z" />
+  </Svg>
+);
+
+/** A soft, rounded 4-point sparkle (smooth curved sides, gentle tips). */
+export const AutoAwesomeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4c.5 4.5 3 7 7.5 7.5C15 12 12.5 14.5 12 19c-.5-4.5-3-7-7.5-7.5C9 11 11.5 8.5 12 4z" />
+  </Svg>
+);
+
+/** Rounded help/question glyph (Material `help`), used for the quiz suggestion. */
+export const QuizIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
+  </Svg>
+);
+
 // --- File-category glyphs (used by source chips) ---
 const PdfIcon = (p: IconProps) => (
   <Svg {...p}>
