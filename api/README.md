@@ -37,6 +37,10 @@ browser ──HTTP──► FastAPI (api/main.py)
 | `routers/upload.py` | File upload → R2, per-user ownership. |
 | `routers/generate.py` | Job creation, status polling, SSE stream, series CRUD. |
 | `routers/admin.py` | Admin-only writes to the avatar/template/config catalog. |
+| `accounts.py`, `catalog.py`, `series.py`, `uploads.py`, `billing.py`, `plan_service.py` | Shared service functions behind the routers, reused as-is by the MCP server. |
+| `dispatch.py`, `worker.py` | Job dispatch selection (RQ queue vs in-process) and the RQ worker entry points. |
+| `routers/oauth.py` | OAuth consent API (request read, complete, deny) and grant management. |
+| `mcp/` | MCP server for agents (Streamable HTTP at `/mcp`, §8): tools, OAuth provider, rate limiting. |
 | `alembic/` | Schema migrations (`alembic upgrade head`). |
 
 ---
@@ -198,7 +202,69 @@ Plus **all the provider keys the core library needs** for whichever providers yo
 
 ---
 
-## 8. Frontend & related code
+## 8. MCP server for agents (`mcp/`)
+
+The same backend is exposed to AI agents over the Model Context Protocol
+(Streamable HTTP) at `/mcp`, mounted into this FastAPI app
+(`https://api.pdftoreel.com/mcp` in production). It uses
+[FastMCP](https://gofastmcp.com) in stateless mode (required for multi-dyno
+Heroku: no session affinity, every request is independent).
+
+The tools are curated wrappers over the shared services (§1), not a mirror of
+the HTTP routes, so auth, credit checks, file-ownership checks, and the link
+SSRF guard behave identically on both surfaces:
+
+| Tool | Scope | Does |
+|---|---|---|
+| `list_avatars`, `list_video_templates`, `list_generation_configs` | read | Catalog reads (configs without `data`, as on REST). |
+| `get_me` | read | Caller account, credit balance (JIT-provisions 90 credits). |
+| `list_my_uploads`, `upload_file`, `delete_my_upload` | read / write / write | Source files (base64 upload reuses validation, conversion, R2). |
+| `generate_reels` | write | Start a job with explicit settings (same validation + atomic credit deduct as `POST /api/generate`). |
+| `plan_reels` | write | Start a job from one natural-language instruction (same orchestration as `POST /api/plan`). |
+| `get_series_status`, `list_my_series`, `delete_my_series` | read / read / write | Per-user job reads and delete. |
+| `list_subscription_plans`, `get_subscription_checkout_url` | read / write | Plans plus a Stripe Checkout link (paid in browser; webhook grants). |
+
+Agent flow: `get_me` (balance) → catalog tools (names, per-reel cost) →
+`generate_reels`/`plan_reels` (returns `series_id` immediately) → poll
+`get_series_status` every 5-10 s until `Done`/`Failed`. There is no SSE
+equivalent over MCP; polling is the documented pattern. Admin catalog writes
+stay REST-only.
+
+**Login.** One-click OAuth 2.1: the MCP server co-hosts its own authorization
+server (`mcp/oauth_provider.py`, Postgres-backed clients/codes/grants, dynamic
+client registration). The user approves on the React consent page
+(`/oauth/consent`), which completes the flow with their Firebase identity, so
+Google and email users keep their existing UID. Tokens: 1 h JWT access tokens
+(revocation takes effect immediately via a grant check), 30 d rotating refresh
+tokens, two scopes (`read`, `write`) enforced per tool. Users manage
+connections in Account → Connected apps (`GET/DELETE /api/oauth/grants`). For
+local dev and header-based clients, raw Firebase ID tokens are still accepted
+as Bearer [REDACTED] (full scopes). The OAuth handshake endpoints are per-IP
+rate-limited when Redis is configured (`mcp/ratelimit.py`).
+
+**Job execution.** `create_generation` dispatches through `api/dispatch.py`:
+with `REDIS_URL` set, jobs go to the RQ queue for the worker dyno and survive
+web restarts/deploys; otherwise they run in-process (request `BackgroundTasks`
+on HTTP, an `asyncio` task for MCP). The worker (`api/worker.py`, Procfile
+`worker:` entry) runs the same `process_reel_task` coroutine, skips already
+finished series, and refunds via `fail_series_with_refund` when the worker
+itself dies (timeout/crash). A failed enqueue unwinds the series and refunds
+(HTTP 503, no credits spent). Each user is capped at
+`MAX_CONCURRENT_GENERATIONS_PER_USER` (default 2) unfinished jobs.
+
+**Relevant env vars:** `MCP_BASE_URL` (default `http://localhost:8000/mcp`),
+`FRONTEND_URL` (consent page host), `MCP_JWT_SECRET` (required in production),
+`REDIS_URL` (enables queue + OAuth throttling),
+`SOURCE_INGEST_TIMEOUT_SECONDS` (default 20),
+`MCP_AUTH_RATE_LIMIT_PER_MINUTE` (default 60),
+`MAX_CONCURRENT_GENERATIONS_PER_USER` (default 2).
+
+Suites: `tests/test_mcp.py` (tools, services, scopes), `tests/test_mcp_oauth.py`
+(provider, consent API, full OAuth round-trip), `tests/test_dispatch.py`
+(queue selection, worker, unwind), `tests/test_plan_service.py` (ingest
+bounds). Production rollout is documented in `docs/MCP_ROLLOUT.md`.
+
+## 9. Frontend & related code
 
 - **Frontend**: the React app in `web/` consumes these endpoints (public catalog to render the generate form, `/api/upload` for sources, `/api/generate` + the SSE stream for live progress, `/api/users` for billing).
 - **CLI**: `cli/main.py` is the other consumer of the core library and the source of the seed configs (`cli/configs/avatars.json`, `cli/configs/video_templates.json`) used by `populate_db`.

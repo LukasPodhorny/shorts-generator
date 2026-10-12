@@ -14,6 +14,7 @@ import VideosScreen from '@/screens/videos/VideosScreen';
 import SeriesDetailScreen from '@/screens/videos/SeriesDetailScreen';
 import VideoPlayerScreen from '@/screens/videos/VideoPlayerScreen';
 import AccountScreen from '@/screens/account/AccountScreen';
+import ConsentScreen from '@/screens/oauth/ConsentScreen';
 import PreviewGenerate from '@/screens/PreviewGenerate';
 import SeedSeriesLayout from '@/screens/PreviewVideosData';
 
@@ -26,6 +27,20 @@ import SeedSeriesLayout from '@/screens/PreviewVideosData';
  */
 export default function App() {
   const { user, initializing } = useAuth();
+
+  // Where to go after login/signup. Set by screens that link into auth
+  // (e.g. the OAuth consent screen) via sessionStorage so it survives the
+  // multi-step email flows. Same-app paths only. Cleared once consumed.
+  const storedReturnTo = sessionStorage.getItem('oauth.returnTo');
+  const returnTo =
+    storedReturnTo !== null &&
+    storedReturnTo.startsWith('/') &&
+    !storedReturnTo.startsWith('//')
+      ? storedReturnTo
+      : null;
+  if (returnTo && user) {
+    sessionStorage.removeItem('oauth.returnTo');
+  }
 
   // DEV-ONLY: lets screens be viewed (inside the real shell) before signing in.
   // Auth'd API calls will be empty/errored without a session. Remove when done.
@@ -57,24 +72,35 @@ export default function App() {
         <Route path="/login/password" element={<LoginPasswordScreen />} />
         <Route path="/signup" element={<CreateAccountScreen />} />
         <Route path="/signup/password" element={<CreatePasswordScreen />} />
+        <Route path="/oauth/consent" element={<ConsentScreen />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
   }
 
   if (!user.emailVerified) {
+    // Consent stays reachable mid-verification; approving needs no verified email.
+    if (returnTo) {
+      return <Navigate to={returnTo} replace />;
+    }
     return (
       <Routes>
         <Route path="/verify" element={<VerifyEmailScreen />} />
+        <Route path="/oauth/consent" element={<ConsentScreen />} />
         <Route path="*" element={<Navigate to="/verify" replace />} />
       </Routes>
     );
+  }
+
+  if (returnTo) {
+    return <Navigate to={returnTo} replace />;
   }
 
   return (
     <Routes>
       {/* Full-screen player, outside the shell. */}
       <Route path="/videos/:seriesId/:reelId" element={<VideoPlayerScreen />} />
+      <Route path="/oauth/consent" element={<ConsentScreen />} />
       <Route element={<AppShell />}>
         <Route index element={<ChatGenerate />} />
         <Route path="studio" element={<GenerateScreen />} />

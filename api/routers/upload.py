@@ -1,56 +1,20 @@
-import io
 import logging
-import os
-import uuid
-from typing import BinaryIO
-import boto3
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
-from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session, select
+from api.accounts import get_or_create_user
 from api.database import get_session
 from api.auth import get_current_user
-from api.file_conversion import (
-    LEGACY_OFFICE_EXTENSIONS,
-    ConversionError,
-    convert_office_to_pdf,
+from api.uploads import (
+    MAX_UPLOAD_SIZE,
+    delete_user_upload as _delete_user_upload,
+    store_uploaded_file,
 )
-from api.models import UploadedFile, UploadedFileRead, User
+from api.models import UploadedFile, UploadedFileRead
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
 logger = logging.getLogger(__name__)
-
-
-# Everything below (except the legacy office formats) is converted to Markdown
-# by the ingest layer (MarkItDown) at generation time.
-ALLOWED_EXTENSIONS = {
-    # documents
-    ".pdf",
-    ".txt",
-    ".md",
-    ".docx",
-    ".pptx",
-    ".xlsx",
-    ".xls",
-    ".csv",
-    ".json",
-    ".xml",
-    ".html",
-    ".htm",
-    ".epub",
-    ".ipynb",
-    ".msg",
-    # images (described via vision LLM)
-    ".jpg",
-    ".jpeg",
-    ".png",
-    # audio (transcribed)
-    ".mp3",
-    ".wav",
-    ".m4a",
-} | LEGACY_OFFICE_EXTENSIONS
-
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 @router.post("/", response_model=UploadedFileRead)
@@ -59,12 +23,11 @@ async def upload_file(
     user_token: dict = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> UploadedFileRead:
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Filename is missing")
+    uid = user_token["uid"]
+    email = user_token.get("email")
 
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    if file_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="File type not allowed")
+    # Ensure user exists in DB (JIT provisioning)
+    get_or_create_user(session, uid, email)
 
     if file.size is not None and file.size > MAX_UPLOAD_SIZE:
         raise HTTPException(
@@ -72,74 +35,11 @@ async def upload_file(
             detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB",
         )
 
-    uid = user_token["uid"]
-    email = user_token.get("email")
-
-    # Ensure user exists in DB (JIT provisioning)
-    user = session.get(User, uid)
-    if not user:
-        user = User(id=uid, email=email, credits=90)
-        session.add(user)
-        session.commit()
-
     try:
-        stored_filename = file.filename
-        stored_ext = file_ext
-        stored_content_type = file.content_type or "application/octet-stream"
-        upload_body: BinaryIO
-
-        if file_ext in LEGACY_OFFICE_EXTENSIONS:
-            # Convert legacy office docs (which MarkItDown can't read) to PDF.
-            original_bytes = await file.read()
-            try:
-                pdf_bytes = await convert_office_to_pdf(original_bytes, file.filename)
-            except ConversionError as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to convert document to PDF: {str(e)}",
-                )
-            upload_body = io.BytesIO(pdf_bytes)
-            stored_ext = ".pdf"
-            stored_filename = os.path.splitext(file.filename)[0] + ".pdf"
-            stored_content_type = "application/pdf"
-        else:
-            upload_body = file.file
-
-        key = f"uploads/{uid}/{uuid.uuid4()}{stored_ext}"
-
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=os.getenv("R2_ENDPOINT"),
-            aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
-            region_name="auto",
+        content = await file.read()
+        return await store_uploaded_file(
+            session, uid, file.filename or "", content, file.content_type
         )
-        bucket_name = os.getenv("R2_BUCKET")
-
-        # Upload file object directly to R2 (running in threadpool to avoid blocking)
-        await run_in_threadpool(s3_client.upload_fileobj, upload_body, bucket_name, key)
-
-        # Generate a presigned URL for immediate access
-        url = await run_in_threadpool(
-            s3_client.generate_presigned_url,
-            "get_object",
-            Params={"Bucket": bucket_name, "Key": key},
-            ExpiresIn=604800,  # 7 days
-        )
-
-        # Save to Database
-        uploaded_file = UploadedFile(
-            filename=stored_filename,
-            url=url,
-            key=key,
-            content_type=stored_content_type,
-            user_id=uid,
-        )
-        session.add(uploaded_file)
-        session.commit()
-        session.refresh(uploaded_file)
-
-        return UploadedFileRead.model_validate(uploaded_file, from_attributes=True)
     except HTTPException:
         raise
     except Exception:
@@ -174,37 +74,6 @@ async def delete_uploaded_file(
     session: Session = Depends(get_session),
 ) -> dict:
     uid = user_token["uid"]
-    statement = (
-        select(UploadedFile)
-        .where(UploadedFile.id == file_id)
-        .where(UploadedFile.user_id == uid)
-    )
-    file_record = session.exec(statement).first()
-
-    if not file_record:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    # Delete from R2
-    try:
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=os.getenv("R2_ENDPOINT"),
-            aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
-            region_name="auto",
-        )
-        bucket_name = os.getenv("R2_BUCKET")
-        await run_in_threadpool(
-            s3_client.delete_object, Bucket=bucket_name, Key=file_record.key
-        )
-    except Exception:
-        logger.exception("Failed to delete file from storage")
-        raise HTTPException(
-            status_code=500, detail="Failed to delete file from storage"
-        )
-
-    # Delete from DB
-    session.delete(file_record)
-    session.commit()
+    await _delete_user_upload(session, uid, file_id)
 
     return {"ok": True}

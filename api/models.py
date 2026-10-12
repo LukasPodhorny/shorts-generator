@@ -297,3 +297,91 @@ class CreateCheckoutRequest(SQLModel):
 
 class CreateCheckoutResponse(SQLModel):
     url: str
+
+
+# --- OAuth 2.1 authorization server (one-click MCP login) ---
+# The MCP server co-hosts an OAuth authorization server (see
+# api/mcp/oauth_provider.py). Clients register dynamically (RFC 7591);
+# users approve access on the React consent page, which completes the flow
+# with their Firebase identity. Secrets at rest are sha256 hashes.
+
+
+class OAuthClient(SQLModel, table=True):
+    client_id: str = Field(primary_key=True)
+    # Full OAuthClientInformationFull record (redirect URIs, name, secret).
+    data: dict = Field(sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class OAuthAuthRequest(SQLModel, table=True):
+    """A pending login+consent step, keyed by the request id in the consent URL."""
+
+    # sha256 hex of the public request id.
+    id: str = Field(primary_key=True)
+    client_id: str
+    redirect_uri: str
+    scope: str  # space-separated, as requested
+    state: Optional[str] = None
+    code_challenge: str
+    resource: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    expires_at: datetime
+
+
+class OAuthCode(SQLModel, table=True):
+    """Single-use authorization codes. Deleted atomically on exchange."""
+
+    # sha256 hex of the public code.
+    code_hash: str = Field(primary_key=True)
+    client_id: str
+    subject: str  # Firebase UID that approved
+    email: Optional[str] = None  # approver email, carried into the grant
+    redirect_uri: str
+    scopes: list = Field(sa_column=Column(JSON))
+    code_challenge: str
+    resource: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    expires_at: datetime
+
+
+class OAuthGrant(SQLModel, table=True):
+    """A user's live connection to one MCP client (refresh-token holder)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    # sha256 hex of the current refresh JWT's jti. Rotation replaces it.
+    refresh_jti_hash: str = Field(index=True, unique=True)
+    client_id: str = Field(index=True)
+    client_name: Optional[str] = None  # snapshot for the "connected apps" UI
+    subject: str = Field(index=True)  # Firebase UID
+    scopes: list = Field(sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+
+
+class OAuthGrantRead(SQLModel):
+    id: int
+    client_id: str
+    client_name: Optional[str] = None
+    scopes: list = Field(default_factory=list)
+    created_at: datetime
+    expires_at: datetime
+
+
+class OAuthRequestRead(SQLModel):
+    """What the consent page shows: who asks, for what."""
+
+    request_id: str
+    client_id: str
+    client_name: Optional[str] = None
+    scopes: list = Field(default_factory=list)
+    expires_at: datetime
+
+
+class OAuthCompleteRequest(SQLModel):
+    request_id: str
+
+
+class OAuthCompleteResponse(SQLModel):
+    # Client redirect_uri with code+state attached: the frontend navigates here.
+    redirect_url: str

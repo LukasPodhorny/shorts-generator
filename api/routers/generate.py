@@ -4,10 +4,20 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 import asyncio
 import ipaddress
-from typing import Optional
+import logging
+import os
+from typing import Callable, Optional
 from urllib.parse import urlparse
+from api.accounts import get_or_create_user
 from api.database import get_session, engine
 from api.auth import get_current_user, verify_token
+from api.dispatch import resolve_dispatch
+from api.series import (
+    count_active_user_series,
+    delete_user_series as _delete_user_series,
+    get_user_series as _get_user_series,
+    list_user_series as _list_user_series,
+)
 from api.models import (
     User,
     ReelSeries,
@@ -19,8 +29,10 @@ from api.models import (
     VideoTemplate,
     UploadedFile,
 )
-from api.tasks import process_reel_task
+from api.tasks import fail_series_with_refund, process_reel_task
 from aishorts.modules.script.script import AssetType
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
@@ -56,28 +68,28 @@ def create_generation(
     request: GenerateRequest,
     user_token: dict,
     session: Session,
-    background_tasks: BackgroundTasks,
+    background_tasks: Optional[BackgroundTasks] = None,
+    dispatch_task: Optional[Callable[[int, dict, int], None]] = None,
 ) -> GenerateResponse:
-    """Shared generation entry point used by both /api/generate and /api/plan.
+    """Shared generation entry point used by /api/generate, /api/plan, and MCP tools.
 
-    Holds all the logic the HTTP handlers must share: JIT user provisioning,
+    Holds all the logic the callers must share: JIT user provisioning,
     file-ownership validation, link allow-listing/SSRF guard, template lookup +
     cost calc, atomic credit check-and-deduct, ReelSeries/Reel row creation, and
-    BackgroundTasks dispatch. Callers pass a validated GenerateRequest; the
-    natural-language entry point builds that request before calling here.
+    background dispatch of ``process_reel_task``. Callers pass a validated
+    GenerateRequest; the natural-language entry points build that request
+    before calling here.
+
+    Dispatch: pass ``background_tasks`` (HTTP routes) or ``dispatch_task``, a
+    callable taking ``(series_id, request_data, total_cost)`` (non-HTTP
+    callers such as the MCP server, which has no request-scoped
+    BackgroundTasks). Exactly one is required.
     """
     uid = user_token["uid"]
     email = user_token.get("email")
 
-    # 1. Fetch User
-    user = session.get(User, uid)
-
-    if not user:
-        # Create user if not exists (first login logic)
-        user = User(id=uid, email=email, credits=90)
-        session.add(user)
-        session.commit()
-        session.refresh(user)
+    # 1. Fetch User (JIT-provision on first sight)
+    user = get_or_create_user(session, uid, email)
 
     # 1b. Validate referenced files belong to this user. The `files` values are
     # passed straight to the LLM layer, which will fetch http(s) URLs, read
@@ -113,6 +125,23 @@ def create_generation(
 
     total_cost = request.amount * unit_cost
 
+    # 2b. Per-user concurrency cap: one user can't stack unlimited jobs and
+    # hog the worker. Finished (Done/Failed) series don't count.
+    try:
+        concurrency_cap = max(
+            1, int(os.getenv("MAX_CONCURRENT_GENERATIONS_PER_USER", "2"))
+        )
+    except ValueError:
+        concurrency_cap = 2
+    if count_active_user_series(session, uid) >= concurrency_cap:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Too many generations in progress. Wait for one to finish "
+                "before starting another."
+            ),
+        )
+
     # 3 + 4. Atomically check and deduct credits. The conditional UPDATE avoids
     # a read-modify-write race where concurrent requests could overdraw credits.
     # (pyright: ignore -- `User.id`/`User.credits` are SQLAlchemy column
@@ -145,7 +174,31 @@ def create_generation(
     session.commit()
 
     # 6. Start Background Task
-    background_tasks.add_task(process_reel_task, series.id, request.model_dump(), total_cost)
+    if dispatch_task is None:
+        if background_tasks is None:
+            raise ValueError(
+                "create_generation requires background_tasks or dispatch_task"
+            )
+
+        def dispatch_task(
+            series_id: int, request_data: dict, cost: int
+        ) -> None:
+            assert background_tasks is not None
+            background_tasks.add_task(
+                process_reel_task, series_id, request_data, cost
+            )
+
+    try:
+        dispatch_task(series.id, request.model_dump(), total_cost)
+    except Exception:
+        # Dispatch failed (e.g. Redis down): unwind so the user keeps
+        # their credits and the series shows Failed instead of hanging.
+        logger.exception("Dispatch failed for series %s", series.id)
+        fail_series_with_refund(series.id, total_cost)
+        raise HTTPException(
+            status_code=503,
+            detail="Generation queue is unavailable; no credits were spent",
+        )
 
     return GenerateResponse(
         message="Generation started",
@@ -165,7 +218,7 @@ async def start_generation(
         request=request,
         user_token=user_token,
         session=session,
-        background_tasks=background_tasks,
+        dispatch_task=resolve_dispatch(background_tasks),
     )
 
 
@@ -176,11 +229,7 @@ async def check_status(
     session: Session = Depends(get_session),
 ) -> ReelSeriesRead:
     uid = user_token["uid"]
-    series = session.get(ReelSeries, series_id)
-    if not series or series.user_id != uid:
-        raise HTTPException(status_code=404, detail="Series not found")
-
-    return ReelSeriesRead.model_validate(series, from_attributes=True)
+    return _get_user_series(session, uid, series_id)
 
 
 @router.get("/status/{series_id}/stream")
@@ -256,17 +305,7 @@ async def list_user_series(
     limit: int = 10,
 ) -> list[ReelSeriesRead]:
     uid = user_token["uid"]
-    statement = (
-        select(ReelSeries)
-        .where(ReelSeries.user_id == uid)
-        .order_by(ReelSeries.created_at.desc())  # pyright: ignore[reportAttributeAccessIssue] -- SQLAlchemy column at runtime; checker sees datetime
-        .offset(offset)
-        .limit(limit)
-    )
-    return [
-        ReelSeriesRead.model_validate(s, from_attributes=True)
-        for s in session.exec(statement).all()
-    ]
+    return _list_user_series(session, uid, offset=offset, limit=limit)
 
 
 @router.get("/series/{series_id}", response_model=ReelSeriesRead)
@@ -276,17 +315,7 @@ async def get_series(
     session: Session = Depends(get_session),
 ) -> ReelSeriesRead:
     uid = user_token["uid"]
-    statement = (
-        select(ReelSeries)
-        .where(ReelSeries.user_id == uid)
-        .where(ReelSeries.id == series_id)
-    )
-    series = session.exec(statement).first()
-
-    if not series:
-        raise HTTPException(status_code=404, detail="Series not found")
-
-    return ReelSeriesRead.model_validate(series, from_attributes=True)
+    return _get_user_series(session, uid, series_id)
 
 
 @router.delete("/series/{series_id}")
@@ -296,24 +325,6 @@ async def delete_user_series(  # Changed name from list_user_series
     session: Session = Depends(get_session),
 ) -> dict:
     uid = user_token["uid"]
-    statement = (
-        select(ReelSeries)
-        .where(ReelSeries.user_id == uid)
-        .where(ReelSeries.id == series_id)
-    )
-
-    # 1. Fetch the series safely
-    series_to_delete = session.exec(statement).first()
-
-    # 2. Check if it actually exists before trying to delete
-    if not series_to_delete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Series not found or you don't have permission to delete it.",
-        )
-
-    # 3. Safely delete and commit
-    session.delete(series_to_delete)
-    session.commit()
+    _delete_user_series(session, uid, series_id)
 
     return {"ok": True}

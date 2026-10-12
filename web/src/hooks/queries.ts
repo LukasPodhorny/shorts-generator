@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryClient';
 import { getMe } from '@/api/users';
+import { listOAuthGrants } from '@/api/oauth';
 import {
   getSeriesStatus,
   listAvatars,
@@ -78,6 +79,16 @@ export function useSeriesList(pollingEnabled: boolean) {
       );
       return anyUnfinished ? 5000 : false;
     },
+  });
+}
+
+/** The user's connected AI apps (OAuth grants). */
+export function useOAuthGrants() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: queryKeys.oauthGrants,
+    queryFn: listOAuthGrants,
+    enabled: !!user,
   });
 }
 

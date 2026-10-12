@@ -154,3 +154,43 @@ export function avatarDisplayName(a: Avatar): string {
   const name = a.data.name;
   return typeof name === 'string' && name.length > 0 ? name : a.name;
 }
+
+// OAuth login for MCP clients (backend: api/routers/oauth.py).
+
+export interface OAuthRequest {
+  requestId: string;
+  clientId: string;
+  clientName: string | null;
+  scopes: string[];
+  expiresAt: string;
+}
+
+export function parseOAuthRequest(json: Record<string, unknown>): OAuthRequest {
+  return {
+    requestId: json.request_id as string,
+    clientId: json.client_id as string,
+    clientName: (json.client_name as string) ?? null,
+    scopes: Array.isArray(json.scopes) ? (json.scopes as string[]) : [],
+    expiresAt: json.expires_at as string,
+  };
+}
+
+export interface OAuthGrant {
+  id: number;
+  clientId: string;
+  clientName: string | null;
+  scopes: string[];
+  createdAt: string;
+  expiresAt: string;
+}
+
+export function parseOAuthGrant(json: Record<string, unknown>): OAuthGrant {
+  return {
+    id: json.id as number,
+    clientId: json.client_id as string,
+    clientName: (json.client_name as string) ?? null,
+    scopes: Array.isArray(json.scopes) ? (json.scopes as string[]) : [],
+    createdAt: json.created_at as string,
+    expiresAt: json.expires_at as string,
+  };
+}

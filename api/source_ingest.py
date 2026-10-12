@@ -23,12 +23,19 @@ The core library keeps its files/links options untouched -- the Studio path
 import asyncio
 import ipaddress
 import logging
+import os
 import re
 from urllib.parse import urlparse
 
 from aishorts.modules.ingest import ContentIngestor
 
 logger = logging.getLogger("ShortsGenerator.SourceIngest")
+
+# Overall budget for one ingest_sources() call. This runs inside a web request
+# (REST /api/plan and MCP plan_reels), and Heroku's router drops web requests
+# past 30 s -- so ingestion must be bounded. Slow/unfinished sources are
+# skipped with a warning (best effort, as before), never fatal.
+SOURCE_INGEST_TIMEOUT_SECONDS = float(os.getenv("SOURCE_INGEST_TIMEOUT_SECONDS", "20"))
 
 # Pull http(s) URLs out of freeform prose. Deliberately permissive on the URL
 # body; trailing sentence punctuation is trimmed off afterwards so "watch
@@ -81,46 +88,67 @@ def merge_links(*groups: list[str]) -> list[str]:
 async def ingest_sources(
     files: list[str] | None,
     links: list[str] | None,
+    timeout: float | None = None,
 ) -> str:
     """Convert files + links to one labeled Markdown blob (best effort).
 
     Mirrors `ContentIngestor.build_context`, but tolerant: a single source that
     fails to fetch/convert is logged and skipped rather than failing the whole
-    request, so one dead link can't sink an otherwise-valid generation.
+    request, so one dead link can't sink an otherwise-valid generation. The
+    whole step is bounded by `timeout` seconds (default
+    `SOURCE_INGEST_TIMEOUT_SECONDS`); sources still running when the budget
+    expires are cancelled and skipped.
     """
     files = files or []
     links = links or []
     if not files and not links:
         return ""
+    if timeout is None:
+        timeout = SOURCE_INGEST_TIMEOUT_SECONDS
 
     ingestor = ContentIngestor()
-    parts: list[str] = []
 
-    async def _file(ref: str) -> None:
+    async def _file(ref: str) -> str | None:
         try:
             md = await ingestor.file_to_markdown(ref)
         except Exception:
             logger.warning("Failed to ingest file %s; skipping", ref, exc_info=True)
-            return
+            return None
         label = ref.split("/")[-1] or ref
         if not md:
             logger.warning("File %s produced empty Markdown", ref)
-        parts.append(f"--- Document: {label} ---\n{md}\n")
+        return f"--- Document: {label} ---\n{md}\n"
 
-    async def _link(url: str) -> None:
+    async def _link(url: str) -> str | None:
         try:
             md = await ingestor.link_to_markdown(url)
         except Exception:
             logger.warning("Failed to ingest link %s; skipping", url, exc_info=True)
-            return
+            return None
         if not md:
             logger.warning("Link %s produced empty Markdown", url)
-        parts.append(f"--- Link: {url} ---\n{md}\n")
+        return f"--- Link: {url} ---\n{md}\n"
 
-    # Files first (stable order), then links, ingested concurrently within group.
-    await asyncio.gather(*[_file(f) for f in files])
-    await asyncio.gather(*[_link(u) for u in links])
+    # Files first (stable order), then links, all ingested concurrently.
+    tasks = [asyncio.ensure_future(_file(f)) for f in files] + [
+        asyncio.ensure_future(_link(u)) for u in links
+    ]
+    done, pending = await asyncio.wait(tasks, timeout=timeout)
+    if pending:
+        logger.warning(
+            "Source ingest timed out after %ss; skipping %d unfinished source(s)",
+            timeout,
+            len(pending),
+        )
+        for task in pending:
+            task.cancel()
 
+    parts = []
+    for task in tasks:
+        if task in done and not task.cancelled():
+            chunk = task.result()
+            if chunk:
+                parts.append(chunk)
     return "\n\n".join(parts)
 
 

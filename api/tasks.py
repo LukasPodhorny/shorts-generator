@@ -187,6 +187,21 @@ def _mark_series_failed(series_id: int, refund_amount: int = 0):
         session.commit()
 
 
+def fail_series_with_refund(series_id: int, total_cost: int) -> None:
+    """Mark a series failed and refund its credits. Safe to call repeatedly.
+
+    Used by the in-task failure path and by the RQ worker's failure callback
+    (timeout/crash/deploy kill). Never raises: a failed refund is logged for
+    manual follow-up.
+    """
+    try:
+        _mark_series_failed(series_id, total_cost)
+    except Exception:
+        logger.exception(
+            f"Refund failed for series {series_id}; manual check needed"
+        )
+
+
 async def process_reel_task(series_id: int, request_data: dict, total_cost: int = 0):
     """
     Background task to generate shorts and update DB.
@@ -224,4 +239,4 @@ async def process_reel_task(series_id: int, request_data: dict, total_cost: int 
 
     except Exception as e:
         logger.exception(f"Job Failed for series {series_id}: {e}")
-        await run_in_threadpool(_mark_series_failed, series_id, total_cost)
+        await run_in_threadpool(fail_series_with_refund, series_id, total_cost)

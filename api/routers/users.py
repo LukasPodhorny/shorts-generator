@@ -3,6 +3,8 @@ import stripe
 from stripe._error import SignatureVerificationError
 from fastapi import APIRouter, Depends, Request, Header, HTTPException
 from sqlmodel import Session, select
+from api.accounts import get_or_create_user
+from api.billing import create_checkout_session_url
 from api.database import get_session
 from api.auth import get_current_user
 from api.models import (
@@ -18,11 +20,7 @@ from api.models import (
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
-
-stripe.api_key = STRIPE_SECRET_KEY
 
 
 # TEMPORARILY DISABLED: add-credits endpoint disabled to prevent exploitation
@@ -57,15 +55,7 @@ async def get_me(
     uid = user_token["uid"]
     email = user_token.get("email")
 
-    user = session.get(User, uid)
-    if not user:
-        # Create user if not exists (first login logic)
-        user = User(id=uid, email=email, credits=90)
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
-    return user
+    return get_or_create_user(session, uid, email)
 
 
 @router.post("/create-checkout-session", response_model=CreateCheckoutResponse)
@@ -77,49 +67,8 @@ async def create_checkout_session(
     uid = user_token["uid"]
     email = user_token.get("email")
 
-    user = session.get(User, uid)
-    if not user:
-        user = User(id=uid, email=email, credits=90)
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
-    if not user.stripe_customer_id:
-        # email is optional in the token (and in Stripe): omit it when unknown
-        # rather than sending null.
-        if email:
-            customer = stripe.Customer.create(
-                email=email, metadata={"user_id": uid}
-            )
-        else:
-            customer = stripe.Customer.create(metadata={"user_id": uid})
-        user.stripe_customer_id = customer.id
-        session.add(user)
-        session.commit()
-
-    # Validate that the requested price exists in our DB
-    plan = session.get(SubscriptionPlan, request.price_id)
-    if not plan:
-        raise HTTPException(status_code=400, detail="Invalid Subscription Plan")
-
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            customer=user.stripe_customer_id,
-            payment_method_types=["card"],
-            line_items=[{"price": request.price_id, "quantity": 1}],
-            mode="subscription",
-            success_url=f"{FRONTEND_URL}/dashboard?success=true",
-            cancel_url=f"{FRONTEND_URL}/dashboard?canceled=true",
-            client_reference_id=uid,
-            metadata={"plan_id": request.price_id},
-        )
-        if not checkout_session.url:
-            raise HTTPException(
-                status_code=502, detail="Stripe did not return a checkout URL"
-            )
-        return CreateCheckoutResponse(url=checkout_session.url)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    url = create_checkout_session_url(session, uid, email, request.price_id)
+    return CreateCheckoutResponse(url=url)
 
 
 @router.post("/webhook", include_in_schema=False)
