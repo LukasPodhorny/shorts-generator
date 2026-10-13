@@ -26,18 +26,19 @@ def _resource_url() -> str:
     return os.getenv("MCP_BASE_URL", "http://localhost:8000/mcp").rstrip("/")
 
 
-_ICON_PATH = Path(__file__).resolve().parent / "icons" / "logo.png"
+_ICON_PATH = Path(__file__).resolve().parent / "icons" / "logo-v2.png"
 
 oauth_provider = PdftoreelOAuthProvider()
 mcp = FastMCP(
     "pdftoreel",
     auth=oauth_provider,
-    # Transparent brand logo so clients (Claude) render our icon instead
-    # of a default white-background tile. Baked at import; MCP_BASE_URL
-    # is set before boot in every deployed environment.
+    # Brand logo so clients (Claude) render our icon instead of a default
+    # tile. The dark background is baked in because Claude composites
+    # icons onto its own white tile. Baked at import; MCP_BASE_URL is set
+    # before boot in every deployed environment.
     icons=[
         Icon(
-            src=f"{_resource_url()}/icons/logo.png",
+            src=f"{_resource_url()}/icons/logo-v2.png",
             mimeType="image/png",
             sizes=["192x192"],
         )
@@ -134,7 +135,7 @@ async def _mcp_icon(request) -> Response:
     )
 
 
-mcp_icon_route = Route("/mcp/icons/logo.png", endpoint=_mcp_icon, methods=["GET"])
+mcp_icon_route = Route("/mcp/icons/logo-v2.png", endpoint=_mcp_icon, methods=["GET"])
 protected_resource_routes = [
     Route(
         "/.well-known/oauth-protected-resource",

@@ -471,7 +471,7 @@ def test_grants_list_and_revoke_scoped_to_user(tmp_path, monkeypatch):
 # --- mount interop (strict clients) --------------------------------------
 
 def test_mcp_icon_served_as_png():
-    response = TestClient(app).get("/mcp/icons/logo.png")
+    response = TestClient(app).get("/mcp/icons/logo-v2.png")
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
     assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
@@ -483,7 +483,7 @@ def test_server_advertises_icon():
     expected_base = os.getenv("MCP_BASE_URL", "http://localhost:8000/mcp").rstrip("/")
     assert len(mcp_server.icons) == 1
     icon = mcp_server.icons[0]
-    assert icon.src == f"{expected_base}/icons/logo.png"
+    assert icon.src == f"{expected_base}/icons/logo-v2.png"
     assert icon.mime_type == "image/png"
 
 
