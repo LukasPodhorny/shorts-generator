@@ -6,21 +6,43 @@ FastAPI app at ``/mcp`` (see ``api/main.py``) over Streamable HTTP.
 """
 
 import os
+from pathlib import Path
 
 from fastmcp import FastMCP
 from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.routes import build_metadata
 from mcp.shared.auth import ProtectedResourceMetadata
+from mcp.types import Icon
 from starlette.middleware import Middleware
-from starlette.responses import JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from api.mcp.oauth_provider import PdftoreelOAuthProvider
 from api.mcp.ratelimit import RateLimitMiddleware, build_store
 from api.mcp.tools import account, billing, catalog, generate, series, uploads
 
+
+def _resource_url() -> str:
+    return os.getenv("MCP_BASE_URL", "http://localhost:8000/mcp").rstrip("/")
+
+
+_ICON_PATH = Path(__file__).resolve().parent / "icons" / "logo.png"
+
 oauth_provider = PdftoreelOAuthProvider()
-mcp = FastMCP("pdftoreel", auth=oauth_provider)
+mcp = FastMCP(
+    "pdftoreel",
+    auth=oauth_provider,
+    # Transparent brand logo so clients (Claude) render our icon instead
+    # of a default white-background tile. Baked at import; MCP_BASE_URL
+    # is set before boot in every deployed environment.
+    icons=[
+        Icon(
+            src=f"{_resource_url()}/icons/logo.png",
+            mimeType="image/png",
+            sizes=["192x192"],
+        )
+    ],
+)
 
 mcp.tool(catalog.list_avatars)
 mcp.tool(catalog.list_video_templates)
@@ -47,10 +69,6 @@ _store = build_store()
 if _store is not None:
     _middleware.append(Middleware(RateLimitMiddleware, store=_store))
 mcp_http_app = mcp.http_app(path="/", stateless_http=True, middleware=_middleware)
-
-
-def _resource_url() -> str:
-    return os.getenv("MCP_BASE_URL", "http://localhost:8000/mcp").rstrip("/")
 
 
 class _MCPExactPath:
@@ -103,9 +121,20 @@ async def _authorization_server_metadata(request) -> Response:
     )
 
 
-# Registered on the parent app in api/main.py. mcp_exact_route MUST precede
-# app.mount("/mcp", ...) so the exact path matches first.
+# Registered on the parent app in api/main.py. mcp_exact_route and
+# mcp_icon_route MUST precede app.mount("/mcp", ...) so they match first.
 mcp_exact_route = Route("/mcp", endpoint=_MCPExactPath(), methods=["GET", "POST", "DELETE"])
+
+
+async def _mcp_icon(request) -> Response:
+    return FileResponse(
+        _ICON_PATH,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+mcp_icon_route = Route("/mcp/icons/logo.png", endpoint=_mcp_icon, methods=["GET"])
 protected_resource_routes = [
     Route(
         "/.well-known/oauth-protected-resource",

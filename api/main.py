@@ -7,6 +7,7 @@ from api.mcp.server import (
     authorization_server_routes,
     mcp_exact_route,
     mcp_http_app,
+    mcp_icon_route,
     protected_resource_routes,
 )
 from dotenv import load_dotenv
@@ -57,6 +58,7 @@ app.include_router(oauth.router)
 # authorization-server) are advertised at the origin root, which the mounted
 # sub-app cannot serve by itself.
 app.routes.append(mcp_exact_route)
+app.routes.append(mcp_icon_route)
 app.mount("/mcp", mcp_http_app)
 for _route in protected_resource_routes:
     app.routes.append(_route)
