@@ -56,8 +56,10 @@ heroku logs --tail -a <staging-app>   # watch release (migrations) + boot
 Backend basics:
 
 - `GET https://<staging>/` returns the API greeting.
-- `GET https://<staging>/mcp/.well-known/oauth-protected-resource` returns
-  resource metadata pointing at the staging issuer.
+- `GET https://<staging>/.well-known/oauth-protected-resource/mcp` and
+  `GET https://<staging>/.well-known/oauth-authorization-server/mcp`
+  return 200 with metadata pointing at the staging issuer (these are the
+  origin-root documents strict clients like Claude actually fetch).
 - `heroku ps -a <staging-app>` shows `web` and `worker` up.
 
 OAuth + tools with real clients (the highest-risk interop surface):
@@ -121,9 +123,14 @@ Durability:
   `fail_series_with_refund(series_id, total_cost)` in `api/tasks.py`; call
   it via `heroku run python -c` with the series id and its deducted cost.
   It is idempotent (never double-refunds a Failed series).
-- RQ dashboard: none bundled. Queue depth via `heroku run rq info -u
-  "$REDIS_URL"`; failed jobs via `rq info` (all failures already refund
-  through `on_job_failure`, but check the registry after incidents).
+- RQ dashboard: none bundled. Queue depth via `heroku run python -c
+  "from api.redis_client import redis_client; from rq import Queue;
+  q = Queue('shorts', connection=redis_client());
+  print(len(q), 'queued,', q.failed_job_registry.count, 'failed')"`
+  (the `rq` CLI cannot pass the TLS options Heroku's `rediss://` URL
+  needs, which is also why the worker boots via `python -m api.worker`).
+  All failures already refund through `on_job_failure`, but check the
+  registry after incidents.
 - Stuck series (no worker, no refund): any series left in Queued/Processing
   with no live job can be failed+refunded with the same helper.
 - Cost deltas: Key-Value Store Mini add-on plus one worker dyno; the web

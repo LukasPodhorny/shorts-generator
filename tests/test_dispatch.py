@@ -80,9 +80,7 @@ def test_rq_dispatch_enqueues_job(monkeypatch):
             enqueued.append((args, kwargs))
 
     monkeypatch.setattr(dispatch_module, "Queue", FakeQueue)
-    monkeypatch.setattr(
-        dispatch_module.Redis, "from_url", classmethod(lambda cls, url: f"conn:{url}")
-    )
+    monkeypatch.setattr(dispatch_module, "redis_client", lambda url: f"conn:{url}")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
     from api.worker import on_job_failure, run_reel_job
@@ -143,6 +141,41 @@ def test_on_job_failure_fails_and_refunds(tmp_path, monkeypatch):
     on_job_failure(job, None, None, "boom", None)
     with Session(engine) as session:
         assert session.get(User, "u1").credits == 90
+
+
+def test_worker_main_requires_redis_url(monkeypatch):
+    from api.worker import main as worker_main
+
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    with pytest.raises(SystemExit, match="REDIS_URL"):
+        worker_main()
+
+
+def test_worker_main_boots_rq_worker(monkeypatch):
+    import api.worker as worker_module
+
+    started = {}
+
+    class FakeWorker:
+        def __init__(self, queues, connection=None):
+            started["queues"] = queues
+            started["connection"] = connection
+
+        def work(self):
+            started["worked"] = True
+
+    monkeypatch.setattr(worker_module, "Worker", FakeWorker)
+    monkeypatch.setattr(worker_module, "redis_client", lambda url: f"conn:{url}")
+    monkeypatch.setenv("REDIS_URL", "rediss://host:6380")
+
+    from api.worker import main as worker_main
+
+    worker_main()
+    assert started == {
+        "queues": ["shorts"],
+        "connection": "conn:rediss://host:6380",
+        "worked": True,
+    }
 
 
 def test_fail_series_with_refund_never_raises(tmp_path, monkeypatch):
@@ -206,9 +239,7 @@ def test_rest_generate_enqueues_when_redis_set(tmp_path, monkeypatch):
             enqueued.append((args, kwargs))
 
     monkeypatch.setattr(dispatch_module, "Queue", FakeQueue)
-    monkeypatch.setattr(
-        dispatch_module.Redis, "from_url", classmethod(lambda cls, url: "conn")
-    )
+    monkeypatch.setattr(dispatch_module, "redis_client", lambda url: "conn")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
     worker_calls = []

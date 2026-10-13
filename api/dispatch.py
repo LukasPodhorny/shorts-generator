@@ -10,9 +10,9 @@ import logging
 import os
 
 from fastapi import BackgroundTasks
-from redis import Redis
 from rq import Queue
 
+from api.redis_client import redis_client
 from api.tasks import process_reel_task
 
 logger = logging.getLogger("pdftoreel.dispatch")
@@ -33,7 +33,7 @@ def rq_dispatch(series_id: int, request_data: dict, total_cost: int) -> None:
 
     queue = Queue(
         QUEUE_NAME,
-        connection=Redis.from_url(redis_url()),  # type: ignore[arg-type]
+        connection=redis_client(redis_url()),
         default_timeout=JOB_TIMEOUT_SECONDS,
     )
     queue.enqueue(

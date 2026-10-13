@@ -8,16 +8,19 @@ FastAPI app at ``/mcp`` (see ``api/main.py``) over Streamable HTTP.
 import os
 
 from fastmcp import FastMCP
+from mcp.server.auth.json_response import PydanticJSONResponse
+from mcp.server.auth.routes import build_metadata
 from mcp.shared.auth import ProtectedResourceMetadata
 from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from api.mcp.oauth_provider import PdftoreelOAuthProvider
 from api.mcp.ratelimit import RateLimitMiddleware, build_store
 from api.mcp.tools import account, billing, catalog, generate, series, uploads
 
-mcp = FastMCP("pdftoreel", auth=PdftoreelOAuthProvider())
+oauth_provider = PdftoreelOAuthProvider()
+mcp = FastMCP("pdftoreel", auth=oauth_provider)
 
 mcp.tool(catalog.list_avatars)
 mcp.tool(catalog.list_video_templates)
@@ -84,6 +87,22 @@ async def _protected_resource_metadata(request) -> JSONResponse:
     return JSONResponse(metadata.model_dump(mode="json", exclude_none=True))
 
 
+async def _authorization_server_metadata(request) -> Response:
+    # RFC 8414 metadata lives at the ORIGIN root
+    # (/.well-known/oauth-authorization-server[/mcp]); Claude probes these
+    # origin variants only, so the parent app serves the exact document the
+    # mounted sub-app serves: same SDK builder, same live provider options.
+    metadata = build_metadata(
+        _resource_url(),  # type: ignore[arg-type]
+        oauth_provider.service_documentation_url,
+        oauth_provider.client_registration_options,
+        oauth_provider.revocation_options,
+    )
+    return PydanticJSONResponse(
+        content=metadata, headers={"Cache-Control": "public, max-age=3600"}
+    )
+
+
 # Registered on the parent app in api/main.py. mcp_exact_route MUST precede
 # app.mount("/mcp", ...) so the exact path matches first.
 mcp_exact_route = Route("/mcp", endpoint=_MCPExactPath(), methods=["GET", "POST", "DELETE"])
@@ -96,6 +115,18 @@ protected_resource_routes = [
     Route(
         "/.well-known/oauth-protected-resource/{rest:path}",
         endpoint=_protected_resource_metadata,
+        methods=["GET", "OPTIONS"],
+    ),
+]
+authorization_server_routes = [
+    Route(
+        "/.well-known/oauth-authorization-server",
+        endpoint=_authorization_server_metadata,
+        methods=["GET", "OPTIONS"],
+    ),
+    Route(
+        "/.well-known/oauth-authorization-server/{rest:path}",
+        endpoint=_authorization_server_metadata,
         methods=["GET", "OPTIONS"],
     ),
 ]

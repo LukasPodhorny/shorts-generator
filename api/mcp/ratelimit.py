@@ -43,9 +43,9 @@ def build_store():
     url = os.getenv("REDIS_URL")
     if not url:
         return None
-    from redis import Redis
+    from api.redis_client import redis_client
 
-    return RedisCounter(Redis.from_url(url))
+    return RedisCounter(redis_client(url))
 
 
 def _client_ip(scope) -> str:

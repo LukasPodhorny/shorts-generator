@@ -1,18 +1,22 @@
 """RQ worker entry points for durable generation jobs.
 
 Runs on Heroku via the Procfile `worker:` process type
-(`rq worker --url "$REDIS_URL" shorts`). The worker reuses the exact same
+(`python -m api.worker`). The worker reuses the exact same
 `process_reel_task` coroutine as in-process dispatch, so behavior is identical;
 the queue only changes *where* it runs.
 """
 
 import asyncio
 import logging
+import os
 
+from rq import Worker
 from sqlmodel import Session
 
 from api.database import engine
+from api.dispatch import QUEUE_NAME
 from api.models import ReelSeries
+from api.redis_client import redis_client
 from api.tasks import fail_series_with_refund, process_reel_task
 
 logger = logging.getLogger("pdftoreel.worker")
@@ -52,3 +56,22 @@ def on_job_failure(job, connection, type, value, traceback) -> None:
         series_id,
     )
     fail_series_with_refund(series_id, total_cost)
+
+
+def main() -> None:
+    """Start the RQ worker (Procfile entry point).
+
+    The `rq worker --url` CLI cannot pass TLS options, and Heroku's
+    `rediss://` URL needs verification disabled, so the worker boots here
+    with the shared TLS-aware client factory instead.
+    """
+    url = os.getenv("REDIS_URL")
+    if not url:
+        raise SystemExit("REDIS_URL is not set; cannot start RQ worker")
+    worker = Worker([QUEUE_NAME], connection=redis_client(url))
+    logger.info("Starting RQ worker on queue %s", QUEUE_NAME)
+    worker.work()
+
+
+if __name__ == "__main__":
+    main()

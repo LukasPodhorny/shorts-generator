@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers import generate, upload, users, admin, public, plan, oauth
 from api.mcp.server import (
+    authorization_server_routes,
     mcp_exact_route,
     mcp_http_app,
     protected_resource_routes,
@@ -52,11 +53,14 @@ app.include_router(oauth.router)
 #
 # The exact /mcp route is registered before the mount so strict MCP clients
 # get a direct answer instead of a 307 they refuse to follow. The origin-root
-# OAuth metadata routes come from RFC 9728: the 401 advertises them at the
-# origin root, which the mounted sub-app cannot serve by itself.
+# OAuth metadata routes (RFC 9728 protected-resource + RFC 8414
+# authorization-server) are advertised at the origin root, which the mounted
+# sub-app cannot serve by itself.
 app.routes.append(mcp_exact_route)
 app.mount("/mcp", mcp_http_app)
 for _route in protected_resource_routes:
+    app.routes.append(_route)
+for _route in authorization_server_routes:
     app.routes.append(_route)
 
 

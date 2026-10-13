@@ -501,6 +501,53 @@ def test_origin_protected_resource_metadata(monkeypatch):
         assert body["bearer_methods_supported"] == ["header"]
 
 
+def test_origin_authorization_server_metadata(monkeypatch):
+    import json
+
+    from mcp.server.auth.routes import build_metadata
+
+    from api.mcp.server import oauth_provider
+
+    # Claude probes these origin variants (RFC 8414 path insertion) and
+    # never looks at the sub-app's own metadata document.
+    monkeypatch.setenv("MCP_BASE_URL", "https://api.pdftoreel.com/mcp")
+    client = TestClient(app)
+    bodies = []
+    for path in (
+        "/.well-known/oauth-authorization-server/mcp",
+        "/.well-known/oauth-authorization-server/mcp/",
+        "/.well-known/oauth-authorization-server",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["cache-control"] == "public, max-age=3600"
+        body = response.json()
+        assert body["issuer"] == "https://api.pdftoreel.com/mcp"
+        assert (
+            body["authorization_endpoint"]
+            == "https://api.pdftoreel.com/mcp/authorize"
+        )
+        assert body["token_endpoint"] == "https://api.pdftoreel.com/mcp/token"
+        assert (
+            body["registration_endpoint"]
+            == "https://api.pdftoreel.com/mcp/register"
+        )
+        assert body["scopes_supported"] == ["read", "write"]
+        assert body["code_challenge_methods_supported"] == ["S256"]
+        bodies.append(body)
+    # All variants serve the same document the sub-app serves: same SDK
+    # builder, same live provider options (the sub-app bakes the issuer in
+    # at import time, so rebuild the expectation instead of fetching it).
+    expected = build_metadata(
+        "https://api.pdftoreel.com/mcp",
+        oauth_provider.service_documentation_url,
+        oauth_provider.client_registration_options,
+        oauth_provider.revocation_options,
+    )
+    assert bodies[0] == json.loads(expected.model_dump_json(exclude_none=True))
+    assert bodies[0] == bodies[1] == bodies[2]
+
+
 def test_tool_call_through_exact_mcp_path(tmp_path, monkeypatch):
     import httpx2
 
