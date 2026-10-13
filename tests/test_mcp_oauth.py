@@ -468,6 +468,79 @@ def test_grants_list_and_revoke_scoped_to_user(tmp_path, monkeypatch):
         app.dependency_overrides.clear()
 
 
+# --- mount interop (strict clients) --------------------------------------
+
+def test_exact_mcp_path_has_no_redirect():
+    # Strict MCP clients refuse to follow the mount's 307; the exact path
+    # must answer directly (401 without credentials).
+    response = TestClient(app).post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        follow_redirects=False,
+    )
+    assert response.status_code == 401
+    assert "resource_metadata" in response.headers.get("www-authenticate", "")
+
+
+def test_origin_protected_resource_metadata(monkeypatch):
+    # The 401 advertises this origin-root URL (RFC 9728 path insertion);
+    # the mounted sub-app cannot serve it, so the parent app does.
+    monkeypatch.setenv("MCP_BASE_URL", "https://api.pdftoreel.com/mcp")
+    client = TestClient(app)
+    for path in (
+        "/.well-known/oauth-protected-resource/mcp/",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-protected-resource",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        body = response.json()
+        assert body["resource"] == "https://api.pdftoreel.com/mcp"
+        assert body["authorization_servers"] == ["https://api.pdftoreel.com/mcp"]
+        assert body["scopes_supported"] == ["read", "write"]
+        assert body["bearer_methods_supported"] == ["header"]
+
+
+def test_tool_call_through_exact_mcp_path(tmp_path, monkeypatch):
+    import httpx2
+
+    import api.mcp.db as mcp_db
+
+    engine = make_engine(tmp_path)
+    monkeypatch.setattr(mcp_db, "engine", engine)
+
+    async def fake_verify(self, token):
+        from fastmcp.server.auth import AccessToken as _AccessToken
+
+        return _AccessToken(
+            token=token,
+            client_id="test",
+            subject="u1",
+            scopes=["read", "write"],
+            claims={"email": "u1@x.com"},
+        )
+
+    monkeypatch.setattr(PdftoreelOAuthProvider, "verify_token", fake_verify)
+
+    async def _flow():
+        def factory(**kwargs):
+            return httpx2.AsyncClient(
+                transport=StreamingASGITransport(app), **kwargs
+            )
+
+        transport = StreamableHttpTransport(
+            url="http://testserver/mcp",  # exact path, no trailing slash
+            auth="token",
+            httpx_client_factory=factory,
+        )
+        async with run_asgi_lifespan(app):
+            async with Client(transport) as mcp_client:
+                me = await mcp_client.call_tool("get_me", {})
+                return me.content[0].text
+
+    assert '"id":"u1"' in asyncio.run(_flow()).replace(" ", "")
+
+
 # --- full round-trip -----------------------------------------------------
 
 def test_full_oauth_round_trip(tmp_path, monkeypatch):

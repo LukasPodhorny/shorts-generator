@@ -3,7 +3,11 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers import generate, upload, users, admin, public, plan, oauth
-from api.mcp.server import mcp_http_app
+from api.mcp.server import (
+    mcp_exact_route,
+    mcp_http_app,
+    protected_resource_routes,
+)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,7 +49,15 @@ app.include_router(oauth.router)
 # session manager is never initialized and every /mcp request fails.
 # If this app ever needs its own lifespan tasks, combine both context
 # managers into one @asynccontextmanager instead of replacing this.
+#
+# The exact /mcp route is registered before the mount so strict MCP clients
+# get a direct answer instead of a 307 they refuse to follow. The origin-root
+# OAuth metadata routes come from RFC 9728: the 401 advertises them at the
+# origin root, which the mounted sub-app cannot serve by itself.
+app.routes.append(mcp_exact_route)
 app.mount("/mcp", mcp_http_app)
+for _route in protected_resource_routes:
+    app.routes.append(_route)
 
 
 @app.get("/")
