@@ -27,4 +27,3 @@ sqlalchemy==2.0.48
 sqlmodel==0.0.37
 stripe==14.4.1
 uvicorn
--e .
