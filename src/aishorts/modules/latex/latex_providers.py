@@ -47,6 +47,15 @@ class Matplotlib(LatexProvider):
 
     def render_single(self, id: int, latex_code: str, resolution: Resolution):
         # ... (keep existing render_single logic)
+        # LLM output may carry display-math ($$...$$) or inline ($...$)
+        # delimiters; matplotlib mathtext rejects them, so strip before
+        # wrapping in our own $...$ below.
+        latex_code = latex_code.strip()
+        if latex_code.startswith("$$") and latex_code.endswith("$$") and len(latex_code) > 4:
+            latex_code = latex_code[2:-2].strip()
+        elif latex_code.startswith("$") and latex_code.endswith("$") and len(latex_code) > 2:
+            latex_code = latex_code[1:-1].strip()
+
         dpi = 100
         fig = Figure(figsize=(resolution.width / dpi, resolution.height / dpi), dpi=dpi)
         FigureCanvasAgg(fig)

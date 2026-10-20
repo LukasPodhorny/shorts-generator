@@ -64,6 +64,26 @@ class TestMatplotlib:
             mock_render.assert_called_once()
 
 
+class TestMatplotlibDisplayMath:
+    def test_render_single_accepts_display_math_delimiters(self, tmp_path, resolution):
+        """LLM output may arrive wrapped in $$...$$; matplotlib mathtext cannot
+        parse display-math delimiters, so render_single must strip them instead
+        of wrapping them in another $...$ pair (regression: ParseException
+        'Expected end of text, found $' killed the generation job)."""
+        provider = Matplotlib()
+        provider.r2 = MagicMock()
+        provider.r2.upload_file.return_value = "https://example.com/eq.png"
+
+        with patch.object(Matplotlib, "OUTPUT_DIR", str(tmp_path)):
+            result = provider.render_single(
+                1,
+                r"$$\Delta t' = \frac{\Delta t}{\sqrt{1 - \frac{2GM}{rc^2}}}$$",
+                resolution,
+            )
+
+        assert isinstance(result, LatexResult)
+
+
 class TestRealLatex:
     @patch("aishorts.modules.latex.latex_providers.subprocess.run")
     @patch("aishorts.modules.latex.latex_providers.Image")
