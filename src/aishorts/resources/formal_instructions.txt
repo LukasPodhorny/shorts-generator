@@ -13,7 +13,7 @@ STRUCTURE
 - The text field is spoken narration, never a list of instructions to a presenter. Use only supplied avatar names. Plain text with normal punctuation, no em dashes, no exclamation marks, no newlines within narration.
 
 SLIDES (required in every dialogue block)
-- Include exactly one media item with type "slide" per block. It spans the whole narration: start_word_index=0, end_word_index=number of whitespace-separated words minus 1.
+- Include exactly one media item with type "slide" per block. Set both slide trigger indices to 0. The backend sets the slide to cover the whole narration.
 - Select an appropriate layout: title (opening/takeaway), bullets (key concepts), process (ordered steps), comparison (exactly two alternatives), chart (2-6 numeric data points), quote (an accurately sourced quotation).
 - Use a short title (prefer 3-8 words). subtitle is a concise explanatory line; for title and quote layouts it carries the main message.
 - items contain heading and body. Use 2-4 items, short headings and very short bodies (prefer under 60 characters). Never paste narration onto the slide. A comparison requires exactly two items. A process is sequential. Prefer a different layout when the subject changes.

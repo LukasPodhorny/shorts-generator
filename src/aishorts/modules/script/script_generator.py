@@ -4,7 +4,7 @@ from aishorts.modules.avatar import Avatar
 from aishorts.modules.llm.llm_providers import *
 from aishorts.modules.llm.llm_providers import LLMProvider
 from aishorts.utils.async_utils import await_or_thread
-from aishorts.modules.script.script import ReelSeries, SlideMedia
+from aishorts.modules.script.script import ReelSeries, SlideMedia, Trigger
 from aishorts.modules.llm.llm_generator import LLMGenerator
 from aishorts.modules.script.script import BlockType
 
@@ -194,16 +194,16 @@ class ScriptGenerator:
                     if media.id in ids:
                         raise ValueError("Every media item must have a unique id")
                     ids.add(media.id)
+                    if isinstance(media, SlideMedia):
+                        # Slides always fill the scene. Derive the span from the narration.
+                        media.trigger = Trigger(start_word_index=0, end_word_index=words - 1)
+                        continue
                     start, end = media.trigger.start_word_index, media.trigger.end_word_index
                     if not 0 <= start <= end < words:
                         raise ValueError(f"Media trigger {start}-{end} is outside this scene's {words} words")
-                    if media.type == "slide":
-                        if start != 0 or end != words - 1:
-                            raise ValueError("Slide triggers must cover the complete narration block")
-                    else:
-                        if any(start <= old_end and end >= old_start for old_start, old_end in occupied):
-                            raise ValueError("Non-slide visual triggers must not overlap")
-                        occupied.append((start, end))
+                    if any(start <= old_end and end >= old_start for old_start, old_end in occupied):
+                        raise ValueError("Non-slide visual triggers must not overlap")
+                    occupied.append((start, end))
                 if self.slide_render_config:
                     for has_visual in ({False, True} if occupied else {False}):
                         config = self.slide_render_config.model_copy(update={"has_visual": has_visual})

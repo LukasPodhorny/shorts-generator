@@ -87,7 +87,6 @@ def test_text_overflow_is_not_silently_clipped():
 
 @pytest.mark.parametrize("change,error", [
     (lambda b: setattr(b, "avatar", "Unknown"), "avatar"),
-    (lambda b: setattr(b.media[0].trigger, "end_word_index", 99), "outside"),
     (lambda b: b.media.clear(), "exactly one"),
     (lambda b: b.media.append(StockVideoMedia(type="stock_video", keywords="forest", trigger=Trigger(start_word_index=0, end_word_index=5))), "disabled"),
 ])
@@ -96,6 +95,29 @@ def test_script_contract_rejects_invalid_content(change, error):
     change(sample.blocks[0])
     with pytest.raises(ValueError, match=error):
         validator(stock=False).validate_script(ReelSeries(topic="Learning", reels=[sample]), 1)
+
+
+def test_stock_trigger_must_still_be_inside_narration():
+    sample = reel()
+    sample.blocks[0].media.append(StockVideoMedia(
+        type="stock_video", keywords="forest",
+        trigger=Trigger(start_word_index=0, end_word_index=99),
+    ))
+    with pytest.raises(ValueError, match="outside"):
+        validator(mode="documentary").validate_script(ReelSeries(topic="Learning", reels=[sample]))
+
+
+@pytest.mark.parametrize("end", [4, 99])
+def test_generated_slide_timing_uses_full_narration_without_retry(end):
+    generator = validator(mode="documentary")
+    sample = ReelSeries(topic="Learning", reels=[reel()])
+    sample.reels[0].blocks[0].media[0].trigger = Trigger(start_word_index=1, end_word_index=end)
+    generator.llm.generate_structure = AsyncMock(return_value=sample)
+
+    result = asyncio.run(generator.generate_script(user_input="teach"))
+
+    assert result.reels[0].blocks[0].media[0].trigger == Trigger(start_word_index=0, end_word_index=5)
+    generator.llm.generate_structure.assert_awaited_once()
 
 
 def test_script_retries_contract_failure():
