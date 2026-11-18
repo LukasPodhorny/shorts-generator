@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Literal, ClassVar, Any, Dict, Union
 from pydantic.json_schema import SkipJsonSchema
 from openai.types.audio import TranscriptionVerbose
@@ -17,6 +17,8 @@ class AssetType(Enum):
     STATICFACE = "staticface"
     MANIM = "manim"
     SONG = "song"
+    SLIDES = "slides"
+    STOCK_VIDEO = "stock_video"
 
 
 class BlockType(str, Enum):
@@ -53,7 +55,56 @@ class ManimMedia(MediaBase):
     prompt: str
 
 
-Media = Union[ImageMedia, LatexMedia, ManimMedia]
+class SlideItem(BaseModel):
+    heading: str = Field(min_length=1, max_length=64)
+    body: str = Field(default="", max_length=160)
+
+
+class ChartPoint(BaseModel):
+    label: str = Field(min_length=1, max_length=36)
+    value: float = Field(allow_inf_nan=False, ge=-1e12, le=1e12)
+
+
+class SlideMedia(MediaBase):
+    """Declarative teaching graphic. No executable code or HTML from the LLM."""
+
+    type: Literal["slide"]
+    layout: Literal["title", "bullets", "process", "comparison", "chart", "quote"]
+    title: str = Field(min_length=1, max_length=100)
+    subtitle: str = Field(default="", max_length=180)
+    items: List[SlideItem] = Field(default_factory=list, max_length=5)
+    chart: List[ChartPoint] = Field(default_factory=list, max_length=6)
+    unit: str = Field(default="", max_length=24)
+    source: str = Field(default="", max_length=220,
+                        description="Short source citation; required for charts. Use 'Illustrative example' for invented teaching data.")
+
+    @model_validator(mode="after")
+    def validate_layout(self):
+        if self.layout in {"bullets", "process"} and not self.items:
+            raise ValueError(f"{self.layout} slides require at least one item")
+        if self.layout == "comparison" and len(self.items) != 2:
+            raise ValueError("comparison slides require exactly two items")
+        if self.layout == "chart" and (len(self.chart) < 2 or not self.source.strip()):
+            raise ValueError("chart slides require at least two data points and a source")
+        if self.layout == "quote" and not self.subtitle.strip():
+            raise ValueError("quote slides require the quotation in subtitle")
+        return self
+
+
+class StockVideoMedia(MediaBase):
+    type: Literal["stock_video"]
+    keywords: str = Field(min_length=2, max_length=120,
+                          description="Concrete stock footage search, in English. Describe a subject or activity, never a URL.")
+
+
+Media = Union[ImageMedia, LatexMedia, ManimMedia, SlideMedia, StockVideoMedia]
+
+
+class MediaAttribution(BaseModel):
+    provider: str
+    creator: str
+    source_url: str
+    license: str
 
 
 class BlockAssets(BaseModel):
@@ -75,6 +126,7 @@ class BlockAssets(BaseModel):
     # Maps MediaBase.id -> filepath/url
     media_map: Dict[str, str] = Field(default_factory=dict)
     media_url_map: Dict[str, Union[str, dict]] = Field(default_factory=dict)
+    media_attributions: Dict[str, MediaAttribution] = Field(default_factory=dict)
 
 
 class DialogueBlock(BaseModel):
@@ -87,6 +139,8 @@ class DialogueBlock(BaseModel):
         AssetType.LATEX,
         AssetType.STATICFACE,
         AssetType.MANIM,
+        AssetType.SLIDES,
+        AssetType.STOCK_VIDEO,
     ]
     avatar: str
     text: str

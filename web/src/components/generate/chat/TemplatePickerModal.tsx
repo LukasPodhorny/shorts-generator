@@ -68,6 +68,7 @@ function TemplateCard({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      title={template.description}
       className="relative aspect-9/16 overflow-hidden rounded-2xl bg-neutral-900 text-left"
     >
       {/* Plays the preview while hovered; otherwise shows the thumbnail. */}
@@ -75,10 +76,14 @@ function TemplateCard({
         videoUrl={template.previewUrl}
         thumbnailUrl={template.thumbnailUrl ?? ''}
         isSelected={hovered}
+        fit={(template.width ?? 1080) > (template.height ?? 1920) ? 'contain' : 'cover'}
       />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-black/70 to-transparent p-2.5 pt-8">
         <span className="line-clamp-1 text-[13px] font-semibold text-white">
           {prettyTemplateName(template.name)}
+        </span>
+        <span className="mt-1 block text-[11px] text-white/75">
+          {(template.width ?? 1080) > (template.height ?? 1920) ? '16:9 Landscape' : '9:16 Portrait'}
         </span>
       </div>
       <div className="absolute right-2 top-2 flex items-center gap-1 drop-shadow-[0_1px_4px_rgba(0,0,0,0.7)]">

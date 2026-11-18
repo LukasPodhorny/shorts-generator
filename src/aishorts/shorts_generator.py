@@ -24,6 +24,8 @@ from aishorts.modules.question.question_generator import QuestionGenerator
 from aishorts.modules.lipsync.lipsync_providers import populate_reel_static_faces
 from pathlib import Path
 from aishorts.modules.song.song_generator import SongGenerator
+from aishorts.modules.slides.slide_generator import SlideGenerator
+from aishorts.modules.stock_video.stock_video_generator import StockVideoGenerator
 from aishorts.utils.r2_handler import CloudflareR2
 from typing import Callable, Awaitable, Any
 
@@ -83,6 +85,16 @@ class SongConfig(BaseModel):
     provider_config: dict = Field(default_factory=dict)
 
 
+class SlidesConfig(BaseModel):
+    provider: str = "pillow"
+    provider_config: dict = Field(default_factory=dict)
+
+
+class StockVideoConfig(BaseModel):
+    provider: str = "auto"
+    provider_config: dict = Field(default_factory=dict)
+
+
 class FFmpegConfig(BaseModel):
     provider: str = "modal_ffmpeg"
     compression_profile: str = "very_small"
@@ -107,6 +119,8 @@ class ShortsConfig(BaseModel):
     manim_config: ManimConfig = Field(default_factory=ManimConfig)
     question_config: QuestionConfig = Field(default_factory=QuestionConfig)
     song_config: SongConfig = Field(default_factory=SongConfig)
+    slides_config: SlidesConfig = Field(default_factory=SlidesConfig)
+    stock_video_config: StockVideoConfig = Field(default_factory=StockVideoConfig)
 
 
 class ShortsGenerator:
@@ -155,9 +169,19 @@ class ShortsGenerator:
             if b != BlockType.QUESTION or AssetType.QUESTION in self.required_assets
         ]
 
-        # --- Setup all the modules ---
+        # Optional providers are constructed only when used, so slide-only videos
+        # do not require keys or endpoints for images, music, animation or lipsync.
+        formal = template_cls.script_instructions_resource is not None
+        slide_render_config = template_cls(self.template_config).render_config if formal else None
+        base_instructions = shorts_config.script_config.base_instructions
+        if formal:
+            formal_instructions = read_text("aishorts.resources", template_cls.script_instructions_resource)
+            default_instructions = read_text("aishorts.resources", "base_instructions_default.txt")
+            if base_instructions and base_instructions != default_instructions:
+                formal_instructions += "\n\nADDITIONAL WRITING INSTRUCTIONS:\n" + base_instructions
+            base_instructions = formal_instructions
 
-        self.image_gen = ImageGenerator(
+        self.image_gen = self._build_generator(AssetType.IMAGES, ImageGenerator,
             provider=shorts_config.images_config.provider,
             max_width=self.template_config.max_image_width,
             max_height=self.template_config.max_image_height,
@@ -166,7 +190,7 @@ class ShortsGenerator:
             **shorts_config.images_config.provider_config,
         )
 
-        self.latex_gen = LatexGenerator(
+        self.latex_gen = self._build_generator(AssetType.LATEX, LatexGenerator,
             provider=shorts_config.latex_config.provider,
             width=self.template_config.latex_width,
             height=self.template_config.latex_height,
@@ -174,36 +198,40 @@ class ShortsGenerator:
             **shorts_config.latex_config.provider_config,
         )
 
-        self.manim_gen = ManimGenerator(
+        self.manim_gen = self._build_generator(AssetType.MANIM, ManimGenerator,
             provider=shorts_config.manim_config.provider,
             base_instructions=shorts_config.manim_config.base_instructions,
             **shorts_config.manim_config.provider_config,
         )
 
         self.script_gen = ScriptGenerator(
-            base_instructions=shorts_config.script_config.base_instructions,
+            base_instructions=base_instructions,
             avatars=self.avatars,
             generate_latex=AssetType.LATEX in self.required_assets,
             generate_image=AssetType.IMAGES in self.required_assets,
             generate_manim=AssetType.MANIM in self.required_assets,
             generate_question=AssetType.QUESTION in self.required_assets,
+            generate_slides=AssetType.SLIDES in self.required_assets,
+            generate_stock_video=AssetType.STOCK_VIDEO in self.required_assets,
+            slide_render_config=slide_render_config,
+            template_description=template_cls.description,
             provider=shorts_config.script_config.provider,
             allowed_blocks=self.allowed_blocks,
             **shorts_config.script_config.provider_config,
         )
 
-        self.voice_gen = VoiceGenerator(
+        self.voice_gen = self._build_generator(AssetType.VOICE, VoiceGenerator,
             avatars=self.avatars,
             tts_f5tts_api_key=self.tts_f5tts_api_key,
             tts_lemonfox_api_key=self.tts_lemonfox_api_key,
         )
 
-        self.lipsync_gen = LipsyncGenerator(
+        self.lipsync_gen = self._build_generator(AssetType.LIPSYNC, LipsyncGenerator,
             avatars=self.avatars, lipsync_float_api_key=self.lipsync_float_api_key
         )
 
-        self.subtitle_gen = SubtitleGenerator(
-            shorts_config.subtitle_config.provider,
+        self.subtitle_gen = self._build_generator(AssetType.SUBTITLES, SubtitleGenerator,
+            provider=shorts_config.subtitle_config.provider,
             **shorts_config.subtitle_config.provider_config,
             api_key=self.subtitles_api_key,
         )
@@ -214,29 +242,47 @@ class ShortsGenerator:
                 self.template_config.get_question_graphic_class()
             )
 
-        self.question_gen = QuestionGenerator(
+        self.question_gen = self._build_generator(AssetType.QUESTION, QuestionGenerator,
             provider=shorts_config.question_config.provider,
             **question_provider_config,
         )
 
+        ffmpeg_config = shorts_config.ffmpeg_config
+        if formal:
+            # Slides need crisp text; explicit operator quality settings still win.
+            overrides = {key: value for key, value in {
+                "compression_profile": "high_quality", "max_video_bitrate": "6M", "audio_bitrate": "128k",
+            }.items() if key not in ffmpeg_config.model_fields_set}
+            ffmpeg_config = ffmpeg_config.model_copy(update=overrides)
         self.video_gen = VideoGenerator(
             video_template=shorts_config.video_template,
-            provider=shorts_config.ffmpeg_config.provider,
+            provider=ffmpeg_config.provider,
             download_results=False,
-            compression_profile=shorts_config.ffmpeg_config.compression_profile,
-            quality_value=shorts_config.ffmpeg_config.quality_value,
-            max_video_bitrate=shorts_config.ffmpeg_config.max_video_bitrate,
-            audio_bitrate=shorts_config.ffmpeg_config.audio_bitrate,
-            encoder_preset=shorts_config.ffmpeg_config.encoder_preset,
+            compression_profile=ffmpeg_config.compression_profile,
+            quality_value=ffmpeg_config.quality_value,
+            max_video_bitrate=ffmpeg_config.max_video_bitrate,
+            audio_bitrate=ffmpeg_config.audio_bitrate,
+            encoder_preset=ffmpeg_config.encoder_preset,
             api_key=self.ffmpeg_api_key,
-            **shorts_config.ffmpeg_config.provider_config,
+            **ffmpeg_config.provider_config,
         )
 
-        self.song_gen = SongGenerator(
+        self.song_gen = self._build_generator(AssetType.SONG, SongGenerator,
             provider=shorts_config.song_config.provider,
             minimax_api_key=self.minimax_api_key,
             style_prompt=self.template_config.style_prompt,
             **shorts_config.song_config.provider_config,
+        )
+
+        self.slide_gen = self._build_generator(AssetType.SLIDES, SlideGenerator,
+            provider=shorts_config.slides_config.provider,
+            render_config=slide_render_config,
+            **shorts_config.slides_config.provider_config,
+        )
+        self.stock_video_gen = self._build_generator(AssetType.STOCK_VIDEO, StockVideoGenerator,
+            provider=shorts_config.stock_video_config.provider,
+            orientation="landscape" if template_cls.width > template_cls.height else "portrait",
+            **shorts_config.stock_video_config.provider_config,
         )
 
         # -- Group generators for pipeline execution --
@@ -247,13 +293,18 @@ class ShortsGenerator:
             AssetType.LATEX: self.latex_gen,
             AssetType.MANIM: self.manim_gen,
             AssetType.SONG: self.song_gen,
+            AssetType.STOCK_VIDEO: self.stock_video_gen,
         }
 
         self.secondary_generators = {
             AssetType.LIPSYNC: self.lipsync_gen,
             AssetType.SUBTITLES: self.subtitle_gen,
             AssetType.QUESTION: self.question_gen,
+            AssetType.SLIDES: self.slide_gen,
         }
+
+    def _build_generator(self, asset, factory, **kwargs):
+        return factory(**kwargs) if asset in self.required_assets else None
 
     def _setup_logging(self):
         self.logger = logging.getLogger("ShortsGenerator")
@@ -511,6 +562,7 @@ class ShortsGenerator:
 
         reel_outputs = []
         intermediate_keys = []
+        thumbnail_task = None
 
         try:
             # --- 1. Load Checkpoint Logic ---
@@ -554,6 +606,7 @@ class ShortsGenerator:
                     if mock_script:
                         reel_json = Path(mock_script).read_text()
                         reel_series = ReelSeries.model_validate_json(reel_json)
+                        await asyncio.to_thread(self.script_gen.validate_script, reel_series, amount)
                     else:
                         reel_series = await self.script_gen.generate_script(
                             num_reels=amount,
@@ -576,12 +629,36 @@ class ShortsGenerator:
 
             # --- 2.5. Thumbnail Generation (runs concurrently with primary+secondary) ---
 
-            series_thumbnail_url = None
-            reel_thumbnails = {}  # Map reel index to thumbnail URL
+            series_thumbnail_url = reel_series.thumbnail_url
+            reel_thumbnails = {i: reel.thumbnail_url for i, reel in enumerate(reel_series.reels) if reel.thumbnail_url}
 
             async def _generate_all_thumbnails():
                 """Generate all thumbnails concurrently."""
                 nonlocal series_thumbnail_url
+                if AssetType.SLIDES in self.required_assets:
+                    from aishorts.modules.slides.renderer import render_slide
+                    from aishorts.modules.script.script import SlideMedia
+
+                    # Render an actual teaching slide, with the selected aspect ratio.
+                    # These covers need no image API and survive checkpoint resumes.
+                    for i, reel in enumerate(reel_series.reels):
+                        if reel.thumbnail_url:
+                            continue
+                        slide = next(m for b in reel.blocks for m in b.media if isinstance(m, SlideMedia))
+                        path = self.slide_gen.output_dir / f"thumbnail_{uuid.uuid4().hex}.png"
+                        try:
+                            await asyncio.to_thread(render_slide, slide, self.slide_gen.render_config, path)
+                            url = await asyncio.to_thread(CloudflareR2().upload_file, str(path), f"generated/thumbnails/{path.name}")
+                            reel.thumbnail_url = reel_thumbnails[i] = url
+                        except Exception as exc:
+                            self.logger.warning("Slide thumbnail failed: %s", exc)
+                        finally:
+                            path.unlink(missing_ok=True)
+                    series_thumbnail_url = next(iter(reel_thumbnails.values()), series_thumbnail_url)
+                    reel_series.thumbnail_url = series_thumbnail_url
+                    if status_callback:
+                        await status_callback(PipelineStage.SCRIPT, reel_series)
+                    return
                 if AssetType.IMAGES not in self.required_assets:
                     return
 
@@ -719,7 +796,7 @@ class ShortsGenerator:
 
                 return i, ReelOutput(
                     title=reel.title,
-                    description=reel.description,
+                    description=self._description_with_credits(reel),
                     local_path=result.filepath or "",
                     presigned_url=presigned_url,
                     thumbnail_url=reel_thumbnails.get(i),
@@ -740,6 +817,10 @@ class ShortsGenerator:
             )
 
         finally:
+            # A failed asset stage must not leave a thumbnail writer racing cleanup.
+            if thumbnail_task is not None and not thumbnail_task.done():
+                thumbnail_task.cancel()
+                await asyncio.gather(thumbnail_task, return_exceptions=True)
             # --- 7. Cleanup ---
             try:
                 await self._cleanup_assets(
@@ -758,6 +839,16 @@ class ShortsGenerator:
                         log_path, self._r2_log_key(session_id, "run.log")
                     )
                 self._detach_session_log()
+
+    @staticmethod
+    def _description_with_credits(reel):
+        credits = list(dict.fromkeys(
+            f"{a.creator} / {a.provider}: {a.source_url} ({a.license})"
+            for block in reel.blocks for a in block.assets.media_attributions.values()
+        ))
+        if not credits:
+            return reel.description
+        return "\n\n".join(filter(None, [reel.description, "Footage credits:\n" + "\n".join(credits)]))
 
     async def _cleanup_assets(
         self,

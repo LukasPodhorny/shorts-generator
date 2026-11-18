@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from aishorts.modules.script.script_generator import ScriptGenerator
 
@@ -50,19 +51,22 @@ def test_generate_instructions(script_generator):
     assert "Number of reels to generate: 3" in instr
 
 
-@pytest.mark.asyncio
-async def test_generate_script_flow(script_generator):
+def test_generate_script_flow(script_generator):
     # Mock await_or_thread to just return the result of the func
     async def mock_runner(func, *args, **kwargs):
         return await func(*args, **kwargs)
 
-    script_generator.llm.generate_script = AsyncMock(return_value="Success")
+    from aishorts.modules.script.script import ReelSeries, Reel, DialogueBlock
+    expected = ReelSeries(topic="Test", reels=[Reel(title="Test", blocks=[
+        DialogueBlock(type="dialogue", avatar="TestAvatar", text="A useful explanation.")
+    ])])
+    script_generator.llm.generate_structure = AsyncMock(return_value=expected)
 
     with patch(
         "aishorts.modules.script.script_generator.await_or_thread",
         side_effect=mock_runner,
     ):
-        result = await script_generator.generate_script(num_reels=1, user_input="test")
+        result = asyncio.run(script_generator.generate_script(num_reels=1, user_input="test"))
 
-    assert result == "Success"
-    script_generator.llm.generate_script.assert_called_once()
+    assert result == expected
+    script_generator.llm.generate_structure.assert_called_once()

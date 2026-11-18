@@ -28,7 +28,14 @@ export function TemplateCard({
         videoUrl={template.previewUrl}
         thumbnailUrl={template.thumbnailUrl ?? ''}
         isSelected={isSelected}
+        fit={(template.width ?? 1080) > (template.height ?? 1920) ? 'contain' : 'cover'}
       />
+
+      <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 to-transparent px-5 pb-6 pt-12 text-white">
+        <p className="text-xs font-medium opacity-75">{(template.width ?? 1080) > (template.height ?? 1920) ? '16:9 · Landscape' : '9:16 · Portrait'}</p>
+        <p className="mt-1 text-lg font-semibold capitalize">{template.name.replaceAll('_', ' ')}</p>
+        {template.description && <p className="mt-2 line-clamp-3 text-sm text-white/75">{template.description}</p>}
+      </div>
 
       {isSelected && (
         <div className="absolute left-[11px] right-[60px] top-[11px]">

@@ -78,6 +78,7 @@ class PlanCatalog(BaseModel):
     templates: dict[str, list[str]]
     # avatar name -> short instruction snippet (helps the model pick a fit)
     avatars: dict[str, str]
+    template_descriptions: dict[str, str] = Field(default_factory=dict)
 
 
 def _parser_provider() -> LLMProvider:
@@ -121,6 +122,8 @@ def _serialize_input(
     for name, tags in catalog.templates.items():
         tag_str = ", ".join(tags) if tags else "no toggleable tags"
         lines.append(f"- {name}: {tag_str}")
+        if catalog.template_descriptions.get(name):
+            lines.append(f"  Format and use: {catalog.template_descriptions[name]}")
 
     lines.append("\nAVAILABLE AVATARS (name -> persona):")
     for name, instructions in catalog.avatars.items():

@@ -39,6 +39,7 @@ export default function VideoPlayerScreen() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const detailsRef = useRef<HTMLDialogElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playing, setPlaying] = useState(false);
   const [showControls, setShowControls] = useState(true);
@@ -49,6 +50,7 @@ export default function VideoPlayerScreen() {
   // True until the video has buffered enough to play, and again whenever it
   // stalls — drives the centered loading spinner.
   const [buffering, setBuffering] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
 
   const close = useCallback(() => navigate(-1), [navigate]);
 
@@ -74,15 +76,22 @@ export default function VideoPlayerScreen() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (showDetails) return;
       if (e.key === 'Escape') close();
       else if (e.key === ' ') {
+        if (e.target instanceof HTMLElement && e.target.closest('button, a, input')) return;
         e.preventDefault();
         togglePlay();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [close, togglePlay]);
+  }, [close, togglePlay, showDetails]);
+
+  useEffect(() => {
+    if (showDetails) detailsRef.current?.showModal();
+    else detailsRef.current?.close();
+  }, [showDetails]);
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(!!document.fullscreenElement);
@@ -177,6 +186,24 @@ export default function VideoPlayerScreen() {
         </div>
       )}
 
+      <dialog
+        ref={detailsRef}
+        aria-label="Video details and credits"
+        className="fixed inset-0 m-auto max-h-[70%] w-[calc(100%_-_3rem)] max-w-xl overflow-auto rounded-2xl bg-neutral-900 p-6 text-white backdrop:bg-black/60"
+        onCancel={(event) => { event.preventDefault(); setShowDetails(false); }}
+        onClose={() => setShowDetails(false)}
+      >
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <h2 className="text-lg font-semibold">{reel?.title || 'Video details'}</h2>
+          <button type="button" autoFocus aria-label="Close details" onClick={() => setShowDetails(false)}><CloseIcon /></button>
+        </div>
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/80">
+          {reel?.description?.split(/(https?:\/\/[^\s)]+)/g).map((part, index) => /^https?:\/\//.test(part)
+            ? <a key={index} className="text-cyan-300 underline" href={part} target="_blank" rel="noopener noreferrer">{part}</a>
+            : part)}
+        </p>
+      </dialog>
+
       {/* Controls overlay */}
       <div
         className="absolute inset-0 transition-opacity duration-200"
@@ -198,6 +225,7 @@ export default function VideoPlayerScreen() {
             <CloseIcon />
           </button>
           <div className="flex items-center gap-1 text-white">
+            {reel?.description && <button type="button" className="rounded-full px-3 py-2 text-sm hover:bg-white/15" onClick={() => { videoRef.current?.pause(); setShowDetails(true); }}>Details & credits</button>}
             <button
               type="button"
               onClick={share}

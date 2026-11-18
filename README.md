@@ -1,5 +1,7 @@
 # pdftoreel
 
+Formal video formats are available as `lecture` (16:9), `documentary` (16:9), and `briefing` (9:16), with structured teaching slides and modular stock footage. See [Výstup 2: templates, modules, samples and deployment](docs/FORMAL_VIDEO_TEMPLATES.md).
+
 AI short-form video generator. **One prompt/file → a finished engaging short** — talking avatars, TTS, subtitles, b-roll images, Manim/LaTeX, background music etc.
 
 - Landing page: [pdftoreel.com](https://pdftoreel.com)

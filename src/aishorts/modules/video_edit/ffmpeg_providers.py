@@ -200,8 +200,11 @@ class LocalFFmpeg(FFmpegProvider):
         "h264_nvenc" if FFmpegProvider.nvenc_available() else "libx264"
     )
 
-    def __init__(self, **kwargs):
+    def __init__(self, render_timeout: float = 1800, **kwargs):
         super().__init__(**kwargs)
+        if render_timeout <= 0:
+            raise ValueError("render_timeout must be positive")
+        self.render_timeout = render_timeout
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
 
     async def render(
@@ -230,7 +233,14 @@ class LocalFFmpeg(FFmpegProvider):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=self.render_timeout)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                if process.returncode is None:
+                    process.kill()
+                await process.communicate()
+                Path(output_path).unlink(missing_ok=True)
+                raise
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(
                     process.returncode, ffmpeg_command, output=stdout, stderr=stderr

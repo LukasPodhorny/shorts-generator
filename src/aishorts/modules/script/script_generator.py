@@ -1,9 +1,10 @@
 import logging
+import asyncio
 from aishorts.modules.avatar import Avatar
 from aishorts.modules.llm.llm_providers import *
 from aishorts.modules.llm.llm_providers import LLMProvider
 from aishorts.utils.async_utils import await_or_thread
-from aishorts.modules.script.script import ReelSeries
+from aishorts.modules.script.script import ReelSeries, SlideMedia
 from aishorts.modules.llm.llm_generator import LLMGenerator
 from aishorts.modules.script.script import BlockType
 
@@ -42,7 +43,8 @@ class ScriptGenerator:
         avatar_sections = []
         
         for avatar in self.avatars:
-            avatar_sections.append(f"- Avatar '{avatar.name}': {avatar.instructions}")
+            persona = "Professional narrator; use this voice identity without comic role-play." if self.generate_slides else avatar.instructions
+            avatar_sections.append(f"- Avatar '{avatar.name}': {persona}")
         avatar_block = "AVATARS:\n" + "\n".join(avatar_sections)
 
         # ------------------------------
@@ -54,7 +56,7 @@ class ScriptGenerator:
                 _bool_rule(
                     self.generate_image,
                     "- Images: ENABLED (you may generate image media objects).",
-                    "- Images: ENABLED (you may generate image media objects).",
+                    "- Images: DISABLED (never produce image media objects).",
                 ),
                 _bool_rule(
                     self.generate_latex,
@@ -66,6 +68,10 @@ class ScriptGenerator:
                     "- Manim: ENABLED (you may generate manim media objects with a prompt describing the animation).",
                     "- Manim: DISABLED (never produce manim media objects).",
                 ),
+                _bool_rule(self.generate_slides, "- Slides: ENABLED (one structured slide per narration block).",
+                           "- Slides: DISABLED (never produce slide media objects)."),
+                _bool_rule(self.generate_stock_video, "- Stock video: ENABLED (stock_video objects with concrete search keywords).",
+                           "- Stock video: DISABLED (never produce stock_video media objects)."),
             ]
         )
 
@@ -116,6 +122,8 @@ class ScriptGenerator:
             + "\n\n"
             + blocks_block
         )
+        if self.template_description:
+            instructions += "\n\nPRESENTATION FORMAT:\n" + self.template_description
 
         return instructions
 
@@ -128,6 +136,10 @@ class ScriptGenerator:
         generate_manim: bool = False,
         provider: str = "chatgpt",
         allowed_blocks: list[BlockType] = None,
+        generate_slides: bool = False,
+        generate_stock_video: bool = False,
+        slide_render_config=None,
+        template_description: str = "",
         **kwargs,
     ):
         self.base_instructions = base_instructions
@@ -135,12 +147,67 @@ class ScriptGenerator:
         self.generate_latex = generate_latex
         self.generate_image = generate_image
         self.generate_manim = generate_manim
-        self.allowed_blocks = allowed_blocks
+        self.allowed_blocks = allowed_blocks if allowed_blocks is not None else [BlockType.DIALOGUE]
+        self.generate_slides = generate_slides
+        self.generate_stock_video = generate_stock_video
+        self.slide_render_config = slide_render_config
+        self.template_description = template_description
         self.provider = provider.lower()
         self.logger = logging.getLogger("ShortsGenerator.ScriptGenerator")
 
         cls = LLMProvider.get(self.provider)
+        if cls is None:
+            raise ValueError(f"Unknown LLM provider '{self.provider}'")
         self.llm = cls(**kwargs)
+
+    def validate_script(self, series: ReelSeries, num_reels: int | None = None):
+        """Validate formal scenes before any paid asset generation starts."""
+        if not self.generate_slides:
+            return
+        from aishorts.modules.slides.renderer import render_slide
+
+        if not series.reels or (num_reels is not None and len(series.reels) != num_reels):
+            raise ValueError("Return exactly the requested number of nonempty reels")
+        allowed_media = {name for name, enabled in {
+            "slide": self.generate_slides, "image": self.generate_image,
+            "latex": self.generate_latex, "manim": self.generate_manim,
+            "stock_video": self.generate_stock_video,
+        }.items() if enabled}
+        names = {avatar.name for avatar in self.avatars}
+        ids = set()
+        for reel in series.reels:
+            if not 1 <= len(reel.blocks) <= 32:
+                raise ValueError("Each formal video requires 1-32 scenes")
+            for block in reel.blocks:
+                if block.type not in self.allowed_blocks or getattr(block, "avatar", None) not in names:
+                    raise ValueError("Use only allowed narration blocks and supplied avatar names")
+                words = len(block.text.split())
+                if not 1 <= words <= 180:
+                    raise ValueError("Each narration scene requires 1-180 words")
+                slides = [m for m in block.media if isinstance(m, SlideMedia)]
+                if len(slides) != 1 or len(block.media) > 3:
+                    raise ValueError("Each scene needs exactly one slide and at most two additional visuals")
+                occupied = []
+                for media in block.media:
+                    if media.type not in allowed_media:
+                        raise ValueError(f"Media type {media.type} is disabled for this template")
+                    if media.id in ids:
+                        raise ValueError("Every media item must have a unique id")
+                    ids.add(media.id)
+                    start, end = media.trigger.start_word_index, media.trigger.end_word_index
+                    if not 0 <= start <= end < words:
+                        raise ValueError(f"Media trigger {start}-{end} is outside this scene's {words} words")
+                    if media.type == "slide":
+                        if start != 0 or end != words - 1:
+                            raise ValueError("Slide triggers must cover the complete narration block")
+                    else:
+                        if any(start <= old_end and end >= old_start for old_start, old_end in occupied):
+                            raise ValueError("Non-slide visual triggers must not overlap")
+                        occupied.append((start, end))
+                if self.slide_render_config:
+                    for has_visual in ({False, True} if occupied else {False}):
+                        config = self.slide_render_config.model_copy(update={"has_visual": has_visual})
+                        render_slide(slides[0], config)  # measures actual glyphs; no files or network
 
     async def generate_script(
         self,
@@ -158,12 +225,20 @@ class ScriptGenerator:
         self.logger.info("Script generator user_input:\n%s", user_input)
         func = self.llm.generate_structure
 
-        return await await_or_thread(
-            func,
-            instructions=instructions,
-            files=files,
-            links=links,
-            user_input=user_input,
-            response_schema=ReelSeries,
-            **kwargs,
-        )
+        attempts = 2 if self.generate_slides else 1
+        for attempt in range(attempts):
+            try:
+                result = await await_or_thread(
+                    func, instructions=instructions, files=files, links=links,
+                    user_input=user_input, response_schema=ReelSeries, **kwargs,
+                )
+                result = ReelSeries.model_validate(result)
+                await asyncio.to_thread(self.validate_script, result, num_reels)
+                return result
+            except ValueError as exc:
+                if attempt == attempts - 1:
+                    raise
+                instructions += (
+                    f"\n\nThe previous script failed validation: {exc}. "
+                    "Return a corrected complete script. Shorten slide text if it does not fit."
+                )

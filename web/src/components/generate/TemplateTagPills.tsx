@@ -67,6 +67,9 @@ function titleCase(s: string) {
 }
 
 function styleFor(assetType: string): TagStyle {
+  if (assetType === 'stock_video') return { icon: SparkleIcon, color: '#42BFA5', label: 'Stock footage' };
+  if (assetType === 'latex') return { icon: FunctionsIcon, color: '#7C5CFF', label: 'Equations' };
+  if (assetType === 'images') return { icon: SparkleIcon, color: '#4FC3F7', label: 'Images' };
   if (assetType === 'manim') return { icon: FunctionsIcon, color: '#7C5CFF', label: 'Manim' };
   if (assetType === 'question') return { icon: QuizIcon, color: '#FFA726', label: 'Quiz' };
   return { icon: SparkleIcon, color: '#4FC3F7', label: titleCase(assetType) };

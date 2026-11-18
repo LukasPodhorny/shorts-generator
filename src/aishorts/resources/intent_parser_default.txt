@@ -21,3 +21,5 @@ YOUR OUTPUT is the structured config only: template, avatars, amount, enabled ta
    - enabled_tags: turn on optional modules only when the request or source clearly calls for them (e.g. enable a Manim/animation tag for technical or math topics, an end-quiz tag if the user wants a quiz). When unsure, leave it unset so the template's own defaults apply. Only use tag values that the chosen template actually offers.
 
 5. When the request is vague, make a reasonable, conservative choice rather than refusing. Do not ask questions; emit your best structured guess.
+
+6. Read the catalog's format descriptions as well as its names. Prefer a 16:9 lecture for formal lessons, academic material, courses and workplace training. Prefer a 16:9 documentary for real-world science, history, geography and footage-led explanations. Prefer a 9:16 briefing for formal mobile revision and professional social posts. Respect explicit landscape/portrait requests. Gameplay and song formats suit entertainment requests. For narration-only formal formats, choose one suitable voice; it will not be shown as a talking avatar. Optional footage is illustrative and may fall back to slides.

@@ -38,6 +38,7 @@ logger = logging.getLogger("ShortsGenerator.Plan")
 def load_plan_catalog(session: Session) -> PlanCatalog:
     """Load the template/avatar choices the parser is allowed to pick from."""
     templates: dict[str, list[str]] = {}
+    descriptions: dict[str, str] = {}
     for t in session.exec(select(VideoTemplate)).all():
         tags: list[str] = []
         edit_template_name = (t.data or {}).get("edit_template", "")
@@ -45,6 +46,7 @@ def load_plan_catalog(session: Session) -> PlanCatalog:
             try:
                 template_cls = EditTemplate.get(edit_template_name.lower())
                 tags = [a.value for a in template_cls.tag_assets]
+                descriptions[t.name] = template_cls.description
             except ValueError:
                 tags = []
         templates[t.name] = tags
@@ -53,7 +55,7 @@ def load_plan_catalog(session: Session) -> PlanCatalog:
     for a in session.exec(select(Avatar)).all():
         avatars[a.name] = (a.data or {}).get("instructions", "")
 
-    return PlanCatalog(templates=templates, avatars=avatars)
+    return PlanCatalog(templates=templates, avatars=avatars, template_descriptions=descriptions)
 
 
 def validate_owned_files(session: Session, uid: str, file_keys: list[str]) -> None:

@@ -1,5 +1,7 @@
 # `aishorts` — Core Generation Library
 
+For the new `lecture`, `documentary`, and `briefing` templates, slide/stock providers, formal script contract, and Modal setup, see [Formal video templates](../../docs/FORMAL_VIDEO_TEMPLATES.md). These formats add narration-led 16:9 and 9:16 output alongside the gameplay pipeline described below.
+
 `aishorts` is the engine behind pdftoreel: it turns a prompt and/or input documents into finished short-form videos (talking avatars, TTS, subtitles, b-roll images, LaTeX/Manim visuals, quiz motion graphics, AI songs). It is a pure Python library with no web concerns — the FastAPI backend (`api/`) and the CLI (`cli/`) are thin consumers of it.
 
 Public API (re-exported from `aishorts/__init__.py`):
@@ -214,7 +216,7 @@ Shared abstraction for text models; used by the script generator and the Manim c
 
 | Provider | Default model | Auth (env) | Notes |
 |---|---|---|---|
-| `gemini` | `gemini-3-pro-preview` | `GEMINI_API_KEY` | `temperature=0.7, top_p=0.9` |
+| `gemini` | `gemini-3.1-pro-preview` | `GEMINI_API_KEY` | `temperature=0.7, top_p=0.9` |
 | `chatgpt` | `gpt-5` | `OPENAI_API_KEY` (SDK default) | Responses API (`responses.parse`) |
 | `minimax` | `minimaxai/minimax-m2.5` via NVIDIA NIM | `NVIDIA_API_KEY` | |
 | `groq` | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | auto-throttles reasoning models (`gpt-oss/qwen3/deepseek-r1` → `reasoning_effort=low`, hidden format) so thinking tokens don't starve the JSON budget |

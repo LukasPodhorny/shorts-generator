@@ -7,14 +7,21 @@ export function CarouselVideoPlayer({
   videoUrl,
   thumbnailUrl,
   isSelected,
+  fit = 'cover',
 }: {
   videoUrl: string;
   thumbnailUrl: string;
   isSelected: boolean;
+  fit?: 'cover' | 'contain';
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [canPlay, setCanPlay] = useState(false);
   const [errored, setErrored] = useState(!videoUrl.trim());
+
+  useEffect(() => {
+    setCanPlay(false);
+    setErrored(!videoUrl.trim());
+  }, [videoUrl]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -35,7 +42,8 @@ export function CarouselVideoPlayer({
           <img
             src={thumbnailUrl}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full"
+            style={{ objectFit: fit }}
             onError={() => setErrored(true)}
           />
         ) : (
@@ -52,8 +60,8 @@ export function CarouselVideoPlayer({
           preload="metadata"
           onCanPlay={() => setCanPlay(true)}
           onError={() => setErrored(true)}
-          className="absolute inset-0 h-full w-full object-cover"
-          style={{ opacity: canPlay ? 1 : 0 }}
+          className="absolute inset-0 h-full w-full"
+          style={{ opacity: canPlay ? 1 : 0, objectFit: fit }}
         />
       )}
     </div>

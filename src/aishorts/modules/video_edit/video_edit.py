@@ -11,6 +11,7 @@ from typing import List, Union, Dict, Optional, Any
 from pathlib import Path
 from aishorts.utils.image_utils import ImageStyle
 from aishorts.modules.script.script import Reel, Block, AssetType
+from aishorts.modules.slides.style import PresentationStyle
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,7 @@ class SubtitleStyle(BaseModel):
 
 
 class TemplateConfig(BaseModel):
+    presentation_style: Optional[PresentationStyle] = None
     bg_video: Union[str, dict, None] = None
     music: Union[str, dict, None] = None
     subtitle_style: Optional[SubtitleStyle] = Field(default_factory=SubtitleStyle)
@@ -161,6 +163,10 @@ class EditTemplate(Provider):
     allowed_blocks: List[Any] = []
     # Easing used for the media overlay fade in/out (slide is always quart).
     media_fade_easing: str = "linear"
+    width: int = 1080
+    height: int = 1920
+    description: str = "Fast-paced portrait video with avatars and gameplay."
+    script_instructions_resource: Optional[str] = None
 
     @classmethod
     def resolve_required_assets(
@@ -310,7 +316,8 @@ class EditTemplate(Provider):
         return segments, final_subtitles, media_timings, current_time
 
     def transcription_to_ass(
-        self, transcription: TranscriptionVerbose, style: SubtitleStyle
+        self, transcription: TranscriptionVerbose, style: SubtitleStyle,
+        width: int = 1080, height: int = 1920,
     ) -> AssSubtitles:
         """
         Build an ASS subtitle file with optional karaoke effect.
@@ -380,8 +387,8 @@ class EditTemplate(Provider):
 
         # === ASS header ===
         header = f"""[Script Info]
-        PlayResX: 1080
-        PlayResY: 1920
+        PlayResX: {width}
+        PlayResY: {height}
         ScaledBorderAndShadow: yes
         
         [V4+ Styles]

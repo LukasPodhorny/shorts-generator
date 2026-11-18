@@ -103,16 +103,24 @@ export interface VideoTemplate {
   previewUrl: string;
   thumbnailUrl: string | null;
   tags: TemplateTag[];
+  description?: string;
+  width?: number;
+  height?: number;
 }
 
 export function parseVideoTemplate(json: Record<string, unknown>): VideoTemplate {
   const rawTags = (json.tags as Record<string, unknown>[]) ?? [];
+  const bundled = ['lecture', 'documentary', 'briefing'].includes(json.name as string)
+    ? `/template-previews/${json.name}` : null;
   return {
     id: json.id as number,
     name: json.name as string,
     credits: (json.credits as number) ?? 1,
-    previewUrl: (json.preview_url as string) ?? '',
-    thumbnailUrl: (json.thumbnail_url as string) ?? null,
+    previewUrl: (json.preview_url as string) || (bundled ? `${bundled}.mp4` : ''),
+    thumbnailUrl: (json.thumbnail_url as string) || (bundled ? `${bundled}.png` : null),
+    description: (json.description as string) ?? '',
+    width: (json.width as number) ?? 1080,
+    height: (json.height as number) ?? 1920,
     tags: rawTags.map((t) => ({
       assetType: t.asset_type as string,
       defaultEnabled: (t.default as boolean) ?? true,

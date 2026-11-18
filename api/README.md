@@ -268,3 +268,7 @@ bounds). Production rollout is documented in `docs/MCP_ROLLOUT.md`.
 
 - **Frontend**: the React app in `web/` consumes these endpoints (public catalog to render the generate form, `/api/upload` for sources, `/api/generate` + the SSE stream for live progress, `/api/users` for billing).
 - **CLI**: `cli/main.py` is the other consumer of the core library and the source of the seed configs (`cli/configs/avatars.json`, `cli/configs/video_templates.json`) used by `populate_db`.
+
+## 10. Formal educational video formats
+
+`lecture`, `documentary`, and `briefing` are installed with `python -m api.install_formal_templates --apply`. This preserves existing catalog rows and prices. Public template responses include `description`, `width`, and `height`; the planner sees the same format descriptions. Generation profiles now accept `slides_config` and `stock_video_config`. See [installation, provider configuration and samples](../docs/FORMAL_VIDEO_TEMPLATES.md).

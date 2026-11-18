@@ -6,13 +6,16 @@ export function SafeImage({
   url,
   className = '',
   alt = '',
+  preserveLandscape = false,
 }: {
   url: string;
   className?: string;
   alt?: string;
+  preserveLandscape?: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [landscape, setLandscape] = useState(false);
 
   if (!url || error) {
     return (
@@ -28,10 +31,13 @@ export function SafeImage({
       <img
         src={url}
         alt={alt}
-        onLoad={() => setLoaded(true)}
+        onLoad={(event) => {
+          setLoaded(true);
+          setLandscape(event.currentTarget.naturalWidth > event.currentTarget.naturalHeight);
+        }}
         onError={() => setError(true)}
-        className="h-full w-full object-cover"
-        style={{ opacity: loaded ? 1 : 0 }}
+        className="h-full w-full"
+        style={{ opacity: loaded ? 1 : 0, objectFit: preserveLandscape && landscape ? 'contain' : 'cover' }}
       />
     </div>
   );

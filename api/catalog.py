@@ -23,6 +23,7 @@ def list_video_templates(session: Session) -> list[VideoTemplateRead]:
     for t in session.exec(select(VideoTemplate)).all():
         assert t.id is not None  # rows read from the DB always have a PK
         tags: list[VideoTemplateTag] = []
+        template_cls = None
         edit_template_name = (t.data or {}).get("edit_template", "")
         if edit_template_name:
             try:
@@ -42,6 +43,9 @@ def list_video_templates(session: Session) -> list[VideoTemplateRead]:
                 preview_url=t.preview_url,
                 thumbnail_url=t.thumbnail_url,
                 tags=tags,
+                description=template_cls.description if template_cls else "",
+                width=template_cls.width if template_cls else 1080,
+                height=template_cls.height if template_cls else 1920,
             )
         )
     return result

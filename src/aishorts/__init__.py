@@ -9,7 +9,10 @@ from aishorts.shorts_generator import (
     ManimConfig,
     QuestionConfig,
     SongConfig,
+    SlidesConfig,
+    StockVideoConfig,
 )
+from aishorts.modules.slides.style import PresentationStyle
 from aishorts.modules.video_edit.video_edit import (
     VideoTemplate,
     TemplateConfig,

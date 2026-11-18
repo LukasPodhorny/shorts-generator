@@ -74,7 +74,7 @@ export function MediaCard({
         <div className="generating-gradient absolute inset-0" />
       ) : generating && hasThumbnail ? (
         <>
-          <SafeImage url={thumbnailUrl!} className="absolute inset-0 h-full w-full" />
+          <SafeImage url={thumbnailUrl!} preserveLandscape className="absolute inset-0 h-full w-full bg-neutral-900" />
           <div className="generating-gradient absolute inset-0 opacity-40" />
         </>
       ) : !hasThumbnail ? (
@@ -84,7 +84,7 @@ export function MediaCard({
           </svg>
         </div>
       ) : (
-        <SafeImage url={thumbnailUrl!} className="absolute inset-0 h-full w-full" />
+        <SafeImage url={thumbnailUrl!} preserveLandscape className="absolute inset-0 h-full w-full bg-neutral-900" />
       )}
 
       <BottomScrim />

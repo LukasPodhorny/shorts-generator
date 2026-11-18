@@ -104,6 +104,9 @@ class VideoTemplateRead(SQLModel):
     preview_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     tags: List[VideoTemplateTag] = Field(default_factory=list)
+    description: str = ""
+    width: int = 1080
+    height: int = 1920
 
 
 class GenerationConfig(SQLModel, table=True):
@@ -117,7 +120,7 @@ class GenerationConfig(SQLModel, table=True):
         """Returns kwargs that can be spread into ShortsConfig(avatars=..., video_template=..., **kwargs)."""
         from aishorts.shorts_generator import (
             ScriptConfig, FFmpegConfig, ManimConfig,
-            ImagesConfig, LatexConfig, QuestionConfig, SongConfig,
+            ImagesConfig, LatexConfig, QuestionConfig, SongConfig, SlidesConfig, StockVideoConfig,
         )
         from aishorts import SubtitleConfig
 
@@ -130,6 +133,8 @@ class GenerationConfig(SQLModel, table=True):
             "latex_config": LatexConfig,
             "question_config": QuestionConfig,
             "song_config": SongConfig,
+            "slides_config": SlidesConfig,
+            "stock_video_config": StockVideoConfig,
         }
 
         kwargs = {}

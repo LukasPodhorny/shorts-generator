@@ -172,7 +172,7 @@ class Gemini(LLMProvider):
 
     def __init__(
         self,
-        model: str = "gemini-3-pro-preview",
+        model: str = "gemini-3.1-pro-preview",
         max_output_tokens: int = 50_000,
         api_key: str | None = None,
         **kwargs,

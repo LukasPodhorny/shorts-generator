@@ -1,4 +1,16 @@
 {
+    "lecture": {
+        "edit_template": "lecture",
+        "template_config": {}
+    },
+    "documentary": {
+        "edit_template": "documentary",
+        "template_config": {}
+    },
+    "briefing": {
+        "edit_template": "briefing",
+        "template_config": {}
+    },
     "basic_gameplay": {
         "edit_template": "alpha_gameplay",
         "template_config": {

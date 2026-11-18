@@ -54,4 +54,4 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["*.txt", "*.json", "*.mako"]
+"*" = ["*.txt", "*.json", "*.mako", "fonts/*.ttf", "fonts/*.txt"]
