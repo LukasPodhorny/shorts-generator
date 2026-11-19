@@ -7,8 +7,8 @@ Pass --stock-manifest to exercise real local footage, or omit it to test fallbac
 
 import argparse
 import asyncio
+import math
 import json
-import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,9 +16,8 @@ from unittest.mock import patch
 
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 
-from aishorts.modules.script.script import DialogueBlock, Reel, ReelSeries, SlideMedia, StockVideoMedia, Trigger
+from aishorts.modules.script.script import DialogueBlock, ImageMedia, MediaAttribution, Reel, ReelSeries, SlideMedia, StockVideoMedia, Trigger
 from aishorts.modules.script.script_generator import ScriptGenerator
-from aishorts.modules.slides.renderer import render_slide
 from aishorts.modules.slides.slide_generator import SlideGenerator
 from aishorts.modules.stock_video.stock_video_generator import StockVideoGenerator
 from aishorts.modules.video_edit.video_edit import TemplateConfig, VideoTemplate
@@ -26,20 +25,42 @@ from aishorts.modules.video_edit.video_edit_templates import EditTemplate
 from aishorts.modules.video_edit.video_generator import VideoGenerator
 
 
-def scene(text, title, layout, *, subtitle="", items=None, chart=None, source="", unit="", stock=None):
+PHOTOS = Path(__file__).resolve().parents[1] / "examples" / "formal" / "photos"
+PHOTO_CREDITS = {
+    "greenhouse": ("Bruce Dupree / Alabama Extension", "Plants_in_a_Greenhouse.jpg", "CC0 1.0"),
+    "mist": ("Rosendahl", "Mist_over_lake_in_morning.jpg", "Public domain"),
+    "droplets": ("Boris Maric", "Water_drops_on_a_leaf.jpg", "CC0 1.0"),
+}
+
+
+def scene(text, title, layout, *, subtitle="", items=None, chart=None, source="", unit="", stock=None, photo=None):
     trigger = Trigger(start_word_index=0, end_word_index=len(text.split()) - 1)
     media = [SlideMedia(type="slide", title=title, layout=layout, subtitle=subtitle,
                         items=items or [], chart=chart or [], unit=unit, source=source, trigger=trigger)]
     if stock:
         media.append(StockVideoMedia(type="stock_video", keywords=stock, trigger=trigger))
+    if photo:
+        media.append(ImageMedia(type="image", keywords=photo, trigger=trigger))
     return DialogueBlock(type="dialogue", avatar="Narrator", text=text, media=media)
+
+
+def load_example_photos(reel):
+    for block in reel.blocks:
+        for media in block.media:
+            if isinstance(media, ImageMedia):
+                creator, source, license_name = PHOTO_CREDITS[media.keywords]
+                block.assets.media_map[media.id] = str(PHOTOS / f"{media.keywords}.jpg")
+                block.assets.media_attributions[media.id] = MediaAttribution(
+                    creator=creator, provider="Wikimedia Commons",
+                    source_url=f"https://commons.wikimedia.org/wiki/File:{source}", license=license_name,
+                )
 
 
 def examples():
     return {
         "lecture": Reel(title="From observation to evidence", description="A short lesson in fair testing.", blocks=[
             scene("How do we turn an interesting observation into reliable knowledge? Start with a question, build an explanation, and design a test that could show it is wrong.",
-                  "From observation to evidence", "title", subtitle="How to design a fair test"),
+                  "From observation to evidence", "title", subtitle="How to design a fair test", photo="greenhouse"),
             scene("A useful investigation has three parts. Observe a pattern, propose an explanation, and predict what you should see if that explanation is correct.",
                   "Build a testable explanation", "process", items=[
                       {"heading": "Observe", "body": "Notice a pattern."},
@@ -66,7 +87,7 @@ def examples():
             scene("Energy from the sun helps liquid water evaporate. As moist air rises and cools, water vapour can condense into droplets that form clouds.",
                   "From surface water to clouds", "process", items=[{"heading": "Evaporation", "body": "Liquid water becomes vapour."},
                       {"heading": "Cooling", "body": "Rising air often cools."},
-                      {"heading": "Condensation", "body": "Droplets form in the air."}]),
+                      {"heading": "Condensation", "body": "Droplets form in the air."}], photo="mist"),
             scene("Wind carries clouds across the sky. Droplets and crystals may grow large enough to fall as precipitation, returning water to the surface.",
                   "A moving part of the cycle", "title", subtitle="Air moves water. Gravity brings it back.", stock="clouds sky wind"),
             scene("The water cycle connects the surface and the atmosphere. Evaporation, condensation and precipitation are different processes in the same continuing movement of water.",
@@ -75,17 +96,17 @@ def examples():
         ]),
         "briefing": Reel(title="Koloběh vody v kostce", description="Stručné české opakování pro mobil.", blocks=[
             scene("Voda se neustále pohybuje mezi zemským povrchem a atmosférou. Koloběh vody propojuje vypařování, kondenzaci a srážky do jednoho souvislého děje.",
-                  "Voda je stále v pohybu", "title", subtitle="Koloběh vody v kostce"),
+                  "Voda je stále v pohybu", "title", subtitle="Koloběh vody v kostce", photo="mist"),
             scene("Při vypařování se kapalná voda mění na vodní páru. Při kondenzaci vznikají drobné kapičky. Srážky potom vracejí vodu zpátky na povrch.",
                   "Tři propojené děje", "process", items=[{"heading": "Vypařování", "body": "Voda přechází do vzduchu."},
                       {"heading": "Kondenzace", "body": "Vznikají drobné kapičky."},
                       {"heading": "Srážky", "body": "Voda se vrací na povrch."}]),
             scene("Vodní pára je neviditelná. Viditelný oblak tvoří drobné kapky vody nebo ledové krystalky. Pára a oblak proto nejsou totéž.",
                   "Pára není oblak", "comparison", items=[{"heading": "Vodní pára", "body": "Neviditelná plynná voda."},
-                      {"heading": "Oblak", "body": "Viditelné kapičky nebo krystalky."}]),
+                      {"heading": "Oblak", "body": "Viditelné kapičky nebo krystalky."}], stock="clouds"),
             scene("Zapamatujte si hlavní souvislost. Sluneční energie pomáhá vodu vypařovat a gravitace ji přivádí zpět. Jednotlivé děje společně udržují vodu v pohybu.",
                   "Co si zapamatovat", "bullets", items=[{"heading": "Sluneční energie", "body": "Pomáhá vodu vypařovat."},
-                      {"heading": "Gravitace", "body": "Vrací vodu na povrch."}]),
+                      {"heading": "Gravitace", "body": "Vrací vodu na povrch."}], photo="droplets"),
         ]),
     }
 
@@ -125,6 +146,7 @@ async def run(args):
         (target / f"{name}.script.json").write_text(series.model_dump_json(indent=2), encoding="utf-8")
         assets = target / "assets" / name
         await asyncio.to_thread(narration, reel, assets, "cs" if name == "briefing" else "en-us")
+        load_example_photos(reel)
         await StockVideoGenerator(provider="library", manifest_path=args.stock_manifest, upload=False,
                                   output_dir=assets / "stock").populate_reel(reel)
         await SlideGenerator(render_config=template.render_config, upload=False, output_dir=assets / "slides").populate_reel(reel)
@@ -136,16 +158,23 @@ async def run(args):
         result = await video.compose(reel)
         final = target / f"{name}.mp4"
         Path(result.filepath).replace(final)
-        cover_index = 1 if name != "documentary" else 0
-        cover = Path(reel.blocks[cover_index].assets.media_map[reel.blocks[cover_index].media[0].id])
-        shutil.copyfile(cover, target / f"{name}.png")
-        # Capture actual footage/captions for the documentary thumbnail.
-        if name == "documentary":
-            subprocess.run(["ffmpeg", "-v", "error", "-ss", "2", "-i", str(final), "-frames:v", "1", "-y", str(target / f"{name}.png")], check=True)
+        # Capture the composed opening, including the photo or footage.
+        subprocess.run(["ffmpeg", "-v", "error", "-ss", "2", "-i", str(final),
+                        "-frames:v", "1", "-y", str(target / f"{name}.png")], check=True)
         if args.previews:
             args.previews.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(target / f"{name}.png", args.previews / f"{name}.png")
-            subprocess.run(["ffmpeg", "-v", "error", "-i", str(final), "-t", "20", "-vf", "scale=960:-2" if name != "briefing" else "scale=540:-2",
+            scale = "scale=540:-2" if name == "briefing" else "scale=960:-2"
+            subprocess.run(["ffmpeg", "-v", "error", "-i", str(target / f"{name}.png"), "-vf", scale,
+                            "-frames:v", "1", "-y", str(args.previews / f"{name}.png")], check=True)
+            scene_frame = 0
+            excerpts = []
+            for index, block in enumerate(reel.blocks):
+                frames = math.ceil(block.assets.subtitles.duration * 30)
+                if index < 4 or index == len(reel.blocks) - 1:
+                    excerpts.append(f"between(n,{scene_frame},{scene_frame + min(frames, 120) - 1})")
+                scene_frame += frames
+            montage = f"select='{'+'.join(excerpts)}',setpts=N/(30*TB),{scale}"
+            subprocess.run(["ffmpeg", "-v", "error", "-i", str(final), "-vf", montage,
                             "-an", "-c:v", "libx264", "-crf", "25", "-movflags", "+faststart", "-y", str(args.previews / f"{name}.mp4")], check=True)
         print(f"Rendered {final}", flush=True)
 

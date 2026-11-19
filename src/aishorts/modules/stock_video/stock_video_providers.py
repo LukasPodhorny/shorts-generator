@@ -42,6 +42,8 @@ def probe_clip(path: str) -> dict:
 
 
 class StockVideoProvider(Provider):
+    available = True
+
     @abstractmethod
     async def get_clip(self, keywords: str, orientation: str, output_dir: Path) -> StockClip | None:
         pass
@@ -69,6 +71,7 @@ class LibraryStockVideo(StockVideoProvider):
             manifest = Path(manifest_path).resolve()
             self.root = manifest.parent
             self.entries = TypeAdapter(list[LibraryEntry]).validate_json(manifest.read_text())
+        self.available = bool(self.entries)
 
     async def get_clip(self, keywords, orientation, output_dir):
         tokens = set(re.findall(r"\w+", keywords.casefold()))
@@ -193,6 +196,7 @@ class AutoStockVideo(StockVideoProvider):
     def __init__(self, **kwargs):
         self.provider = (PexelsStockVideo(**kwargs) if kwargs.get("api_key") or os.getenv("PEXELS_API_KEY")
                          else LibraryStockVideo(**kwargs))
+        self.available = self.provider.available
 
     async def get_clip(self, keywords, orientation, output_dir):
         return await self.provider.get_clip(keywords, orientation, output_dir)

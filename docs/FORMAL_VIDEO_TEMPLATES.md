@@ -4,9 +4,9 @@ Výstup rozšiřuje generátor o formální výuková videa ve formátech 16:9 a
 
 ## Templates
 
-- **`lecture`**: 1920 × 1080. Warm paper background, measured typography, chapter markers, dedicated caption band, and optional visual panel. For courses, academic explanations and workplace training.
+- **`lecture`**: 1920 × 1080. Warm paper palette, aligned text and photo columns, and horizontal layouts for short processes and comparisons. For courses, academic explanations and workplace training.
 - **`documentary`**: 1920 × 1080. Dark background, large footage panel and concise teaching notes. Stock footage is enabled by default. A missed search produces a complete teaching slide without an empty footage panel.
-- **`briefing`**: 1080 × 1920. Large portrait cards with generous spacing and bottom captions. For mobile revision and professional explainers. Supports Czech diacritics using bundled DejaVu fonts.
+- **`briefing`**: 1080 × 1920. Large portrait photography followed by teaching notes, with a compact text-only layout when visuals are unavailable. For mobile revision and professional explainers. Bundled Inter and DejaVu Sans fonts support Czech diacritics.
 
 All three use the selected avatar's **voice**, without generating a visible avatar, lipsync, or gameplay. Existing gameplay and song templates remain available. The formal writing brief replaces the default entertainment brief, including its persona instructions. Additional custom script instructions are retained.
 
@@ -32,7 +32,13 @@ The web build includes small preview MP4s and PNGs. For absolute preview URLs us
 python -m api.install_formal_templates --apply --previews web/public/template-previews
 ```
 
-Existing rows are intentionally preserved even with `--previews`; update their preview URLs through the existing admin endpoint when replacing a deployed preview.
+To refresh preview URLs for existing entries while preserving their configuration and price, run:
+
+```bash
+python -m api.install_formal_templates --apply --previews web/public/template-previews --refresh-previews
+```
+
+Preview URLs contain a content hash so cached originals do not mask a new design.
 
 ## Slide module
 
@@ -45,7 +51,9 @@ Layouts are `title`, `bullets`, `process`, `comparison`, `chart`, and `quote`. C
 
 Text uses actual glyph measurements, wrapping and bounded font reduction. Dense content fails validation instead of being silently cropped or made unreadably small. Before paid assets are generated, the formal script validator checks both the visual-panel layout and the full-slide fallback. The LLM gets one corrective retry with the validation error. The renderer accepts structured data only, with no model-generated HTML or executable code.
 
-Each narration block contains exactly one slide covering the whole block. It may also contain up to two images, equations, animations or stock clips with non-overlapping word triggers. Slides overlap those visuals intentionally. Existing image, LaTeX and Manim modules can be enabled through the template tags; their outputs are fitted into the reserved visual panel without cropping labels. Stock footage fills that panel by cropping to its aspect ratio.
+Each narration block contains exactly one slide. One supporting visual fills the scene, while two share it. The backend can use a valid word index for the changeover and otherwise divides the scene in script order. A single remaining visual fills the panel if the other asset is unavailable. The small markers in the header identify scenes; elapsed playback time is shown by the video player's controls.
+
+Images are enabled by default on all three formal templates. The selected image provider supplies photos for relevant scenes, with Unsplash as the default. Photos and stock footage fill the panel with a centred crop. Equations and teaching animations are fitted to preserve labels. Missing optional photos fall back to the slide without automatically calling RunPod. Unsplash photos carry the photographer credit and a profile link. [Unsplash API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines)
 
 Example block (the trigger covers its six narration words):
 
@@ -75,7 +83,7 @@ Example block (the trigger covers its six narration words):
 `StockVideoMedia` contains only `keywords` and the existing word trigger. The script cannot choose a file path or download URL.
 
 - **`auto`** (default): use Pexels when `PEXELS_API_KEY` is present, otherwise use the local library.
-- **`library`**: search an operator-curated JSON manifest of licensed local files. Requires no external service. Missing configuration or no matching subject returns no footage, so the teaching slide fills the scene.
+- **`library`**: search an operator-curated JSON manifest of licensed local files. Requires no external service. The script prompt omits footage when the library is empty, leaving the available image option and teaching slide.
 - **`pexels`**: search the [Pexels video API](https://www.pexels.com/api/documentation/) with the video's orientation. Explicit selection requires `PEXELS_API_KEY`. The provider selects a bounded HD rendition, retries rate limits/server errors, checks download hosts and redirects, caps downloads at 120 MiB, and verifies the video stream with ffprobe. Authentication is sent only to the API endpoint.
 
 Downloads use a 45-second request timeout and at most two simultaneous clip requests by default. Stock audio is never mixed into narration. Short clips hold their final frame; long clips are trimmed to their trigger window. Source identity and license are stored with the checkpoint. The creator/provider credit appears in the video footer; full attribution and links appear in the final description. Preserve these credits when redistributing a video. See [Pexels API guidelines](https://www.pexels.com/api/documentation/) and the [Pexels license](https://www.pexels.com/license/) for provider-specific requirements.
@@ -167,6 +175,8 @@ The default Pillow renderer runs in the normal worker and needs no deployment. T
 
 The service uses one CPU, 1 GiB of memory, a 90-second execution timeout and at most four containers. It installs the same package and bundled fonts, accepts at most 64 KiB of structured input, validates the bearer token, and returns image/png. It mounts only project source, packaging metadata and README, never `.env`. The client enforces its own timeout, PNG size limit and image-dimension checks. No R2 credentials are needed in the slide service; the application uploads its result.
 
+Redeploy the slide service with the worker when updating the slide design so the generated slide and composited media use the same coordinates.
+
 Existing Modal FFmpeg endpoints can render the new filter graphs. Ensure their FFmpeg build includes `ass`, `loop`, `overlay`, `tpad`, `concat`, `dynaudnorm` and the standard audio/scale filters, plus `fonts-dejavu-core` for captions. Your existing endpoint URLs and selection remain unchanged. Reference: [Modal images](https://modal.com/docs/guide/images), [Modal web endpoints](https://modal.com/docs/guide/webhooks), [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html).
 
 ## Samples and verification
@@ -179,7 +189,7 @@ python scripts/render_formal_examples.py \
   --previews web/public/template-previews
 ```
 
-Outputs are `output/formal-examples/{lecture,documentary,briefing}.mp4`, their thumbnails, editable `.script.json` examples and populated `.checkpoint.json` files. The script uses the actual validation, slide, stock and video modules. Omitting `--stock-manifest` exercises the no-footage fallback. The documentary uses attributed CC BY cloud footage; [credits and changes](../examples/formal/stock/CREDITS.md) are included with its source file. The portrait example is in Czech.
+Outputs are `output/formal-examples/{lecture,documentary,briefing}.mp4`, their thumbnails, editable `.script.json` examples and populated `.checkpoint.json` files. The previews include short excerpts from several scenes. Omitting `--stock-manifest` exercises the no-footage fallback. Source credits accompany the [photographs](../examples/formal/photos/CREDITS.md) and [cloud footage](../examples/formal/stock/CREDITS.md). The portrait example is in Czech.
 
 Run the affected offline suite and web build:
 
@@ -190,7 +200,7 @@ cd web
 npm run build
 ```
 
-The verified affected suite passes **106 tests**. Tests cover every slide layout in both orientations, with and without visual panels; invalid charts, triggers and disabled modules; corrective script retry; stock fallback, host validation and library traversal; rate-limit retries, credential isolation, bounded downloads and partial-file cleanup; remote slide format/dimension checks and atomic writes; actual H.264/AAC rendering with shorter and longer clips; provider construction; catalog installation; and a full local pipeline followed by restoration from an ephemeral-worker checkpoint. The production web build also passes, and the Python wheel includes the renderer, prompts, fonts and font license.
+The affected suite covers each layout in both orientations, visual timing recovery and handover, image attribution and fallback, stock retrieval, real FFmpeg rendering, and restoring the pipeline from a checkpoint.
 
 Live Pexels credentials and a deployed Modal slide endpoint require a staging smoke test in your environment before enabling those optional providers. They are not needed for the default slide renderer or local library.
 

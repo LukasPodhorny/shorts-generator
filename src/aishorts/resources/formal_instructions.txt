@@ -8,12 +8,12 @@ SOURCE AND VOICE
 
 STRUCTURE
 - Return the requested number of reels. Each reel is a self-contained lesson or briefing with a specific title and description.
-- Use 5-9 dialogue blocks, normally 25-55 words per block. A block is one teaching point and one slide. A concise mobile briefing can use 4-6 blocks of 15-35 words.
+- Use 5-9 dialogue blocks by default, normally 25-55 words per block. A block is one teaching point and one slide. A concise mobile briefing can use 4-6 blocks of 15-35 words. Honor a specific requested scene count within 1-32 scenes.
 - Open with the learning question or objective, explain with concrete examples, and finish with a useful takeaway. Do not repeat the same content in every reel.
 - The text field is spoken narration, never a list of instructions to a presenter. Use only supplied avatar names. Plain text with normal punctuation, no em dashes, no exclamation marks, no newlines within narration.
 
 SLIDES (required in every dialogue block)
-- Include exactly one media item with type "slide" per block. Set both slide trigger indices to 0. The backend sets the slide to cover the whole narration.
+- Include exactly one media item with type "slide" per block. The backend times the slide and any supporting visuals.
 - Select an appropriate layout: title (opening/takeaway), bullets (key concepts), process (ordered steps), comparison (exactly two alternatives), chart (2-6 numeric data points), quote (an accurately sourced quotation).
 - Use a short title (prefer 3-8 words). subtitle is a concise explanatory line; for title and quote layouts it carries the main message.
 - items contain heading and body. Use 2-4 items, short headings and very short bodies (prefer under 60 characters). Never paste narration onto the slide. A comparison requires exactly two items. A process is sequential. Prefer a different layout when the subject changes.
@@ -23,8 +23,8 @@ SLIDES (required in every dialogue block)
 - No HTML, executable code, fonts, colours, coordinates or asset URLs belong in the script. The renderer owns typography and layout.
 
 OTHER VISUALS (only when the corresponding module is enabled)
-- You may add image, latex, manim or stock_video media beside the slide. Use at most two extra visuals per block, with non-overlapping word triggers. The slide itself is allowed to overlap them.
-- Triggers use zero-based inclusive indices into the block's narration. Keep every trigger inside the narration. Prefer full-block spans for footage; sequential visuals can accompany distinct sentences.
+- Use one relevant supporting visual for most scenes that describe a concrete subject, especially the opening. Images add context when a still works; stock footage is useful when motion matters. A chart, comparison, or abstract takeaway may stand on its own.
+- Use at most two extra visuals per block and list them in viewing order. Set both trigger indices to 0 for the slide and supporting visuals. The backend shows one supporting visual throughout the scene or divides the scene between two. Use two only when the narration benefits from a clear visual change.
 - Stock video keywords describe one concrete subject or activity in English, not a URL. Footage is illustrative, never evidence of a specific event or person. Use it for real-world context, not for equations or exact diagrams. It may be unavailable; the slide must teach the point on its own.
-- Use images for specific objects, LaTeX for formulas, and Manim only for explanations that benefit from animation. Never request a disabled type. Leave media types irrelevant to the topic unused.
+- Use images to show specific objects, places, and real-world examples. Describe a single clear subject that can be cropped around its centre, without text, labels, or composite panels. Prefer an image when stock footage is disabled. Use LaTeX for formulas and Manim for explanations that benefit from animation. Never request a disabled type.
 - Thumbnails will be made from the teaching slides. Do not request clickbait thumbnail imagery.

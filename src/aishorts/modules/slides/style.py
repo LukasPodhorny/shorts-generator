@@ -24,21 +24,35 @@ class SlideRenderConfig(BaseModel):
     attribution: str = Field(default="", max_length=500)
 
 
-def layout_regions(config: SlideRenderConfig):
+def layout_regions(config: SlideRenderConfig, layout: str = "bullets"):
     """Return (content, visual) boxes as x, y, width, height, in output pixels."""
+    opener = layout == "title"
     if config.mode == "briefing":
-        return ((72, 470, 936, 500), (72, 1040, 936, 540)) if config.has_visual else (
-            (72, 470, 936, 1100), None
-        )
-    if config.mode == "documentary" and config.has_visual:
-        return (1240, 300, 600, 550), (80, 300, 1080, 550)
-    if config.has_visual:
-        return (80, 300, 850, 550), (1010, 300, 830, 550)
-    return (80, 300, 1760, 550), None
+        if not config.has_visual:
+            return (72, 356, 936, 1284), None
+        if opener:
+            return (72, 152, 936, 410), (72, 610, 936, 1018)
+        return (72, 950, 936, 690), (72, 356, 936, 548)
+    if not config.has_visual:
+        return (88, 306, 1744, 562), None
+    y = 150 if opener else 306
+    height = 868 - y
+    if config.mode == "documentary":
+        return (1152, y, 680, height), (88, y, 1016, height)
+    return (88, y, 808, height), (952, y, 880, height)
+
+
+def legacy_visual_region(mode: str):
+    """Placement for checkpoints that already contain a previous design's PNGs."""
+    if mode == "briefing":
+        return (72, 1040, 936, 540)
+    if mode == "documentary":
+        return (80, 300, 1080, 550)
+    return (1010, 300, 830, 550)
 
 
 PALETTES = {
-    "paper": {"bg": "#F5F3ED", "ink": "#162B36", "muted": "#4C626B", "panel": "#E8E7DF", "line": "#CCD4D1"},
-    "midnight": {"bg": "#101F2E", "ink": "#F3F5F7", "muted": "#B2C5D1", "panel": "#1D3245", "line": "#3F5668"},
-    "slate": {"bg": "#182723", "ink": "#F5F3E9", "muted": "#B6C8BC", "panel": "#293D34", "line": "#496255"},
+    "paper": {"bg": "#F7F4EC", "wash": "#E8EDDF", "ink": "#142423", "muted": "#475A55", "panel": "#F9F7F1", "line": "#C9D2C8"},
+    "midnight": {"bg": "#0C1921", "wash": "#172D36", "ink": "#F2F6F3", "muted": "#A7BDBF", "panel": "#152730", "line": "#36515B"},
+    "slate": {"bg": "#111D19", "wash": "#22372A", "ink": "#F6F5E8", "muted": "#B5C7B5", "panel": "#1C2C25", "line": "#3D5548"},
 }

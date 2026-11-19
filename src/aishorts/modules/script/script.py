@@ -127,6 +127,7 @@ class BlockAssets(BaseModel):
     media_map: Dict[str, str] = Field(default_factory=dict)
     media_url_map: Dict[str, Union[str, dict]] = Field(default_factory=dict)
     media_attributions: Dict[str, MediaAttribution] = Field(default_factory=dict)
+    slide_viewport: Optional[tuple[int, int, int, int]] = None
 
 
 class DialogueBlock(BaseModel):

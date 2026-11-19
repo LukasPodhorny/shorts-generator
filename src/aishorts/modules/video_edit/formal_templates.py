@@ -6,7 +6,7 @@ from pathlib import Path
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 
 from aishorts.modules.script.script import AssetType, BlockType, SlideMedia
-from aishorts.modules.slides.style import PALETTES, PresentationStyle, SlideRenderConfig, layout_regions
+from aishorts.modules.slides.style import PALETTES, PresentationStyle, SlideRenderConfig, legacy_visual_region
 from aishorts.modules.video_edit.video_edit import EditTemplate, FilterGraph, SubtitleStyle, resolve_media_url
 
 
@@ -18,25 +18,21 @@ def asset_ref(path, url=None):
     raise ValueError(f"Missing rendered asset: {path or 'no path or URL'}")
 
 
-def media_interval(block, media, duration):
-    trigger = media.trigger
+def visual_changeover(block, media, duration):
+    index = media.trigger.start_word_index
+    count = max(1, len(block.text.split()))
     words = block.assets.subtitles.words if block.assets.subtitles else []
-    start, end = trigger.start_word_index, trigger.end_word_index
-    if words and 0 <= start <= end < len(words):
-        begin, finish = words[start].start, words[end].end
-        if start == 0:
-            begin = 0
-        if end == len(words) - 1:
-            finish = duration
-    else:
-        count = max(1, len(block.text.split()))
-        begin, finish = duration * start / count, duration * (end + 1) / count
-    return max(0, min(begin, duration)), max(0, min(finish, duration))
+    timestamp = duration * index / count if 0 < index < count else duration / 2
+    if words and len(words) == count and 0 < index < count:
+        aligned = words[index].start
+        if math.isfinite(aligned) and 0 < aligned < duration:
+            timestamp = aligned
+    return min(duration - 1 / 30, max(1 / 30, round(timestamp * 30) / 30))
 
 
 class FormalTemplate(EditTemplate):
     core_assets = [AssetType.SCRIPT, AssetType.VOICE, AssetType.SUBTITLES, AssetType.SLIDES]
-    tag_assets = {AssetType.IMAGES: False, AssetType.LATEX: False, AssetType.MANIM: False, AssetType.STOCK_VIDEO: False}
+    tag_assets = {AssetType.IMAGES: True, AssetType.LATEX: False, AssetType.MANIM: False, AssetType.STOCK_VIDEO: False}
     allowed_blocks = [BlockType.DIALOGUE]
     width, height = 1920, 1080
     mode = "lecture"
@@ -80,14 +76,22 @@ class FormalTemplate(EditTemplate):
                       .filter("fps", fps=30)
                       .filter("setpts", "PTS-STARTPTS").filter("setsar", 1)
                       .filter("format", "yuv420p"))
-            visuals = [m for m in block.media if m.type != "slide" and (
-                m.id in block.assets.media_map or m.id in block.assets.media_url_map
-            )]
-            _, viewport = layout_regions(self.render_config.model_copy(update={"has_visual": bool(visuals)}))
-            for media in visuals:
-                start, end = media_interval(block, media, duration)
-                if end <= start:
-                    continue
+            visuals = sorted(
+                (m for m in block.media if m.type != "slide" and (
+                    block.assets.media_map.get(m.id) or block.assets.media_url_map.get(m.id)
+                )),
+                key=lambda m: m.trigger.start_word_index,
+            )
+            # Stretch the surviving visual across the scene if an optional lookup
+            # failed. With two visuals, switch on the same frame for both.
+            if duration < 2 / 30:
+                visuals = visuals[:1]
+            boundaries = [0.0]
+            if len(visuals) == 2:
+                boundaries.append(visual_changeover(block, visuals[1], duration))
+            boundaries.append(duration)
+            viewport = block.assets.slide_viewport or legacy_visual_region(self.mode)
+            for media, start, end in zip(visuals, boundaries, boundaries[1:]):
                 path = asset_ref(block.assets.media_map.get(media.id), block.assets.media_url_map.get(media.id))
                 visual, _ = graph.add_input(path, f"visual_{index}_{media.type}")
                 x, y, w, h = viewport
@@ -97,10 +101,10 @@ class FormalTemplate(EditTemplate):
                 else:
                     visual = visual.filter("loop", loop=-1, size=1, start=0).filter("fps", fps=30)
                 visual = visual.filter("trim", duration=end - start)
-                if media.type == "stock_video":
+                if media.type in {"image", "stock_video"}:
                     visual = visual.filter("scale", f"{w}:{h}", force_original_aspect_ratio="increase").filter("crop", f"{w}:{h}")
                 else:
-                    # Fit equations, diagrams and photos without cutting off labels.
+                    # Fit equations and teaching animations without cutting off labels.
                     color = PALETTES[self.style.theme]["panel"].replace("#", "0x")
                     visual = visual.filter("scale", f"{w}:{h}", force_original_aspect_ratio="decrease").filter(
                         "pad", f"{w}:{h}:(ow-iw)/2:(oh-ih)/2:color={color}")
@@ -109,7 +113,7 @@ class FormalTemplate(EditTemplate):
             # Trim AFTER overlay framesync. Trimming both overlay inputs at the
             # same instant can stall FFmpeg waiting for a final frame at EOF.
             # The infinite slide clock guarantees a frame that ends each scene.
-            canvas = canvas.filter("trim", duration=duration).filter("fade", t="in", st=0, d=min(0.18, duration / 4))
+            canvas = canvas.filter("trim", duration=duration)
             _, audio = graph.add_input(seg["audio"], f"narration_{index}")
             audio = (audio.filter("aresample", 48000).filter("aformat", channel_layouts="stereo")
                      .filter("apad").filter("atrim", duration=duration).filter("asetpts", "PTS-STARTPTS"))
@@ -158,12 +162,12 @@ class DocumentaryTemplate(FormalTemplate):
     mode = "documentary"
     description = "16:9 documentary explainer with stock footage beside concise teaching notes. Best for science, history, geography and real-world processes. No visible avatar. Falls back to slides when footage is unavailable."
     tag_assets = {**FormalTemplate.tag_assets, AssetType.STOCK_VIDEO: True}
-    default_style = PresentationStyle(theme="midnight", accent_color="#249FAD")
+    default_style = PresentationStyle(theme="midnight", accent_color="#72E3CE")
 
 
 class BriefingTemplate(FormalTemplate):
     provider_name = "briefing"
     mode = "briefing"
     width, height = 1080, 1920
-    description = "9:16 formal mobile briefing with large readable cards, diagrams and optional footage. Best for revision, professional social videos and concise explainers. No visible avatar."
-    default_style = PresentationStyle(theme="slate", accent_color="#288767")
+    description = "9:16 formal mobile briefing with photos, diagrams and large readable notes. Best for revision, professional social videos and concise explainers. No visible avatar."
+    default_style = PresentationStyle(theme="slate", accent_color="#B4DE8C")

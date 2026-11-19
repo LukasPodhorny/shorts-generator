@@ -4,8 +4,10 @@ import asyncio
 import aiohttp
 from dataclasses import dataclass
 import os
-from aishorts.utils.r2_handler import download_from_url
-from aishorts.modules.script.script import Reel, AssetType
+from pathlib import Path
+from urllib.parse import quote, urlparse
+from aishorts.utils.r2_handler import CloudflareR2, download_from_url
+from aishorts.modules.script.script import Reel, AssetType, MediaAttribution
 from typing import Any
 
 
@@ -13,6 +15,15 @@ from typing import Any
 class ImageResult:
     media: MediaFile
     alt: str | None = None
+    attribution: MediaAttribution | None = None
+
+
+@dataclass
+class UnsplashPhoto:
+    url: str
+    alt: str | None
+    download_location: str
+    attribution: MediaAttribution
 
 
 class ImageProvider(Provider):
@@ -30,6 +41,7 @@ class Unsplash(ImageProvider):
     def __init__(self, max_concurrent_downloads: int = 5, api_key: str | None = None):
         self.api_key = api_key or os.getenv("UNSPLASH_API_KEY")
         self.base_url = "https://api.unsplash.com/search/photos"
+        self.headers = {"Authorization": f"Client-ID {self.api_key}"}
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
     async def _search_query(
@@ -38,14 +50,17 @@ class Unsplash(ImageProvider):
         query: str,
         max_width: int,
         max_height: int,
-    ) -> list[tuple[str, str | None]]:
+    ) -> list[UnsplashPhoto]:
         """Search for an image URL without downloading it."""
-        params = {"query": query, "per_page": 10, "client_id": self.api_key}
+        params = {"query": query, "per_page": 10}
 
         for attempt in range(3):
             try:
                 # 1. Search for the image
-                async with session.get(self.base_url, params=params) as response:
+                async with session.get(self.base_url, params=params, headers=self.headers, allow_redirects=False) as response:
+                    if response.status in (401, 403, 429):
+                        print(f"Unsplash search unavailable (HTTP {response.status}).")
+                        return []
                     response.raise_for_status()
                     data = await response.json()
                     results = data.get("results", [])
@@ -62,17 +77,24 @@ class Unsplash(ImageProvider):
                         raw_url += (
                             "&" if "?" in raw_url else "?"
                         ) + f"fm=png&w={max_width}&h={max_height}&fit=max"
-                        candidates.append(
-                            (
-                                raw_url,
-                                img.get("alt_description") or img.get("description"),
-                            )
-                        )
+                        author = img["user"]
+                        username = quote(author["username"], safe="")
+                        candidates.append(UnsplashPhoto(
+                            url=raw_url,
+                            alt=img.get("alt_description") or img.get("description"),
+                            download_location=img["links"]["download_location"],
+                            attribution=MediaAttribution(
+                                provider="Unsplash",
+                                creator=author["name"],
+                                source_url=f"https://unsplash.com/@{username}?utm_source=pdftoreel&utm_medium=referral",
+                                license="Unsplash License https://unsplash.com/license",
+                            ),
+                        ))
 
                     return candidates
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 print(
-                    f"Attempt {attempt + 1}/3 failed for query '{query}'. Retrying... Error: {e}"
+                    f"Unsplash search attempt {attempt + 1}/3 failed ({type(e).__name__})."
                 )
                 if attempt == 2:
                     print(f"Error fetching query '{query}' after 3 attempts.")
@@ -81,7 +103,7 @@ class Unsplash(ImageProvider):
 
             except Exception as e:
                 # Catch any other unexpected errors and don't retry
-                print(f"An unexpected error occurred fetching query '{query}': {e}")
+                print(f"Unsplash search response unavailable ({type(e).__name__}).")
                 return []
         return []
 
@@ -93,6 +115,8 @@ class Unsplash(ImageProvider):
         ids: list[Any] | None = None,
     ) -> list[ImageResult | None]:
         """Fetch images for all queries concurrently"""
+        if not self.api_key or not queries:
+            return [None] * len(queries)
         if ids is None:
             ids = list(range(len(queries)))
 
@@ -113,10 +137,10 @@ class Unsplash(ImageProvider):
 
         for candidates in search_results_lists:
             selected = None
-            for url, alt in candidates:
-                if url not in seen_urls:
-                    selected = (url, alt)
-                    seen_urls.add(url)
+            for photo in candidates:
+                if photo.url not in seen_urls:
+                    selected = photo
+                    seen_urls.add(photo.url)
                     break
             search_results.append(selected)
 
@@ -125,25 +149,33 @@ class Unsplash(ImageProvider):
         total = len(queries)
         completed = 0
 
-        async def _bounded_download(url, alt, id):
+        async def _bounded_download(session, photo, id):
             nonlocal completed
             async with self.semaphore:
-                path = await download_from_url(url, self.OUTPUT_DIR, ".png")
+                track = urlparse(photo.download_location)
+                if track.scheme != "https" or track.netloc != "api.unsplash.com":
+                    return None
+                path = CloudflareR2.get_random_filepath(self.OUTPUT_DIR, ".png")
+                try:
+                    async with session.get(photo.download_location, headers=self.headers, allow_redirects=False) as response:
+                        if response.status != 200:
+                            print(f"Unsplash download unavailable (HTTP {response.status}).")
+                            return None
+                    await download_from_url(photo.url, full_path=path, timeout=20)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                    Path(path).unlink(missing_ok=True)
+                    print(f"Could not download an Unsplash image ({type(exc).__name__}).")
+                    return None
                 completed += 1
                 print(f"Downloading images: {completed}/{total}")
-                return ImageResult(media=MediaFile(id=id, url=url, path=path), alt=alt)
+                return ImageResult(media=MediaFile(id=id, url=photo.url, path=path),
+                                   alt=photo.alt, attribution=photo.attribution)
 
-        download_tasks = []
-        for url_data, id in zip(search_results, ids):
-            if url_data:
-                url, alt = url_data
-                download_tasks.append(_bounded_download(url, alt, id))
-            else:
-                # Preserve order with None for failed searches
-                download_tasks.append(asyncio.sleep(0, result=None))
-
-        results = await asyncio.gather(*download_tasks)
-        return results
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+            return await asyncio.gather(*(
+                _bounded_download(session, photo, id) if photo else asyncio.sleep(0, result=None)
+                for photo, id in zip(search_results, ids)
+            ))
 
     async def populate_reel(
         self,
@@ -173,6 +205,8 @@ class Unsplash(ImageProvider):
                 block = reel.blocks[block_idx]
                 block.assets.media_map[media_id] = res.media.path
                 block.assets.media_url_map[media_id] = res.media.url
+                if res.attribution:
+                    block.assets.media_attributions[media_id] = res.attribution
 
 
 def _extract_runpod_url(output: Any) -> str | None:

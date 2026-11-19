@@ -3,8 +3,13 @@ from aishorts.modules.script.script import Reel
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.image_utils import ImageStyle, style_image, crop_to_9_16
 import asyncio
+import logging
+from pathlib import Path
 from aishorts.modules.provider import MediaFile
 from aishorts.modules.script.script import AssetType
+
+
+logger = logging.getLogger("ShortsGenerator.Images")
 
 
 class ImageGenerator:
@@ -20,12 +25,14 @@ class ImageGenerator:
         image_style: ImageStyle = None,
         max_concurrent_downloads: int = 5,
         api_key: str | None = None,
+        allow_missing: bool = False,
         **kwargs,
     ):
         self.provider = provider.lower()
         self.image_style = image_style or ImageStyle()
         self.max_width = max_width
         self.max_height = max_height
+        self.allow_missing = allow_missing
 
         cls = ImageProvider.get(self.provider)
         self.image_gen = cls(max_concurrent_downloads, api_key, **kwargs)
@@ -136,7 +143,12 @@ class ImageGenerator:
         func = self.image_gen.populate_reel
 
         # Provider now populates the reel directly
-        await await_or_thread(func, reel, self.max_width, self.max_height, **kwargs)
+        try:
+            await await_or_thread(func, reel, self.max_width, self.max_height, **kwargs)
+        except Exception as exc:
+            if not self.allow_missing:
+                raise
+            logger.warning("Optional image provider failed (%s). Continuing with available visuals.", type(exc).__name__)
 
         # Check for missing images and fall back to RunPodAI
         missing_prompts = []
@@ -151,7 +163,7 @@ class ImageGenerator:
                         missing_prompts.append(media_item.keywords)
                         missing_ids.append((i, media_item.id))
 
-        if missing_prompts:
+        if missing_prompts and not self.allow_missing:
             from aishorts.modules.image.image_providers import RunPodAI
 
             print(
@@ -174,15 +186,20 @@ class ImageGenerator:
                     block.assets.media_url_map[media_id] = res.media.url
 
         # We need to iterate blocks to style the images that were just generated
-        async def _style_task(path):
-            await asyncio.to_thread(
-                style_image,
-                path,
-                path,
-                self.image_style,
-                self.max_width,
-                self.max_height,
-            )
+        async def _style_task(assets, media_id, path):
+            try:
+                await asyncio.to_thread(
+                    style_image, path, path, self.image_style, self.max_width, self.max_height,
+                )
+            except (OSError, ValueError) as exc:
+                if not self.allow_missing:
+                    raise
+                logger.warning("Skipping unreadable optional image (%s).", type(exc).__name__)
+                assets.media_map.pop(media_id, None)
+                assets.media_url_map.pop(media_id, None)
+                assets.media_attributions.pop(media_id, None)
+                if Path(path).is_file():
+                    Path(path).unlink(missing_ok=True)
 
         # Collect results from the reel for styling
         paths_to_style = []
@@ -194,8 +211,8 @@ class ImageGenerator:
                         media_item.type == "image"
                         and media_item.id in block.assets.media_map
                     ):
-                        paths_to_style.append(block.assets.media_map[media_item.id])
+                        paths_to_style.append((block.assets, media_item.id, block.assets.media_map[media_item.id]))
 
-        await asyncio.gather(*[_style_task(p) for p in paths_to_style])
+        await asyncio.gather(*(_style_task(*asset) for asset in paths_to_style))
 
         return reel

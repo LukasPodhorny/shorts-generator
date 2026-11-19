@@ -15,7 +15,9 @@ from PIL import Image
 from pydantic import ValidationError
 
 from aishorts import Avatar, FFmpegConfig, ScriptConfig, ShortsConfig, ShortsGenerator, SlidesConfig, VideoTemplate
-from aishorts.modules.script.script import AssetType, DialogueBlock, Reel, ReelSeries, SlideMedia, StockVideoMedia, Trigger
+from aishorts.modules.image.image_generator import ImageGenerator
+from aishorts.modules.image.image_providers import Unsplash
+from aishorts.modules.script.script import AssetType, DialogueBlock, ImageMedia, Reel, ReelSeries, SlideMedia, StockVideoMedia, Trigger
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.slides.renderer import SlideOverflowError, render_slide
 from aishorts.modules.slides.slide_generator import SlideGenerator
@@ -97,14 +99,38 @@ def test_script_contract_rejects_invalid_content(change, error):
         validator(stock=False).validate_script(ReelSeries(topic="Learning", reels=[sample]), 1)
 
 
-def test_stock_trigger_must_still_be_inside_narration():
+def test_documentary_recovers_from_stock_trigger_beyond_narration():
     sample = reel()
-    sample.blocks[0].media.append(StockVideoMedia(
+    block = sample.blocks[0]
+    block.text = " ".join(["word"] * 22)
+    stock = StockVideoMedia(
         type="stock_video", keywords="forest",
-        trigger=Trigger(start_word_index=0, end_word_index=99),
-    ))
-    with pytest.raises(ValueError, match="outside"):
-        validator(mode="documentary").validate_script(ReelSeries(topic="Learning", reels=[sample]))
+        trigger=Trigger(start_word_index=0, end_word_index=30),
+    )
+    block.media.append(stock)
+    generator = validator(mode="documentary")
+    generator.llm.generate_structure = AsyncMock(return_value=ReelSeries(topic="Learning", reels=[sample]))
+
+    result = asyncio.run(generator.generate_script(user_input="teach"))
+
+    assert result.reels[0].blocks[0].media[1].trigger == Trigger(start_word_index=0, end_word_index=21)
+    generator.llm.generate_structure.assert_awaited_once()
+
+
+@pytest.mark.parametrize(("spans", "split"), [([(0, 1), (4, 5)], 4), ([(0, 30), (0, 0)], 3)])
+def test_two_visuals_normalize_to_contiguous_ranges(spans, split):
+    sample = reel()
+    clips = [
+        StockVideoMedia(type="stock_video", keywords="forest",
+                        trigger=Trigger(start_word_index=start, end_word_index=end))
+        for start, end in spans
+    ]
+    sample.blocks[0].media.extend(clips)
+    validator(mode="documentary").validate_script(ReelSeries(topic="Learning", reels=[sample]))
+    assert [clip.trigger for clip in clips] == [
+        Trigger(start_word_index=0, end_word_index=split - 1),
+        Trigger(start_word_index=split, end_word_index=5),
+    ]
 
 
 @pytest.mark.parametrize("end", [4, 99])
@@ -145,6 +171,18 @@ def test_provider_fallback_and_disabled_modules(tmp_path):
     strict.provider.get_clip = AsyncMock(side_effect=TimeoutError("deadline"))
     with pytest.raises(TimeoutError):
         asyncio.run(strict.populate_reel(sample))
+
+
+def test_optional_image_provider_error_keeps_the_slide():
+    sample = reel()
+    image = ImageMedia(type="image", keywords="An oak tree.", trigger=Trigger(start_word_index=0, end_word_index=5))
+    sample.blocks[0].media.append(image)
+    generator = ImageGenerator(provider="unsplash", allow_missing=True)
+    generator.image_gen.populate_reel = AsyncMock(side_effect=TimeoutError("deadline"))
+    with patch("aishorts.modules.image.image_providers.RunPodAI") as fallback:
+        asyncio.run(generator.populate_reel(sample))
+    assert not sample.blocks[0].assets.media_map
+    fallback.assert_not_called()
 
 
 def test_pexels_selects_orientation_and_caps_resolution():
@@ -208,6 +246,68 @@ def pexels_result(url="https://videos.pexels.com/clip.mp4"):
                         "user": {"name": "Creator"}, "video_files": [
         {"width": 1280, "height": 720, "file_type": "video/mp4", "link": url},
     ]}]}
+
+
+def test_unsplash_preserves_credit_and_tracks_selected_photo(tmp_path):
+    sample = reel()
+    photo = ImageMedia(type="image", keywords="A forest.", trigger=Trigger(start_word_index=0, end_word_index=5))
+    sample.blocks[0].media.append(photo)
+    track_url = "https://api.unsplash.com/photos/photo-id/download"
+    search = http_session(get=[HTTPResponse(data={"results": [{
+        "urls": {"raw": "https://images.unsplash.com/photo-example"},
+        "user": {"name": "Photographer", "username": "photographer"},
+        "links": {"download_location": track_url},
+    }]})])
+    tracking = http_session(get=[HTTPResponse()])
+    provider = Unsplash(api_key="test-key")
+    provider.OUTPUT_DIR = str(tmp_path)
+    with patch("aiohttp.ClientSession", side_effect=[search, tracking]), \
+         patch("aishorts.modules.image.image_providers.download_from_url", new_callable=AsyncMock) as download:
+        asyncio.run(provider.populate_reel(sample, 1280, 960))
+
+    tracking.get.assert_called_once_with(track_url, headers={"Authorization": "Client-ID test-key"}, allow_redirects=False)
+    assert "client_id" not in search.get.call_args.kwargs["params"]
+    assert download.await_args.args[0].startswith("https://images.unsplash.com/")
+    assert "test-key" not in repr(download.await_args)
+    credit = sample.blocks[0].assets.media_attributions[photo.id]
+    assert credit.creator == "Photographer"
+    assert credit.source_url.startswith("https://unsplash.com/@photographer?")
+
+
+@pytest.mark.parametrize("first_available", [False, True])
+def test_composed_photo_panel_has_no_gap_at_changeover(tmp_path, first_available):
+    sample = reel()
+    add_audio(sample, tmp_path / "narration.wav", duration=1.0)
+    block = sample.blocks[0]
+    for index, color in enumerate(("red", "blue")):
+        media = ImageMedia(type="image", keywords=f"{color} photo", trigger=Trigger(
+            start_word_index=index * 3, end_word_index=index * 3 + 2,
+        ))
+        block.media.append(media)
+        if first_available or index == 1:
+            path = tmp_path / f"{color}.jpg"
+            Image.new("RGB", (640, 480), color).save(path)
+            block.assets.media_map[media.id] = str(path)
+    render_config = EditTemplate.get("briefing")(TemplateConfig()).render_config
+    slides = SlideGenerator(render_config=render_config, upload=False, output_dir=tmp_path)
+    asyncio.run(slides.populate_reel(sample))
+    # The compositor uses the stored photo viewport when loading a checkpoint.
+    sample = Reel.model_validate_json(sample.model_dump_json())
+    video = VideoGenerator(VideoTemplate(edit_template="briefing", template_config={}),
+                           provider="local_ffmpeg", encoder_preset="ultrafast", render_timeout=30)
+    video.render.video_codec = "libx264"
+    video.render.OUTPUT_DIR = str(tmp_path)
+    result = asyncio.run(video.compose(sample))
+    x, y, w, h = sample.blocks[0].assets.slide_viewport
+
+    def color_at(t):
+        return subprocess.check_output([
+            "ffmpeg", "-v", "error", "-ss", str(t), "-i", result.filepath, "-frames:v", "1",
+            "-vf", f"crop=2:2:{x + w // 2}:{y + h // 2}", "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
+        ])[:3]
+
+    for time, expected_channel in ((0, 0 if first_available else 2), (0.5, 2), (0.9, 2)):
+        assert color_at(time)[expected_channel] > 210
 
 
 def test_pexels_retries_and_keeps_credentials_off_downloads(tmp_path):
@@ -325,6 +425,7 @@ def test_actual_ffmpeg_render_with_mixed_scenes_and_checkpoint(mode, clip_durati
 def test_formal_orchestration_avoids_unused_providers():
     config = ShortsConfig(avatars=[Avatar(name="Narrator", instructions="Calm", voice={"provider": "modal_f5tts"}, lipsync_provider="float")],
                           video_template=VideoTemplate(edit_template="lecture", template_config={}),
+                          enabled_tags=[],
                           ffmpeg_config=FFmpegConfig(provider="local_ffmpeg"), slides_config=SlidesConfig(provider_config={"upload": False}))
     with patch("aishorts.shorts_generator.ScriptGenerator") as script, patch("aishorts.shorts_generator.SubtitleGenerator"), \
          patch("aishorts.shorts_generator.ImageGenerator") as images, patch("aishorts.shorts_generator.LipsyncGenerator") as lipsync, \
@@ -368,9 +469,23 @@ def test_catalog_install_and_routing_metadata(tmp_path):
         assert templates["lecture"].credits == 7
         assert templates["lecture"].width == 1920
         assert templates["briefing"].height == 1920
+        assert all(any(tag.asset_type == "images" and tag.default for tag in template.tags)
+                   for template in templates.values())
         prompt = _serialize_input(PlanRequest(instruction="formal lecture"), load_plan_catalog(session), None)
         assert "16:9 narrated lesson" in prompt
         assert "stock_video" in prompt
+
+        for name in templates:
+            for suffix in (".mp4", ".png"):
+                (tmp_path / f"{name}{suffix}").write_bytes(b"preview")
+        storage = Mock()
+        storage.upload_file.side_effect = lambda _, key: f"https://media.example/{key}"
+        with patch("aishorts.utils.r2_handler.CloudflareR2", return_value=storage):
+            install_templates(session, apply=True, previews=tmp_path, refresh_previews=True)
+            install_templates(session, apply=True, previews=tmp_path, refresh_previews=True)
+        assert storage.upload_file.call_count == 6
+        assert existing.credits == 7
+        assert existing.preview_url.startswith("https://media.example/assets/template-previews/lecture-")
     config = GenerationConfig(name="formal", data={"slides_config": {"provider": "pillow"}, "stock_video_config": {"provider": "library"}}).to_config_kwargs()
     assert config["stock_video_config"].provider == "library"
 

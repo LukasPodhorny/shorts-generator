@@ -181,13 +181,22 @@ class ShortsGenerator:
                 formal_instructions += "\n\nADDITIONAL WRITING INSTRUCTIONS:\n" + base_instructions
             base_instructions = formal_instructions
 
+        images_provider_config = shorts_config.images_config.provider_config
+        max_image_width = self.template_config.max_image_width
+        max_image_height = self.template_config.max_image_height
+        if formal:
+            images_provider_config = {**images_provider_config, "allow_missing": True}
+            if "max_image_width" not in self.template_config.model_fields_set:
+                max_image_width = 1280
+            if "max_image_height" not in self.template_config.model_fields_set:
+                max_image_height = 960
         self.image_gen = self._build_generator(AssetType.IMAGES, ImageGenerator,
             provider=shorts_config.images_config.provider,
-            max_width=self.template_config.max_image_width,
-            max_height=self.template_config.max_image_height,
+            max_width=max_image_width,
+            max_height=max_image_height,
             image_style=self.template_config.image_style,
             api_key=self.image_api_key,
-            **shorts_config.images_config.provider_config,
+            **images_provider_config,
         )
 
         self.latex_gen = self._build_generator(AssetType.LATEX, LatexGenerator,
@@ -204,6 +213,12 @@ class ShortsGenerator:
             **shorts_config.manim_config.provider_config,
         )
 
+        self.stock_video_gen = self._build_generator(AssetType.STOCK_VIDEO, StockVideoGenerator,
+            provider=shorts_config.stock_video_config.provider,
+            orientation="landscape" if template_cls.width > template_cls.height else "portrait",
+            **shorts_config.stock_video_config.provider_config,
+        )
+
         self.script_gen = ScriptGenerator(
             base_instructions=base_instructions,
             avatars=self.avatars,
@@ -213,6 +228,7 @@ class ShortsGenerator:
             generate_question=AssetType.QUESTION in self.required_assets,
             generate_slides=AssetType.SLIDES in self.required_assets,
             generate_stock_video=AssetType.STOCK_VIDEO in self.required_assets,
+            stock_video_available=bool(self.stock_video_gen and self.stock_video_gen.provider.available),
             slide_render_config=slide_render_config,
             template_description=template_cls.description,
             provider=shorts_config.script_config.provider,
@@ -278,11 +294,6 @@ class ShortsGenerator:
             provider=shorts_config.slides_config.provider,
             render_config=slide_render_config,
             **shorts_config.slides_config.provider_config,
-        )
-        self.stock_video_gen = self._build_generator(AssetType.STOCK_VIDEO, StockVideoGenerator,
-            provider=shorts_config.stock_video_config.provider,
-            orientation="landscape" if template_cls.width > template_cls.height else "portrait",
-            **shorts_config.stock_video_config.provider_config,
         )
 
         # -- Group generators for pipeline execution --
@@ -762,6 +773,9 @@ class ShortsGenerator:
                     "Generating lipsync video, subtitles, and questions..."
                 )
                 await self._populate_reels(reel_series, self.secondary_generators)
+                if AssetType.SLIDES in self.required_assets:
+                    # Keep the cover URLs in the same checkpoint as the rendered slides.
+                    await thumbnail_task
                 self._save_debug_state(reel_series, PipelineStage.SECONDARY)
                 if status_callback:
                     await status_callback(PipelineStage.SECONDARY, reel_series)
@@ -848,7 +862,7 @@ class ShortsGenerator:
         ))
         if not credits:
             return reel.description
-        return "\n\n".join(filter(None, [reel.description, "Footage credits:\n" + "\n".join(credits)]))
+        return "\n\n".join(filter(None, [reel.description, "Media credits:\n" + "\n".join(credits)]))
 
     async def _cleanup_assets(
         self,

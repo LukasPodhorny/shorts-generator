@@ -4,7 +4,7 @@ from pathlib import Path
 
 from aishorts.modules.script.script import AssetType, Reel, SlideMedia
 from aishorts.modules.slides.slide_providers import SlideProvider
-from aishorts.modules.slides.style import SlideRenderConfig
+from aishorts.modules.slides.style import SlideRenderConfig, layout_regions
 from aishorts.utils.async_utils import await_or_thread
 from aishorts.utils.r2_handler import CloudflareR2
 
@@ -24,7 +24,7 @@ class SlideGenerator:
         async def render(block, slide, index):
             async with self.semaphore:
                 visuals = [m for m in block.media if m.type != "slide" and (
-                    m.id in block.assets.media_map or m.id in block.assets.media_url_map
+                    block.assets.media_map.get(m.id) or block.assets.media_url_map.get(m.id)
                 )]
                 credits = list(dict.fromkeys(
                     f"{a.creator} / {a.provider}"
@@ -38,6 +38,7 @@ class SlideGenerator:
                 path = self.output_dir / f"{uuid.uuid4().hex}.png"
                 await await_or_thread(self.provider.render, slide, config, path)
                 block.assets.media_map[slide.id] = str(path)
+                _, block.assets.slide_viewport = layout_regions(config, slide.layout)
                 if self.upload:
                     url = await asyncio.to_thread(CloudflareR2().upload_file, str(path), f"slides/{path.name}")
                     block.assets.media_url_map[slide.id] = url

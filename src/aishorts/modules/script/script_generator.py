@@ -70,7 +70,7 @@ class ScriptGenerator:
                 ),
                 _bool_rule(self.generate_slides, "- Slides: ENABLED (one structured slide per narration block).",
                            "- Slides: DISABLED (never produce slide media objects)."),
-                _bool_rule(self.generate_stock_video, "- Stock video: ENABLED (stock_video objects with concrete search keywords).",
+                _bool_rule(self.generate_stock_video and self.stock_video_available, "- Stock video: ENABLED (stock_video objects with concrete search keywords).",
                            "- Stock video: DISABLED (never produce stock_video media objects)."),
             ]
         )
@@ -138,6 +138,7 @@ class ScriptGenerator:
         allowed_blocks: list[BlockType] = None,
         generate_slides: bool = False,
         generate_stock_video: bool = False,
+        stock_video_available: bool = True,
         slide_render_config=None,
         template_description: str = "",
         **kwargs,
@@ -150,6 +151,7 @@ class ScriptGenerator:
         self.allowed_blocks = allowed_blocks if allowed_blocks is not None else [BlockType.DIALOGUE]
         self.generate_slides = generate_slides
         self.generate_stock_video = generate_stock_video
+        self.stock_video_available = stock_video_available
         self.slide_render_config = slide_render_config
         self.template_description = template_description
         self.provider = provider.lower()
@@ -187,7 +189,7 @@ class ScriptGenerator:
                 slides = [m for m in block.media if isinstance(m, SlideMedia)]
                 if len(slides) != 1 or len(block.media) > 3:
                     raise ValueError("Each scene needs exactly one slide and at most two additional visuals")
-                occupied = []
+                visuals = []
                 for media in block.media:
                     if media.type not in allowed_media:
                         raise ValueError(f"Media type {media.type} is disabled for this template")
@@ -195,17 +197,28 @@ class ScriptGenerator:
                         raise ValueError("Every media item must have a unique id")
                     ids.add(media.id)
                     if isinstance(media, SlideMedia):
-                        # Slides always fill the scene. Derive the span from the narration.
                         media.trigger = Trigger(start_word_index=0, end_word_index=words - 1)
-                        continue
-                    start, end = media.trigger.start_word_index, media.trigger.end_word_index
-                    if not 0 <= start <= end < words:
-                        raise ValueError(f"Media trigger {start}-{end} is outside this scene's {words} words")
-                    if any(start <= old_end and end >= old_start for old_start, old_end in occupied):
-                        raise ValueError("Non-slide visual triggers must not overlap")
-                    occupied.append((start, end))
+                    else:
+                        visuals.append(media)
+
+                if len(visuals) == 2 and words == 1:
+                    # A one-word scene has room for a single supporting visual.
+                    block.media.remove(visuals.pop())
+                if len(visuals) == 1:
+                    visuals[0].trigger = Trigger(start_word_index=0, end_word_index=words - 1)
+                elif len(visuals) == 2:
+                    first, second = sorted(visuals, key=lambda m: m.trigger.start_word_index)
+                    left, right = first.trigger, second.trigger
+                    if 0 <= left.start_word_index <= left.end_word_index < right.start_word_index <= right.end_word_index < words:
+                        split = right.start_word_index
+                    else:
+                        # If the suggested changeover is unusable, use script order.
+                        first, second = visuals
+                        split = words // 2
+                    first.trigger = Trigger(start_word_index=0, end_word_index=split - 1)
+                    second.trigger = Trigger(start_word_index=split, end_word_index=words - 1)
                 if self.slide_render_config:
-                    for has_visual in ({False, True} if occupied else {False}):
+                    for has_visual in ((False, True) if visuals else (False,)):
                         config = self.slide_render_config.model_copy(update={"has_visual": has_visual})
                         render_slide(slides[0], config)  # measures actual glyphs; no files or network
 
