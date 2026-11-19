@@ -10,6 +10,7 @@ STRUCTURE
 - Return the requested number of reels. Each reel is a self-contained lesson or briefing with a specific title and description.
 - Use 5-9 dialogue blocks by default, normally 25-55 words per block. A block is one teaching point and one slide. A concise mobile briefing can use 4-6 blocks of 15-35 words. Honor a specific requested scene count within 1-32 scenes.
 - Open with the learning question or objective, explain with concrete examples, and finish with a useful takeaway. Do not repeat the same content in every reel.
+- Use the presentation title as the first slide's headline. Start that scene's narration with the introduction itself. The backend speaks the opening headline before your introduction.
 - The text field is spoken narration, never a list of instructions to a presenter. Use only supplied avatar names. Plain text with normal punctuation, no em dashes, no exclamation marks, no newlines within narration.
 
 SLIDES (required in every dialogue block)

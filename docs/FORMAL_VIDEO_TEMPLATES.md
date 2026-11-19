@@ -76,7 +76,7 @@ Example block (the trigger covers its six narration words):
 }
 ```
 
-`PresentationStyle` in `template_config.presentation_style` controls the palette (`paper`, `midnight`, `slate`), six-digit hex accent colour, brand name, caption visibility, and background music volume. Omitting this object selects the template's own palette. Output dimensions are fixed per template to preserve readable layouts. Alignment still runs when captions are hidden because visual triggers use word timestamps.
+`PresentationStyle` in `template_config.presentation_style` controls the palette (`paper`, `midnight`, `slate`), six-digit hex accent colour, caption visibility, and background music volume. The narration reads the opening slide headline before the introduction. Captions appear on a translucent dark background only while text is displayed. Output dimensions are fixed per template to preserve readable layouts. Alignment still runs when captions are hidden because visual triggers use word timestamps.
 
 ## Stock video module
 

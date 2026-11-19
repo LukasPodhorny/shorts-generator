@@ -130,12 +130,9 @@ class FormalTemplate(EditTemplate):
         audio = graph.add_raw(audio_nodes, f"concat=n={len(audio_nodes)}:v=0:a=1") if len(audio_nodes) > 1 else audio_nodes[0]
         audio = audio.filter("dynaudnorm", f=500, g=31, p=0.95, m=4, r=0.1).filter("aresample", 48000)
         if self.style.show_captions and captions:
-            palette = PALETTES[self.style.theme]
-            # ASS colours are BGR, unlike slide colours.
-            rgb = palette["ink"][1:]
-            color = f"&H00{rgb[4:6]}{rgb[2:4]}{rgb[0:2]}"
             style = SubtitleStyle(font="DejaVu Sans", font_size=38 if self.width > self.height else 44,
-                                  color=color, stroke_width=0, shadow_offset=0, alignment=2,
+                                  color="&H00FFFFFF", boxed=True, stroke_color="&H38130F0B",
+                                  stroke_width=12, shadow_offset=0, alignment=2,
                                   offset_y=32 if self.width > self.height else 94,
                                   max_chars_per_line=84 if self.width > self.height else 38, remove_chars="")
             transcription = TranscriptionVerbose(duration=total, language="en", text="", words=captions)

@@ -87,6 +87,7 @@ class SubtitleStyle(BaseModel):
     secondary_color: str = "&H00EDDC40"
     stroke_width: int = 12
     stroke_color: str = "&H00000000"
+    boxed: bool = False
     shadow_color: str = "&H64000000"
     boldness: int = 0
     letter_spacing: int = 0
@@ -393,7 +394,7 @@ class EditTemplate(Provider):
         
         [V4+ Styles]
         Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut,    ScaleX,    ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-        Style: Default,{style.font},{style.font_size},{style.color},{style.secondary_color},{style.stroke_color},{style.shadow_color},{style.       boldness},0,0,0,100,100,{style.letter_spacing},0,1,{style.stroke_width},{style.shadow_offset},{style.alignment},0,0,{style.offset_y},0
+        Style: Default,{style.font},{style.font_size},{style.color},{style.secondary_color},{style.stroke_color},{style.shadow_color},{style.       boldness},0,0,0,100,100,{style.letter_spacing},0,{3 if style.boxed else 1},{style.stroke_width},{style.shadow_offset},{style.alignment},0,0,{style.offset_y},0
         
         [Events]
         Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

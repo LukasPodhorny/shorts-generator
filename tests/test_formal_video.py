@@ -113,11 +113,11 @@ def test_documentary_recovers_from_stock_trigger_beyond_narration():
 
     result = asyncio.run(generator.generate_script(user_input="teach"))
 
-    assert result.reels[0].blocks[0].media[1].trigger == Trigger(start_word_index=0, end_word_index=21)
+    assert result.reels[0].blocks[0].media[1].trigger == Trigger(start_word_index=0, end_word_index=24)
     generator.llm.generate_structure.assert_awaited_once()
 
 
-@pytest.mark.parametrize(("spans", "split"), [([(0, 1), (4, 5)], 4), ([(0, 30), (0, 0)], 3)])
+@pytest.mark.parametrize(("spans", "split"), [([(0, 1), (4, 5)], 7), ([(0, 30), (0, 0)], 4)])
 def test_two_visuals_normalize_to_contiguous_ranges(spans, split):
     sample = reel()
     clips = [
@@ -129,7 +129,7 @@ def test_two_visuals_normalize_to_contiguous_ranges(spans, split):
     validator(mode="documentary").validate_script(ReelSeries(topic="Learning", reels=[sample]))
     assert [clip.trigger for clip in clips] == [
         Trigger(start_word_index=0, end_word_index=split - 1),
-        Trigger(start_word_index=split, end_word_index=5),
+        Trigger(start_word_index=split, end_word_index=8),
     ]
 
 
@@ -142,7 +142,11 @@ def test_generated_slide_timing_uses_full_narration_without_retry(end):
 
     result = asyncio.run(generator.generate_script(user_input="teach"))
 
-    assert result.reels[0].blocks[0].media[0].trigger == Trigger(start_word_index=0, end_word_index=5)
+    block = result.reels[0].blocks[0]
+    assert block.text == "How knowledge grows. Observe a pattern and test it."
+    assert block.media[0].trigger == Trigger(start_word_index=0, end_word_index=8)
+    generator.validate_script(result)
+    assert block.text == "How knowledge grows. Observe a pattern and test it."
     generator.llm.generate_structure.assert_awaited_once()
 
 

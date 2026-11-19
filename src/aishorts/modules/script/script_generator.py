@@ -180,15 +180,24 @@ class ScriptGenerator:
         for reel in series.reels:
             if not 1 <= len(reel.blocks) <= 32:
                 raise ValueError("Each formal video requires 1-32 scenes")
-            for block in reel.blocks:
+            for index, block in enumerate(reel.blocks):
                 if block.type not in self.allowed_blocks or getattr(block, "avatar", None) not in names:
                     raise ValueError("Use only allowed narration blocks and supplied avatar names")
                 words = len(block.text.split())
-                if not 1 <= words <= 180:
-                    raise ValueError("Each narration scene requires 1-180 words")
                 slides = [m for m in block.media if isinstance(m, SlideMedia)]
                 if len(slides) != 1 or len(block.media) > 3:
                     raise ValueError("Each scene needs exactly one slide and at most two additional visuals")
+                title_words = 0
+                if index == 0 and words:
+                    title = slides[0].title.strip()
+                    if title:
+                        opening = title if title.endswith((".", "!", "?")) else title + "."
+                        if not block.text.lstrip().casefold().startswith(opening.casefold()):
+                            title_words = len(opening.split())
+                            block.text = f"{opening} {block.text.lstrip()}"
+                narration_words = words + title_words
+                if not 1 <= narration_words <= 180:
+                    raise ValueError("Each narration scene requires 1-180 words, including the opening title")
                 visuals = []
                 for media in block.media:
                     if media.type not in allowed_media:
@@ -197,26 +206,26 @@ class ScriptGenerator:
                         raise ValueError("Every media item must have a unique id")
                     ids.add(media.id)
                     if isinstance(media, SlideMedia):
-                        media.trigger = Trigger(start_word_index=0, end_word_index=words - 1)
+                        media.trigger = Trigger(start_word_index=0, end_word_index=narration_words - 1)
                     else:
                         visuals.append(media)
 
-                if len(visuals) == 2 and words == 1:
+                if len(visuals) == 2 and narration_words == 1:
                     # A one-word scene has room for a single supporting visual.
                     block.media.remove(visuals.pop())
                 if len(visuals) == 1:
-                    visuals[0].trigger = Trigger(start_word_index=0, end_word_index=words - 1)
+                    visuals[0].trigger = Trigger(start_word_index=0, end_word_index=narration_words - 1)
                 elif len(visuals) == 2:
                     first, second = sorted(visuals, key=lambda m: m.trigger.start_word_index)
                     left, right = first.trigger, second.trigger
                     if 0 <= left.start_word_index <= left.end_word_index < right.start_word_index <= right.end_word_index < words:
-                        split = right.start_word_index
+                        split = title_words + right.start_word_index
                     else:
                         # If the suggested changeover is unusable, use script order.
                         first, second = visuals
-                        split = words // 2
+                        split = narration_words // 2
                     first.trigger = Trigger(start_word_index=0, end_word_index=split - 1)
-                    second.trigger = Trigger(start_word_index=split, end_word_index=words - 1)
+                    second.trigger = Trigger(start_word_index=split, end_word_index=narration_words - 1)
                 if self.slide_render_config:
                     for has_visual in ((False, True) if visuals else (False,)):
                         config = self.slide_render_config.model_copy(update={"has_visual": has_visual})

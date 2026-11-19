@@ -206,24 +206,20 @@ def _background(width, height, theme):
     return Image.merge("RGB", channels)
 
 
-def _hero(draw, slide, box, palette, accent):
+def _hero(draw, slide, box, palette):
     x, y, width, height = box
     head_size = 105 if width >= 900 else 84
     subtitle = _fit(draw, slide.subtitle, min(width, 1100), height * 0.40, 47, 28)
     gap = 28 if _height(subtitle) else 0
-    headline = _fit(draw, slide.title, min(width, 1370), height - _height(subtitle) - gap - 42, head_size, 42, True)
-    height_used = _height(headline) + gap + _height(subtitle) + 42
+    headline = _fit(draw, slide.title, min(width, 1370), height - _height(subtitle) - gap, head_size, 42, True)
+    height_used = _height(headline) + gap + _height(subtitle)
     top = y + int((height - height_used) * 0.46)
-    draw.rounded_rectangle((x, top, x + 64, top + 6), radius=3, fill=accent)
-    top += 42
     _paint(draw, headline, x, top, palette["ink"])
     _paint(draw, subtitle, x, top + _height(headline) + gap, palette["muted"])
 
 
-def _header(draw, config, margin, palette, accent):
+def _scene_indicator(draw, config, margin, palette, accent):
     w = config.width
-    brand = config.style.brand_name or {"lecture": "LEARNING NOTES", "documentary": "FIELD NOTES", "briefing": "THE BRIEF"}[config.mode]
-    text_box(draw, brand, (margin, 55, w - 2 * margin - 278, 48), palette["muted"], size=24, minimum=19, bold=True)
     if config.chapters > 1:
         right = w - margin
         count = f"{config.chapter:02d} / {config.chapters:02d}"
@@ -236,7 +232,6 @@ def _header(draw, config, margin, palette, accent):
                 left = end - (config.chapters - i) * step
                 color = accent if i + 1 == config.chapter else palette["line"]
                 draw.rounded_rectangle((left, 64, left + step - 5, 70), radius=3, fill=color)
-    draw.line((margin, 110, w - margin, 110), fill=palette["line"], width=2)
 
 
 def _credits(draw, slide, config, margin, y, palette):
@@ -264,9 +259,9 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
     image = _background(config.width, config.height, config.style.theme).copy()
     draw = ImageDraw.Draw(image)
     portrait = config.mode == "briefing"
-    w, h = image.size
+    w = image.width
     margin = 72 if portrait else 88
-    _header(draw, config, margin, palette, accent)
+    _scene_indicator(draw, config, margin, palette, accent)
     box, visual = layout_regions(config, slide.layout)
     x, y, bw, bh = box
     if visual:
@@ -276,7 +271,7 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
     if slide.layout == "title":
         if visual is None:
             box = (x, 170, bw, 1360 if portrait else 670)
-        _hero(draw, slide, box, palette, accent)
+        _hero(draw, slide, box, palette)
     else:
         title_y = 156 if visual else 360 if portrait else 206
         title_h = (176 if portrait else 142) if visual else (258 if portrait else 184)
@@ -299,9 +294,6 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
         elif slide.layout != "quote":
             _items(draw, slide, (x, y, bw, bh), palette, accent, portrait=portrait, has_visual=bool(visual))
     _credits(draw, slide, config, margin, 1660 if portrait else 889, palette)
-    if config.style.show_captions:
-        caption_top = 1748 if portrait else 954
-        draw.line((margin, caption_top, w - margin, caption_top), fill=palette["line"], width=2)
     if output is None:
         return image
     path = Path(output)
