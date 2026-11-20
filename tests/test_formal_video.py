@@ -14,9 +14,9 @@ from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 from PIL import Image
 from pydantic import ValidationError
 
-from aishorts import Avatar, FFmpegConfig, ScriptConfig, ShortsConfig, ShortsGenerator, SlidesConfig, VideoTemplate
+from aishorts import Avatar, FFmpegConfig, ImagesConfig, ScriptConfig, ShortsConfig, ShortsGenerator, SlidesConfig, VideoTemplate
 from aishorts.modules.image.image_generator import ImageGenerator
-from aishorts.modules.image.image_providers import Unsplash
+from aishorts.modules.image.image_providers import RunPodAI, Unsplash
 from aishorts.modules.script.script import AssetType, DialogueBlock, ImageMedia, Reel, ReelSeries, SlideMedia, StockVideoMedia, Trigger
 from aishorts.modules.script.script_generator import ScriptGenerator
 from aishorts.modules.slides.renderer import SlideOverflowError, render_slide
@@ -33,12 +33,18 @@ from aishorts.modules.video_edit.video_generator import VideoGenerator
 def slide(layout="title", **kwargs):
     values = dict(type="slide", layout=layout, title="How knowledge grows",
                   subtitle="Observe, explain, and test.", trigger=Trigger(start_word_index=0, end_word_index=5))
-    if layout in {"bullets", "process", "comparison"}:
+    if layout in {"bullets", "process", "comparison", "timeline"}:
         values["items"] = [{"heading": "Observation", "body": "Notice a pattern."},
                            {"heading": "Test", "body": "Check your explanation."}]
     if layout == "chart":
         values.update(chart=[{"label": "Before", "value": -5}, {"label": "After", "value": 12}],
                       unit="points", source="Illustrative example")
+    if layout == "donut":
+        values.update(chart=[{"label": "Soaks in", "value": 50}, {"label": "Runs off", "value": 30},
+                             {"label": "Evaporates", "value": 20}], source="Illustrative example")
+    if layout == "metrics":
+        values.update(items=[{"heading": "50%", "body": "Soaks in"}, {"heading": "30%", "body": "Runs off"},
+                             {"heading": "20%", "body": "Evaporates"}], source="Illustrative example")
     values.update(kwargs)
     return SlideMedia(**values)
 
@@ -58,7 +64,8 @@ def validator(mode="lecture", stock=True):
 
 
 @pytest.mark.parametrize("mode", ["lecture", "documentary", "briefing"])
-@pytest.mark.parametrize("layout", ["title", "bullets", "process", "comparison", "chart", "quote"])
+@pytest.mark.parametrize("layout", ["title", "bullets", "process", "comparison", "chart", "quote",
+                                    "metrics", "donut", "timeline", "spotlight"])
 @pytest.mark.parametrize("has_visual", [False, True])
 def test_all_layouts_render_readably(mode, layout, has_visual, tmp_path):
     template = EditTemplate.get(mode)(TemplateConfig())
@@ -77,6 +84,12 @@ def test_bad_chart_and_comparison_rejected():
         slide("comparison", items=[{"heading": "Alone"}])
     with pytest.raises(ValidationError):
         slide("chart", chart=[{"label": "x", "value": float("nan")}, {"label": "y", "value": 1}])
+    with pytest.raises(ValidationError, match="positive shares"):
+        slide("donut", chart=[{"label": "Before", "value": 0}, {"label": "After", "value": 12}])
+    with pytest.raises(ValidationError, match="values, labels, and a source"):
+        slide("metrics", source="")
+    with pytest.raises(ValidationError, match="chronological milestones"):
+        slide("timeline", items=[{"heading": "Only one milestone"}])
 
 
 def test_text_overflow_is_not_silently_clipped():
@@ -187,6 +200,31 @@ def test_optional_image_provider_error_keeps_the_slide():
         asyncio.run(generator.populate_reel(sample))
     assert not sample.blocks[0].assets.media_map
     fallback.assert_not_called()
+
+
+def test_documentary_illustrations_use_editorial_direction():
+    config = ShortsConfig(
+        avatars=[Avatar(name="Narrator", instructions="Calm", voice={"provider": "modal_f5tts"}, lipsync_provider="float")],
+        video_template=VideoTemplate(edit_template="documentary", template_config={}),
+        enabled_tags=[],
+        ffmpeg_config=FFmpegConfig(provider="local_ffmpeg"),
+        slides_config=SlidesConfig(provider_config={"upload": False}),
+        images_config=ImagesConfig(provider="runpod_ai"),
+    )
+    with patch("aishorts.shorts_generator.ScriptGenerator"), patch("aishorts.shorts_generator.SubtitleGenerator"), \
+         patch("aishorts.modules.latex.latex_providers.CloudflareR2"):
+        generator = ShortsGenerator(config)
+    provider = generator.image_gen.image_gen
+    assert isinstance(provider, RunPodAI)
+    sample = reel()
+    image = ImageMedia(type="image", keywords="Mist rising from a lake.", trigger=Trigger(start_word_index=0, end_word_index=5))
+    sample.blocks[0].media.append(image)
+    with patch.object(provider, "get_images", new_callable=AsyncMock, return_value=[None]) as render:
+        asyncio.run(generator.image_gen.populate_reel(sample))
+    prompt = render.call_args.kwargs["prompts"][0]
+    assert prompt.startswith(image.keywords)
+    assert "Editorial illustration" in prompt
+    assert not sample.blocks[0].assets.media_map
 
 
 def test_pexels_selects_orientation_and_caps_resolution():
@@ -435,8 +473,11 @@ def test_formal_orchestration_avoids_unused_providers():
          patch("aishorts.shorts_generator.ImageGenerator") as images, patch("aishorts.shorts_generator.LipsyncGenerator") as lipsync, \
          patch("aishorts.shorts_generator.ManimGenerator") as manim, patch("aishorts.shorts_generator.SongGenerator") as song:
         generator = ShortsGenerator(config)
-    for unused in (images, lipsync, manim, song):
+    for unused in (lipsync, manim, song):
         unused.assert_not_called()
+    images.assert_called_once()
+    assert script.call_args.kwargs["generate_image"]
+    assert script.call_args.kwargs["generate_latex"]
     assert "formal presentation" in script.call_args.kwargs["base_instructions"]
     assert "profanity" not in script.call_args.kwargs["base_instructions"].split("SOURCE AND VOICE")[0]
     assert AssetType.SLIDES in generator.secondary_generators
@@ -473,7 +514,7 @@ def test_catalog_install_and_routing_metadata(tmp_path):
         assert templates["lecture"].credits == 7
         assert templates["lecture"].width == 1920
         assert templates["briefing"].height == 1920
-        assert all(any(tag.asset_type == "images" and tag.default for tag in template.tags)
+        assert all(not any(tag.asset_type in {"images", "latex"} for tag in template.tags)
                    for template in templates.values())
         prompt = _serialize_input(PlanRequest(instruction="formal lecture"), load_plan_catalog(session), None)
         assert "16:9 narrated lesson" in prompt

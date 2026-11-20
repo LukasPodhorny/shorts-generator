@@ -256,6 +256,7 @@ class RunPodAI(ImageProvider):
         default_strength: float = 0.8,
         enable_safety_checker: bool = True,
         timeout: int = 300,
+        scene_style: str = "",
     ):
         self.api_key = api_key or os.getenv("RUNPOD_API_KEY")
         self.endpoint_id = endpoint_id
@@ -264,6 +265,7 @@ class RunPodAI(ImageProvider):
         self.default_strength = default_strength
         self.enable_safety_checker = enable_safety_checker
         self.timeout = timeout
+        self.scene_style = scene_style
         self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
 
     async def _generate_image(
@@ -420,7 +422,10 @@ class RunPodAI(ImageProvider):
             if AssetType.IMAGES in block.valid_assets and block.media:
                 for media_item in block.media:
                     if media_item.type == "image":
-                        prompts.append(media_item.keywords)
+                        prompt = media_item.keywords
+                        if self.scene_style:
+                            prompt = f"{prompt.rstrip('.')}. {self.scene_style}"
+                        prompts.append(prompt)
                         ids.append((i, media_item.id))
 
         results = await self.get_images(prompts=prompts, ids=ids, **kwargs)

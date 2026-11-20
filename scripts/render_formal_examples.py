@@ -48,8 +48,10 @@ def load_example_photos(reel):
     for block in reel.blocks:
         for media in block.media:
             if isinstance(media, ImageMedia):
-                creator, source, license_name = PHOTO_CREDITS[media.keywords]
                 block.assets.media_map[media.id] = str(PHOTOS / f"{media.keywords}.jpg")
+                if media.keywords == "lake-illustration":
+                    continue
+                creator, source, license_name = PHOTO_CREDITS[media.keywords]
                 block.assets.media_attributions[media.id] = MediaAttribution(
                     creator=creator, provider="Wikimedia Commons",
                     source_url=f"https://commons.wikimedia.org/wiki/File:{source}", license=license_name,
@@ -81,9 +83,9 @@ def examples():
                       {"heading": "Alternative explanations", "body": "Consider other possible causes."}]),
         ]),
         "documentary": Reel(title="Why clouds form", description="A footage-led introduction to the water cycle.", blocks=[
-            scene("Clouds reveal water moving through the atmosphere. Their visible shapes are made of tiny water droplets or ice crystals, rather than invisible water vapour.",
-                  "Water, made visible", "bullets", items=[{"heading": "Water droplets", "body": "Tiny liquid particles."},
-                      {"heading": "Ice crystals", "body": "Water in its solid form."}], stock="clouds sky atmosphere"),
+            scene("A lake and the air above it are connected. Follow the water as it moves from the surface to the atmosphere and back.",
+                  "Water, made visible", "spotlight", subtitle="From the lake to the clouds and back.",
+                  photo="lake-illustration", source="AI illustration"),
             scene("Energy from the sun helps liquid water evaporate. As moist air rises and cools, water vapour can condense into droplets that form clouds.",
                   "From surface water to clouds", "process", items=[{"heading": "Evaporation", "body": "Liquid water becomes vapour."},
                       {"heading": "Cooling", "body": "Rising air often cools."},
@@ -93,20 +95,25 @@ def examples():
             scene("The water cycle connects the surface and the atmosphere. Evaporation, condensation and precipitation are different processes in the same continuing movement of water.",
                   "One cycle, connected processes", "comparison", items=[{"heading": "Upward", "body": "Evaporation moves water into the air."},
                       {"heading": "Downward", "body": "Precipitation returns water to the surface."}]),
+            scene("Imagine one hundred drops of rain reaching a hillside. In this example, fifty soak into the ground, thirty run off, and twenty evaporate.",
+                  "Where the rain goes", "donut", chart=[{"label": "Soaks in", "value": 50},
+                      {"label": "Runs off", "value": 30}, {"label": "Evaporates", "value": 20}],
+                  source="Illustrative example · 100 drops of rain"),
         ]),
         "briefing": Reel(title="Koloběh vody v kostce", description="Stručné české opakování pro mobil.", blocks=[
             scene("Voda se neustále pohybuje mezi zemským povrchem a atmosférou. Koloběh vody propojuje vypařování, kondenzaci a srážky do jednoho souvislého děje.",
-                  "Voda je stále v pohybu", "title", subtitle="Koloběh vody v kostce", photo="mist"),
+                  "Voda je stále v pohybu", "spotlight", subtitle="Koloběh vody v kostce",
+                  photo="lake-illustration", source="Ilustrace vytvořená pomocí AI"),
             scene("Při vypařování se kapalná voda mění na vodní páru. Při kondenzaci vznikají drobné kapičky. Srážky potom vracejí vodu zpátky na povrch.",
-                  "Tři propojené děje", "process", items=[{"heading": "Vypařování", "body": "Voda přechází do vzduchu."},
+                  "Tři propojené děje", "timeline", items=[{"heading": "Vypařování", "body": "Voda přechází do vzduchu."},
                       {"heading": "Kondenzace", "body": "Vznikají drobné kapičky."},
                       {"heading": "Srážky", "body": "Voda se vrací na povrch."}]),
             scene("Vodní pára je neviditelná. Viditelný oblak tvoří drobné kapky vody nebo ledové krystalky. Pára a oblak proto nejsou totéž.",
                   "Pára není oblak", "comparison", items=[{"heading": "Vodní pára", "body": "Neviditelná plynná voda."},
                       {"heading": "Oblak", "body": "Viditelné kapičky nebo krystalky."}], stock="clouds"),
-            scene("Zapamatujte si hlavní souvislost. Sluneční energie pomáhá vodu vypařovat a gravitace ji přivádí zpět. Jednotlivé děje společně udržují vodu v pohybu.",
-                  "Co si zapamatovat", "bullets", items=[{"heading": "Sluneční energie", "body": "Pomáhá vodu vypařovat."},
-                      {"heading": "Gravitace", "body": "Vrací vodu na povrch."}], photo="droplets"),
+            scene("Představme si sto kapek deště. V modelovém příkladu se čtyřicet vsákne do půdy, zatímco šedesát odteče po povrchu.",
+                  "Kam se poděje déšť", "metrics", items=[{"heading": "40 %", "body": "Vsákne se do půdy"},
+                      {"heading": "60 %", "body": "Odteče po povrchu"}], source="Modelový příklad · 100 kapek"),
         ]),
     }
 

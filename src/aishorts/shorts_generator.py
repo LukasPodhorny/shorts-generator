@@ -169,8 +169,7 @@ class ShortsGenerator:
             if b != BlockType.QUESTION or AssetType.QUESTION in self.required_assets
         ]
 
-        # Optional providers are constructed only when used, so slide-only videos
-        # do not require keys or endpoints for images, music, animation or lipsync.
+        # Construct only the providers selected by the template and its asset tags.
         formal = template_cls.script_instructions_resource is not None
         slide_render_config = template_cls(self.template_config).render_config if formal else None
         base_instructions = shorts_config.script_config.base_instructions
@@ -186,6 +185,13 @@ class ShortsGenerator:
         max_image_height = self.template_config.max_image_height
         if formal:
             images_provider_config = {**images_provider_config, "allow_missing": True}
+            if slide_render_config.mode in {"documentary", "briefing"} and shorts_config.images_config.provider.lower() == "runpod_ai":
+                images_provider_config.setdefault(
+                    "scene_style",
+                    "Editorial illustration for an educational video. One clear centered subject, "
+                    "natural colors, soft light and subtle texture. Keep key details within the center crop. "
+                    "Fill the frame with the scene. Omit text, logos, borders and labels.",
+                )
             if "max_image_width" not in self.template_config.model_fields_set:
                 max_image_width = 1280
             if "max_image_height" not in self.template_config.model_fields_set:

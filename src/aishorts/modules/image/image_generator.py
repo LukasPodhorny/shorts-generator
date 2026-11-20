@@ -144,7 +144,7 @@ class ImageGenerator:
 
         # Provider now populates the reel directly
         try:
-            await await_or_thread(func, reel, self.max_width, self.max_height, **kwargs)
+            await await_or_thread(func, reel, max_width=self.max_width, max_height=self.max_height, **kwargs)
         except Exception as exc:
             if not self.allow_missing:
                 raise

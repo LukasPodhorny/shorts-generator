@@ -135,13 +135,7 @@ def _items(draw, slide, box, palette, accent, *, portrait, has_visual):
             i = row * columns + col
             cx = x + col * (cell_w + gap)
             if comparison or columns > 1:
-                draw.rounded_rectangle((cx, cy, cx + cell_w, cy + row_h), radius=22,
-                                       fill=palette["panel"], outline=palette["line"], width=2)
-                if comparison:
-                    color = accent if i == 0 else palette["line"]
-                    draw.rounded_rectangle((cx + 10, cy + 20, cx + 14, cy + row_h - 20), radius=2, fill=color)
-            else:
-                draw.line((cx, cy + row_h, cx + cell_w, cy + row_h), fill=palette["line"], width=2)
+                draw.rounded_rectangle((cx, cy, cx + cell_w, cy + row_h), radius=22, fill=palette["panel"])
 
             if process:
                 sx, sy = cx + pad_x, cy + 16
@@ -195,8 +189,10 @@ def _chart(draw, slide, box, palette, accent):
 
 
 @lru_cache(maxsize=6)
-def _background(width, height, theme):
+def _background(width, height, theme, mode):
     palette = PALETTES[theme]
+    if mode != "lecture":
+        return Image.new("RGB", (width, height), palette["bg"])
     gradient = Image.linear_gradient("L").rotate(90).resize((width, height))
     colors = tuple(ImageColor.getrgb(palette[key]) for key in ("bg", "wash"))
     channels = [
@@ -204,6 +200,90 @@ def _background(width, height, theme):
         for start, end in zip(*colors)
     ]
     return Image.merge("RGB", channels)
+
+
+def _metrics(draw, slide, box, palette, accent):
+    x, y, w, h = box
+    columns = len(slide.items) if w >= 1120 else 1
+    gap = 54
+    width = (w - gap * (columns - 1)) // columns
+    rows = (len(slide.items) + columns - 1) // columns
+    band = min(264, h // rows)
+    y += int((h - band * rows) * (0.32 if columns == 1 else 0.48))
+    size = max(30, min(136, int(min(band * 0.65, band - 62) / 1.26)))
+    longest_value = max(draw.textlength(item.heading, font=_font(size, True)) for item in slide.items)
+    size = max(30, min(size, int(size * width / max(longest_value, 1))))
+    value_height = round(size * 1.26)
+    for i, item in enumerate(slide.items):
+        left = x + i % columns * (width + gap)
+        top = y + i // columns * band
+        text_box(draw, item.heading, (left, top, width, value_height),
+                 accent, size=size, minimum=30, bold=True)
+        text_box(draw, item.body, (left, top + value_height + 10, width, band - value_height - 24),
+                 palette["ink"], size=42 if w >= 900 else 34, minimum=22)
+
+
+def _donut(draw, slide, box, palette, accent):
+    x, y, w, h = box
+    stacked = h >= 820
+    chart_w = w if stacked else int(w * 0.49)
+    diameter = min(int(chart_w * (0.67 if stacked else 0.91)), int(h * (0.50 if stacked else 0.91)), 540)
+    cx = x + (chart_w - diameter) // 2
+    cy = y if stacked else y + (h - diameter) // 2
+    legend_x = x if stacked else x + chart_w + 24
+    legend_y = cy + diameter + 40 if stacked else y
+    legend_w = x + w - legend_x
+    legend_h = y + h - legend_y
+    row = min(92, legend_h // len(slide.chart))
+    legend_y += (legend_h - row * len(slide.chart)) // 2
+    label_size = 40 if legend_w >= 540 else 30
+    value_font = _font(label_size, True)
+    value_width = draw.textlength("100.0%", font=value_font) + 22
+    total = sum(point.value for point in slide.chart)
+    colors = (accent, "#BC735A", "#6A8799", "#C5A45D", "#88769D")
+    theta = -90.0
+    for i, point in enumerate(slide.chart):
+        share = point.value / total
+        end = theta + 360 * share
+        draw.pieslice((cx, cy, cx + diameter, cy + diameter), theta, end, fill=colors[i])
+        theta = end
+        middle = legend_y + (i + 0.5) * row
+        draw.ellipse((legend_x, middle - 9, legend_x + 18, middle + 9), fill=colors[i])
+        label = _fit(draw, point.label, legend_w - 34 - value_width, row - 4, label_size, 20)
+        _paint(draw, label, legend_x + 34, middle - _height(label) / 2, palette["ink"])
+        percent = f"{share * 100:.1f}".rstrip("0").rstrip(".")
+        draw.text((legend_x + legend_w, middle), "<0.1%" if percent == "0" else f"{percent}%",
+                  fill=palette["ink"], font=value_font, anchor="rm")
+    inset = int(diameter * 0.27)
+    draw.ellipse((cx + inset, cy + inset, cx + diameter - inset, cy + diameter - inset), fill=palette["bg"])
+
+
+def _timeline(draw, slide, box, palette, accent):
+    x, y, w, h = box
+    count = len(slide.items)
+    horizontal = w >= 1200
+    gap = 26
+    gutter = 66
+    item_w = (w - gap * (count - 1)) // count if horizontal else w - gutter
+    stride = min(224, h // count)
+    top = y + max(0, (h - 190) // 2) if horizontal else y + int((h - stride * count) * 0.20)
+    dot = 12
+    step = item_w + gap
+    if horizontal:
+        draw.line((x + dot, top + dot, x + step * (count - 1) + dot, top + dot), fill=palette["line"], width=3)
+    else:
+        draw.line((x + dot, top + dot, x + dot, top + stride * (count - 1) + dot), fill=palette["line"], width=3)
+    heading_size, body_size = (54, 42) if not horizontal and w >= 900 else (40, 31)
+    for i, item in enumerate(slide.items):
+        left = x + i * step if horizontal else x
+        cy = top if horizontal else top + i * stride
+        draw.ellipse((left, cy, left + 2 * dot, cy + 2 * dot), fill=accent)
+        tx, ty = (left, cy + 44) if horizontal else (left + gutter, cy)
+        budget = y + h - ty if horizontal else stride - 12
+        used = text_box(draw, item.heading, (tx, ty, item_w, int(budget * (0.5 if item.body else 1))),
+                        palette["ink"], size=heading_size, minimum=25, bold=True)
+        text_box(draw, item.body, (tx, ty + used + 6, item_w, budget - used - 6),
+                 palette["muted"], size=body_size, minimum=21)
 
 
 def _hero(draw, slide, box, palette):
@@ -256,7 +336,7 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
         raise ValueError("Slide dimensions must match the presentation mode")
     palette = PALETTES[config.style.theme]
     accent = config.style.accent_color
-    image = _background(config.width, config.height, config.style.theme).copy()
+    image = _background(config.width, config.height, config.style.theme, config.mode).copy()
     draw = ImageDraw.Draw(image)
     portrait = config.mode == "briefing"
     w = image.width
@@ -266,9 +346,8 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
     x, y, bw, bh = box
     if visual:
         vx, vy, vw, vh = visual
-        draw.rectangle((vx - 2, vy - 2, vx + vw + 1, vy + vh + 1),
-                       fill=palette["panel"], outline=palette["line"], width=2)
-    if slide.layout == "title":
+        draw.rectangle((vx, vy, vx + vw - 1, vy + vh - 1), fill=palette["panel"])
+    if slide.layout in {"title", "spotlight"}:
         if visual is None:
             box = (x, 170, bw, 1360 if portrait else 670)
         _hero(draw, slide, box, palette)
@@ -291,6 +370,12 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
             y, bh = y + used + 22, bh - used - 22
         if slide.layout == "chart":
             _chart(draw, slide, (x, y, bw, bh), palette, accent)
+        elif slide.layout == "metrics":
+            _metrics(draw, slide, (x, y, bw, bh), palette, accent)
+        elif slide.layout == "donut":
+            _donut(draw, slide, (x, y, bw, bh), palette, accent)
+        elif slide.layout == "timeline":
+            _timeline(draw, slide, (x, y, bw, bh), palette, accent)
         elif slide.layout != "quote":
             _items(draw, slide, (x, y, bw, bh), palette, accent, portrait=portrait, has_visual=bool(visual))
     _credits(draw, slide, config, margin, 1660 if portrait else 889, palette)

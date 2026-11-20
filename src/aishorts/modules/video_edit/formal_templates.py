@@ -31,8 +31,8 @@ def visual_changeover(block, media, duration):
 
 
 class FormalTemplate(EditTemplate):
-    core_assets = [AssetType.SCRIPT, AssetType.VOICE, AssetType.SUBTITLES, AssetType.SLIDES]
-    tag_assets = {AssetType.IMAGES: True, AssetType.LATEX: False, AssetType.MANIM: False, AssetType.STOCK_VIDEO: False}
+    core_assets = [AssetType.SCRIPT, AssetType.VOICE, AssetType.SUBTITLES, AssetType.SLIDES, AssetType.IMAGES, AssetType.LATEX]
+    tag_assets = {AssetType.MANIM: False, AssetType.STOCK_VIDEO: False}
     allowed_blocks = [BlockType.DIALOGUE]
     width, height = 1920, 1080
     mode = "lecture"
@@ -159,7 +159,7 @@ class DocumentaryTemplate(FormalTemplate):
     mode = "documentary"
     description = "16:9 documentary explainer with stock footage beside concise teaching notes. Best for science, history, geography and real-world processes. No visible avatar. Falls back to slides when footage is unavailable."
     tag_assets = {**FormalTemplate.tag_assets, AssetType.STOCK_VIDEO: True}
-    default_style = PresentationStyle(theme="midnight", accent_color="#72E3CE")
+    default_style = PresentationStyle(theme="linen", accent_color="#17645D")
 
 
 class BriefingTemplate(FormalTemplate):

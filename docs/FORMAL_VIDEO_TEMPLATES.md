@@ -5,12 +5,12 @@ Výstup rozšiřuje generátor o formální výuková videa ve formátech 16:9 a
 ## Templates
 
 - **`lecture`**: 1920 × 1080. Warm paper palette, aligned text and photo columns, and horizontal layouts for short processes and comparisons. For courses, academic explanations and workplace training.
-- **`documentary`**: 1920 × 1080. Dark background, large footage panel and concise teaching notes. Stock footage is enabled by default. A missed search produces a complete teaching slide without an empty footage panel.
-- **`briefing`**: 1080 × 1920. Large portrait photography followed by teaching notes, with a compact text-only layout when visuals are unavailable. For mobile revision and professional explainers. Bundled Inter and DejaVu Sans fonts support Czech diacritics.
+- **`documentary`**: 1920 × 1080. A matte linen background with a large panel for footage or illustration. Stock footage is enabled by default. A missed search produces a complete teaching slide without an empty footage panel.
+- **`briefing`**: 1080 × 1920. A matte evergreen background with stacked photography and teaching notes. The renderer uses larger text and figures for short, text-only scenes. Bundled Inter and DejaVu Sans fonts support Czech diacritics.
 
 All three use the selected avatar's **voice**, without generating a visible avatar, lipsync, or gameplay. Existing gameplay and song templates remain available. The formal writing brief replaces the default entertainment brief, including its persona instructions. Additional custom script instructions are retained.
 
-The picker displays each template's description and aspect ratio. Widescreen previews and video thumbnails are contained rather than cropped into portrait frames. The video player already supports both orientations; its Details & credits view exposes descriptions and clickable footage attribution.
+The Edit tab shows the template name and aspect ratio. Hover over the info icon or activate it to see the description. Widescreen previews and video thumbnails keep their original aspect ratio. The player's Details & credits view includes clickable footage attribution.
 
 ## Install the catalog entries
 
@@ -47,13 +47,20 @@ The `slides` module turns typed `SlideMedia` into PNG assets. It uses the same p
 - `pillow` (default): deterministic CPU rendering in the application worker. No API key, GPU, browser, or additional service is needed.
 - `modal_slides`: optional remote execution of the same renderer, returning a PNG over authenticated HTTP.
 
-Layouts are `title`, `bullets`, `process`, `comparison`, `chart`, and `quote`. Comparisons contain exactly two alternatives. Process cards are numbered. Horizontal charts support positive and negative values, share a zero baseline, and require a source label; invented teaching data must be labelled as an illustrative example. Layout validation cannot independently establish whether a citation is true, so the writing instructions explicitly prohibit invented factual data and citations.
+The renderer supports `title`, `bullets`, `process`, `comparison`, `chart`, and `quote`, plus four layouts the script writer can select by content.
+
+- `spotlight` gives a photo, illustration, or clip a larger crop beside a headline or above it in portrait videos.
+- `timeline` aligns two to four chronological milestones on a rail that changes orientation to fit the available width.
+- `metrics` gives one to three figures large type with supporting labels. Set each item's `heading` to the value including units and `body` to what the figure measures.
+- `donut` plots two to five positive `chart` values as shares of a whole. The renderer derives the percentages from their total.
+
+Comparisons contain two equally styled alternatives. Process steps are numbered. Bar charts support positive and negative values and share a zero baseline. Charts and metrics require a source label. The writing instructions prohibit invented factual data and citations and require illustrative figures to be labelled.
 
 Text uses actual glyph measurements, wrapping and bounded font reduction. Dense content fails validation instead of being silently cropped or made unreadably small. Before paid assets are generated, the formal script validator checks both the visual-panel layout and the full-slide fallback. The LLM gets one corrective retry with the validation error. The renderer accepts structured data only, with no model-generated HTML or executable code.
 
 Each narration block contains exactly one slide. One supporting visual fills the scene, while two share it. The backend can use a valid word index for the changeover and otherwise divides the scene in script order. A single remaining visual fills the panel if the other asset is unavailable. The small markers in the header identify scenes; elapsed playback time is shown by the video player's controls.
 
-Images are enabled by default on all three formal templates. The selected image provider supplies photos for relevant scenes, with Unsplash as the default. Photos and stock footage fill the panel with a centred crop. Equations and teaching animations are fitted to preserve labels. Missing optional photos fall back to the slide without automatically calling RunPod. Unsplash photos carry the photographer credit and a profile link. [Unsplash API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines)
+Images and equations are standard capabilities on all three formal templates. The script writer uses them where they support the narration. Unsplash remains the default image provider, with photographer credit and a profile link. Documentary and Briefing request editorial compositions when a profile selects `runpod_ai`. Profiles can set `images_config.provider_config.scene_style` to replace the default art direction. Photos and footage fill the panel with a centred crop. Equations and teaching animations are fitted to preserve labels. Missing images fall back to the slide. [Unsplash API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines)
 
 Example block (the trigger covers its six narration words):
 
@@ -76,7 +83,7 @@ Example block (the trigger covers its six narration words):
 }
 ```
 
-`PresentationStyle` in `template_config.presentation_style` controls the palette (`paper`, `midnight`, `slate`), six-digit hex accent colour, caption visibility, and background music volume. The narration reads the opening slide headline before the introduction. Captions appear on a translucent dark background only while text is displayed. Output dimensions are fixed per template to preserve readable layouts. Alignment still runs when captions are hidden because visual triggers use word timestamps.
+`PresentationStyle` in `template_config.presentation_style` controls the palette (`paper`, `midnight`, `slate`, `linen`), six-digit hex accent colour, caption visibility, and background music volume. The narration reads the opening slide headline before the introduction. Captions appear on a translucent dark background only while text is displayed. Output dimensions are fixed per template to preserve readable layouts. Alignment still runs when captions are hidden because visual triggers use word timestamps.
 
 ## Stock video module
 
@@ -112,7 +119,7 @@ Configure a strict failure policy with `failure_mode: "error"`; the default `"fa
 flowchart LR
     A[Request and source material] --> B[Intent parser: template and tags]
     B --> C[Formal script and layout validation]
-    C --> D[TTS and optional images / equations / animation / footage]
+    C --> D[TTS and requested images / equations / animation / footage]
     D --> E[Alignment and slide rendering]
     E --> F[FFmpeg composition]
     F --> G[R2 video, thumbnail and credits]
@@ -122,7 +129,7 @@ Template descriptions enter the existing REST/MCP intent parser catalog. It can 
 
 `StockVideoGenerator` runs in PRIMARY alongside TTS and other media. `SlideGenerator` runs in SECONDARY, after footage availability is known. Both write into `BlockAssets.media_map` and `media_url_map`, using the normal local/remote asset-pair contract. Provenance is stored in `media_attributions`. Slides also produce correctly proportioned thumbnails without calling an image API. Checkpoint JSON, restoration on a fresh worker, final descriptions and cleanup include these new artifacts.
 
-Only selected providers are instantiated. A lecture with no optional tags does not require image, lipsync, Manim or song credentials. Narration and word alignment continue to use your existing providers. Formal exports default to the high-quality compression profile with a 6 Mbps video cap unless explicitly overridden. FFmpeg normalises audio channels/sample rates, pads each scene to a video-frame boundary, and keeps captions outside the teaching content. A scene is trimmed **after** overlay composition, avoiding the framesync EOF stall reproduced during longer-footage testing. Local renders have a configurable 1800-second timeout and terminate their subprocess on timeout/cancellation.
+The worker instantiates the providers for the selected template and asset tags. The image provider runs when the script calls for images. Narration and word alignment continue to use your existing providers. Formal exports default to the high-quality compression profile with a 6 Mbps video cap unless explicitly overridden. FFmpeg normalises audio channels/sample rates, pads each scene to a video-frame boundary, and keeps captions outside the teaching content. A scene is trimmed **after** overlay composition, avoiding the framesync EOF stall reproduced during longer-footage testing. Local renders have a configurable 1800-second timeout and terminate their subprocess on timeout/cancellation.
 
 The live script smoke check exposed a retired existing Gemini default. The provider now defaults to `gemini-3.1-pro-preview`, following [Google's migration guidance](https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-preview). Generation profiles that explicitly pin `gemini-3-pro-preview` must also be updated; explicit model selections are preserved.
 
@@ -189,7 +196,7 @@ python scripts/render_formal_examples.py \
   --previews web/public/template-previews
 ```
 
-Outputs are `output/formal-examples/{lecture,documentary,briefing}.mp4`, their thumbnails, editable `.script.json` examples and populated `.checkpoint.json` files. The previews include short excerpts from several scenes. Omitting `--stock-manifest` exercises the no-footage fallback. Source credits accompany the [photographs](../examples/formal/photos/CREDITS.md) and [cloud footage](../examples/formal/stock/CREDITS.md). The portrait example is in Czech.
+Outputs are `output/formal-examples/{lecture,documentary,briefing}.mp4`, their thumbnails, editable `.script.json` examples and populated `.checkpoint.json` files. The previews include short excerpts from several scenes. Omitting `--stock-manifest` exercises the no-footage fallback. The portrait example is in Czech. Source credits accompany the [photographs and AI illustration](../examples/formal/photos/CREDITS.md) and [cloud footage](../examples/formal/stock/CREDITS.md).
 
 Run the affected offline suite and web build:
 
