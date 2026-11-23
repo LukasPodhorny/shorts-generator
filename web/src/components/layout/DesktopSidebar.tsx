@@ -33,7 +33,7 @@ function NavItem({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="mx-3 my-0.5 flex items-center gap-3 rounded-[15px] px-3 py-3 text-left"
+      className="mx-3 my-0.5 flex items-center gap-3 rounded-[30px] px-3 py-3 text-left"
       style={{ backgroundColor: bg }}
     >
       {iconNode ?? (
@@ -61,7 +61,7 @@ export function DesktopSidebar({
 
   return (
     <div
-      className="flex h-full shrink-0 flex-col bg-surface1"
+      className="relative z-10 m-2 flex min-h-0 shrink-0 flex-col overflow-y-auto rounded-[28px] border border-white/[0.02] bg-surface1"
       style={{ width: 'clamp(260px, 14vw, 340px)' }}
     >
       {/* Logo + credits header */}
@@ -86,12 +86,14 @@ export function DesktopSidebar({
         selected={activeTab === 'generate'}
         onClick={() => onNavigate('generate')}
       />
-      <NavItem
-        iconNode={<TuneIcon size={22} style={{ color: 'var(--color-textPrimary)' }} />}
-        label="Studio"
-        selected={activeTab === 'studio'}
-        onClick={() => onNavigate('studio')}
-      />
+      {profile?.role === 'admin' && (
+        <NavItem
+          iconNode={<TuneIcon size={22} style={{ color: 'var(--color-textPrimary)' }} />}
+          label="Studio"
+          selected={activeTab === 'studio'}
+          onClick={() => onNavigate('studio')}
+        />
+      )}
       <NavItem
         icon="/icons/video_icon.svg"
         label="Videos"

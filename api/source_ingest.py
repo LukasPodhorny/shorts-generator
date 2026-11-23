@@ -33,23 +33,43 @@ logger = logging.getLogger("ShortsGenerator.SourceIngest")
 
 # Overall budget for one ingest_sources() call. This runs inside a web request
 # (REST /api/plan and MCP plan_reels), and Heroku's router drops web requests
-# past 30 s -- so ingestion must be bounded. Slow/unfinished sources are
-# skipped with a warning (best effort, as before), never fatal.
+# past 30 s -- so ingestion must be bounded. Slow sources are skipped when
+# another source succeeds; a request with no readable sources fails.
 SOURCE_INGEST_TIMEOUT_SECONDS = float(os.getenv("SOURCE_INGEST_TIMEOUT_SECONDS", "20"))
 
-# Pull http(s) URLs out of freeform prose. Deliberately permissive on the URL
-# body; trailing sentence punctuation is trimmed off afterwards so "watch
-# https://youtu.be/x?si=y." does not capture the period.
-_URL_RE = re.compile(r"""https?://[^\s<>"'`)\]}]+""", re.IGNORECASE)
-_TRAILING_PUNCT = ".,;:!?)]}>\"'`"
+# Pull full URLs and bare domains out of prose. The bare-domain branch accepts
+# links pasted into the prompt the same way the Add Link dialog does.
+_URL_RE = re.compile(
+    r"""(?<![\w@./-])(?:https?://[^\s<>"'`]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#][^\s<>"'`]+)?)""",
+    re.IGNORECASE,
+)
+_TRAILING_PUNCT = ".,;:!?]}>\"'`"
+_FILE_SUFFIXES = {
+    "csv", "doc", "docx", "html", "jpg", "jpeg", "json", "m4a", "md",
+    "mp3", "pdf", "png", "ppt", "pptx", "rtf", "txt", "wav", "xls",
+    "xlsx", "xml",
+}
+MAX_SOURCE_LINKS = 10
+
+
+class SourceIngestError(Exception):
+    """No usable content was read from the supplied sources."""
 
 
 def extract_links(text: str | None) -> list[str]:
-    """Return the http(s) URLs found in free text, de-duplicated, in order."""
+    """Return full and bare web URLs from free text, de-duplicated, in order."""
     found: list[str] = []
     seen: set[str] = set()
     for match in _URL_RE.finditer(text or ""):
         url = match.group(0).rstrip(_TRAILING_PUNCT)
+        while url.endswith(")") and url.count(")") > url.count("("):
+            url = url[:-1]
+        if not url.lower().startswith(("http://", "https://")):
+            # Avoid treating ordinary attached-file names in prose as domains.
+            host = urlparse("https://" + url).hostname or ""
+            if host.rsplit(".", 1)[-1].lower() in _FILE_SUFFIXES:
+                continue
+            url = "https://" + url
         if url and url not in seen:
             seen.add(url)
             found.append(url)
@@ -63,14 +83,27 @@ def is_public_http_url(url: str) -> bool:
     (localhost, RFC1918, *.internal) must be rejected. This does not resolve
     DNS; it is a basic guard matching the one on /api/generate.
     """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+    except ValueError:
         return False
-    host = parsed.hostname
+    if (
+        parsed.scheme not in ("http", "https")
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return False
+    host = host.rstrip(".")
+    if not host or host == "localhost" or host.endswith(
+        (".localhost", ".local", ".internal")
+    ):
+        return False
     try:
         return ipaddress.ip_address(host).is_global
     except ValueError:
-        return not (host == "localhost" or host.endswith((".local", ".internal")))
+        return True
 
 
 def merge_links(*groups: list[str]) -> list[str]:
@@ -92,12 +125,10 @@ async def ingest_sources(
 ) -> str:
     """Convert files + links to one labeled Markdown blob (best effort).
 
-    Mirrors `ContentIngestor.build_context`, but tolerant: a single source that
-    fails to fetch/convert is logged and skipped rather than failing the whole
-    request, so one dead link can't sink an otherwise-valid generation. The
-    whole step is bounded by `timeout` seconds (default
-    `SOURCE_INGEST_TIMEOUT_SECONDS`); sources still running when the budget
-    expires are cancelled and skipped.
+    A failed source is skipped if another source succeeds. If none yields
+    content, raise so generation cannot charge credits for a source-based
+    request with no source material. The whole step is bounded by `timeout`
+    seconds (default `SOURCE_INGEST_TIMEOUT_SECONDS`).
     """
     files = files or []
     links = links or []
@@ -115,8 +146,9 @@ async def ingest_sources(
             logger.warning("Failed to ingest file %s; skipping", ref, exc_info=True)
             return None
         label = ref.split("/")[-1] or ref
-        if not md:
+        if not md or not md.strip():
             logger.warning("File %s produced empty Markdown", ref)
+            return None
         return f"--- Document: {label} ---\n{md}\n"
 
     async def _link(url: str) -> str | None:
@@ -125,8 +157,9 @@ async def ingest_sources(
         except Exception:
             logger.warning("Failed to ingest link %s; skipping", url, exc_info=True)
             return None
-        if not md:
+        if not md or not md.strip():
             logger.warning("Link %s produced empty Markdown", url)
+            return None
         return f"--- Link: {url} ---\n{md}\n"
 
     # Files first (stable order), then links, all ingested concurrently.
@@ -142,6 +175,7 @@ async def ingest_sources(
         )
         for task in pending:
             task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
     parts = []
     for task in tasks:
@@ -149,6 +183,11 @@ async def ingest_sources(
             chunk = task.result()
             if chunk:
                 parts.append(chunk)
+    if not parts:
+        raise SourceIngestError(
+            "Could not read any content from the supplied files or links. "
+            "Check the sources and try again."
+        )
     return "\n\n".join(parts)
 
 

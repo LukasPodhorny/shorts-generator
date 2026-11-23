@@ -1,4 +1,6 @@
 import { api } from '@/lib/apiClient';
+import { API_BASE_URL } from '@/lib/config';
+import axios from 'axios';
 import {
   parseAvatar,
   parseVideoSeries,
@@ -6,6 +8,7 @@ import {
   type Avatar,
   type VideoSeries,
   type VideoTemplate,
+  type PlayableVideo,
 } from '@/types/models';
 
 // Ports lib/services/video_service.dart. Endpoints + request/response shapes
@@ -22,6 +25,21 @@ export async function listSeries(params: {
 export async function getSeriesStatus(seriesId: number): Promise<VideoSeries> {
   const { data } = await api.get(`/api/status/${seriesId}`);
   return parseVideoSeries(data as Record<string, unknown>);
+}
+
+export async function getPublicVideo(shareToken: string): Promise<PlayableVideo> {
+  const { data } = await axios.get<{
+    id: number;
+    cloudflare_r2_url: string;
+    title: string | null;
+    description: string | null;
+  }>(`/api/public/videos/${encodeURIComponent(shareToken)}`, { baseURL: API_BASE_URL });
+  return {
+    id: data.id,
+    cloudflareR2Url: data.cloudflare_r2_url,
+    title: data.title,
+    description: data.description,
+  };
 }
 
 export interface StartGenerationArgs {

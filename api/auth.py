@@ -8,6 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from sqlmodel import Session
 from api.database import get_session
+from api.invites import require_invite
 from api.models import User, UserRole
 
 load_dotenv()
@@ -50,11 +51,17 @@ def verify_token(token: str) -> dict:
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    session: Session = Depends(get_session),
 ) -> dict:
     """
     Verifies the Firebase JWT from the Authorization header.
     """
-    return verify_token(credentials.credentials)
+    token = verify_token(credentials.credentials)
+    require_invite(
+        session, token.get("uid"), token.get("email"),
+        email_verified=token.get("email_verified") is True,
+    )
+    return token
 
 
 def get_current_admin_user(

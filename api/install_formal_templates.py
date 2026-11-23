@@ -16,7 +16,7 @@ from api.models import VideoTemplate
 from aishorts.modules.video_edit.video_edit import VideoTemplate as TemplateSpec
 
 
-FORMAL_TEMPLATES = ("lecture", "documentary", "briefing")
+FORMAL_TEMPLATES = ("lecture", "documentary", "briefing", "math", "stock_story")
 
 
 def install_templates(session: Session, *, apply=False, previews: Path | None = None, refresh_previews=False):
@@ -25,12 +25,22 @@ def install_templates(session: Session, *, apply=False, previews: Path | None = 
     changes = []
     for name in FORMAL_TEMPLATES:
         existing = session.exec(select(VideoTemplate).where(VideoTemplate.name == name)).first()
+        legacy = (session.exec(select(VideoTemplate).where(VideoTemplate.name == "field_guide")).first()
+                  if name == "stock_story" and existing is None else None)
         if existing and not refresh_previews:
             changes.append(f"Keep existing {name} (configuration and price preserved)")
             continue
         if existing:
             changes.append(f"Refresh {name} previews (configuration and price preserved)")
             template = existing
+        elif legacy:
+            changes.append("Replace field_guide with stock_story (price preserved)")
+            template = legacy
+            if apply:
+                template.name = name
+                template.data = {**(template.data or {}), "edit_template": name}
+                template.preview_url = None
+                template.thumbnail_url = None
         else:
             data = TemplateSpec(edit_template=name, template_config={}).model_dump(mode="json", exclude_unset=True)
             changes.append(f"Create {name} (1 credit per video)")

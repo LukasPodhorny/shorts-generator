@@ -15,7 +15,7 @@ export default function SeriesDetailScreen() {
   const { data: series, isLoading } = useSeriesStatus(Number.isFinite(id) ? id : null);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-black">
       <div className="px-3 pt-3">
         <BackButton onClick={() => navigate('/videos')} />
       </div>

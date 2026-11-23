@@ -6,6 +6,7 @@ import { MobileTopBar } from '@/components/layout/MobileTopBar';
 import { ProfileDrawer } from '@/components/layout/ProfileDrawer';
 import { LogoutDialog } from '@/components/layout/LogoutDialog';
 import { useLogout } from '@/components/layout/useLogout';
+import { ReactiveGenerateBackground } from '@/screens/generate/ReactiveGenerateBackground';
 
 function tabForPath(pathname: string): SidebarTab {
   if (pathname.startsWith('/videos')) return 'videos';
@@ -25,19 +26,21 @@ export function AppShell() {
   const isDesktop = useIsDesktop();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const showGenerateBackground = pathname === '/' || pathname === '/preview/generate';
   const logout = useLogout();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
 
   if (isDesktop) {
     return (
-      <div className="flex h-full w-full bg-background">
+      <div className="relative flex h-full w-full bg-black">
+        {showGenerateBackground && <ReactiveGenerateBackground />}
         <DesktopSidebar
           activeTab={tabForPath(pathname)}
           onNavigate={(tab) => navigate(pathForTab(tab))}
           onLogout={() => setLogoutOpen(true)}
         />
-        <div className="min-w-0 flex-1">
+        <div className="relative z-10 min-w-0 flex-1">
           <Outlet />
         </div>
         <LogoutDialog
@@ -50,7 +53,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
+    <div className="flex h-full w-full flex-col bg-black">
       <MobileTopBar onOpenDrawer={() => setDrawerOpen(true)} />
       <div className="min-h-0 flex-1">
         <Outlet />

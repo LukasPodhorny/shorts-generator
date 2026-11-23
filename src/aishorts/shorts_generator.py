@@ -25,6 +25,7 @@ from aishorts.modules.lipsync.lipsync_providers import populate_reel_static_face
 from pathlib import Path
 from aishorts.modules.song.song_generator import SongGenerator
 from aishorts.modules.slides.slide_generator import SlideGenerator
+from aishorts.modules.slides.style import PALETTES
 from aishorts.modules.stock_video.stock_video_generator import StockVideoGenerator
 from aishorts.utils.r2_handler import CloudflareR2
 from typing import Callable, Awaitable, Any
@@ -175,6 +176,9 @@ class ShortsGenerator:
         base_instructions = shorts_config.script_config.base_instructions
         if formal:
             formal_instructions = read_text("aishorts.resources", template_cls.script_instructions_resource)
+            extra_resource = getattr(template_cls, "additional_script_instructions_resource", None)
+            if extra_resource:
+                formal_instructions += "\n\n" + read_text("aishorts.resources", extra_resource)
             default_instructions = read_text("aishorts.resources", "base_instructions_default.txt")
             if base_instructions and base_instructions != default_instructions:
                 formal_instructions += "\n\nADDITIONAL WRITING INSTRUCTIONS:\n" + base_instructions
@@ -213,17 +217,46 @@ class ShortsGenerator:
             **shorts_config.latex_config.provider_config,
         )
 
+        manim_provider_config = dict(shorts_config.manim_config.provider_config)
+        manim_instructions = shorts_config.manim_config.base_instructions or ""
+        if slide_render_config and slide_render_config.mode == "math":
+            manim_provider_config.update(failure_mode="error", upload=True, min_duration_seconds=8)
+            palette = PALETTES[slide_render_config.style.theme]
+            ink = palette["ink"]
+            background = palette["bg"]
+            accent = slide_render_config.style.accent_color
+            manim_instructions += ("\n\nMATH LESSON STYLE:\n"
+                f"Set self.camera.background_color = ManimColor('{background}'). "
+                f"Use ManimColor('{ink}') explicitly for text, axes, and base shapes. "
+                f"Use ManimColor('{accent}') only for the changing object. "
+                "Keep all important content above the bottom 18 percent for captions. "
+                "Use one connected construction or worked example with 3-6 purposeful visual changes; avoid decorative titles and dense labels. "
+                "Show the initial axes and labels in the first frame, using self.add for static objects before the first self.play. "
+                "For Math lessons, aim for 10-16 seconds of meaningful motion and short pauses at intermediate results, overriding the default 3-8 second suggestion. "
+                "Leave the completed result visible at the end; do not fade it out. The editor holds both the opening and final frames.")
         self.manim_gen = self._build_generator(AssetType.MANIM, ManimGenerator,
             provider=shorts_config.manim_config.provider,
-            base_instructions=shorts_config.manim_config.base_instructions,
-            **shorts_config.manim_config.provider_config,
+            base_instructions=manim_instructions,
+            **manim_provider_config,
         )
+        if self.manim_gen and slide_render_config and slide_render_config.mode == "math":
+            if shorts_config.manim_config.provider == "modal_manim" and not self.manim_gen.manim_provider.endpoint_url:
+                raise ValueError("Math animation requires MODAL_MANIM_ENDPOINT_URL or disable the Manim option")
+            if shorts_config.manim_config.provider == "local_manim":
+                import shutil
+                if not shutil.which("manim"):
+                    raise ValueError("Math animation requires the local Manim command or disable the Manim option")
 
+        stock_provider_config = shorts_config.stock_video_config.provider_config
+        if template_cls.requires_stock_video:
+            stock_provider_config = {**stock_provider_config, "failure_mode": "error"}
         self.stock_video_gen = self._build_generator(AssetType.STOCK_VIDEO, StockVideoGenerator,
             provider=shorts_config.stock_video_config.provider,
             orientation="landscape" if template_cls.width > template_cls.height else "portrait",
-            **shorts_config.stock_video_config.provider_config,
+            **stock_provider_config,
         )
+        if template_cls.requires_stock_video and not self.stock_video_gen.provider.available:
+            raise ValueError("Stock Story requires PIXABAY_API_KEY, PEXELS_API_KEY, or a configured stock video library")
 
         self.script_gen = ScriptGenerator(
             base_instructions=base_instructions,
@@ -235,6 +268,7 @@ class ShortsGenerator:
             generate_slides=AssetType.SLIDES in self.required_assets,
             generate_stock_video=AssetType.STOCK_VIDEO in self.required_assets,
             stock_video_available=bool(self.stock_video_gen and self.stock_video_gen.provider.available),
+            require_stock_video=template_cls.requires_stock_video,
             slide_render_config=slide_render_config,
             template_description=template_cls.description,
             provider=shorts_config.script_config.provider,
@@ -814,6 +848,32 @@ class ShortsGenerator:
                         r2.upload_file, result.filepath, dest_key
                     )
 
+                if self.video_gen.edit.requires_stock_video and not reel_thumbnails.get(i):
+                    thumbnail = Path("output/thumbnails") / f"{uuid.uuid4().hex}.png"
+                    try:
+                        clip = reel.blocks[0].media[0]
+                        source = reel.blocks[0].assets.media_map.get(clip.id)
+                        if not source or not Path(source).is_file():
+                            raise FileNotFoundError("First stock clip is not available locally")
+                        thumbnail.parent.mkdir(parents=True, exist_ok=True)
+                        process = await asyncio.create_subprocess_exec(
+                            "ffmpeg", "-v", "error", "-i", source, "-frames:v", "1",
+                            "-vf", "scale=960:540:force_original_aspect_ratio=increase,crop=960:540",
+                            "-y", str(thumbnail),
+                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                        )
+                        _, stderr = await process.communicate()
+                        if process.returncode != 0:
+                            raise RuntimeError(f"Stock thumbnail extraction failed: {stderr.decode(errors='replace')}")
+                        reel_thumbnails[i] = await asyncio.to_thread(
+                            r2.upload_file, str(thumbnail), f"generated/thumbnails/{thumbnail.name}"
+                        )
+                        reel.thumbnail_url = reel_thumbnails[i]
+                    except Exception as exc:
+                        self.logger.warning("Stock thumbnail failed: %s", exc)
+                    finally:
+                        thumbnail.unlink(missing_ok=True)
+
                 return i, ReelOutput(
                     title=reel.title,
                     description=self._description_with_credits(reel),
@@ -829,6 +889,11 @@ class ShortsGenerator:
             # Maintain original order
             for _, output in sorted(compose_results, key=lambda x: x[0]):
                 reel_outputs.append(output)
+
+            if self.video_gen.edit.requires_stock_video and not series_thumbnail_url:
+                series_thumbnail_url = next(
+                    (reel_thumbnails[i] for i in range(len(reel_series.reels)) if i in reel_thumbnails), None
+                )
 
             return ReelSeriesOutput(
                 topic=reel_series.topic,

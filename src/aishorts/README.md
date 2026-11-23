@@ -1,6 +1,6 @@
 # `aishorts` — Core Generation Library
 
-For the new `lecture`, `documentary`, and `briefing` templates, slide/stock providers, formal script contract, and Modal setup, see [Formal video templates](../../docs/FORMAL_VIDEO_TEMPLATES.md). These formats add narration-led 16:9 and 9:16 output alongside the gameplay pipeline described below.
+For the `lecture`, `documentary`, `briefing`, `math`, and `stock_story` templates, slide/stock providers, script contracts, and Modal setup, see [Formal video templates](../../docs/FORMAL_VIDEO_TEMPLATES.md). These formats add narrated 16:9 and 9:16 output, including full-screen Manim lessons and stock footage with voiceover, alongside the gameplay pipeline described below.
 
 `aishorts` is the engine behind pdftoreel: it turns a prompt and/or input documents into finished short-form videos (talking avatars, TTS, subtitles, b-roll images, LaTeX/Manim visuals, quiz motion graphics, AI songs). It is a pure Python library with no web concerns — the FastAPI backend (`api/`) and the CLI (`cli/`) are thin consumers of it.
 

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
 from api.database import get_session
 from api.catalog import (
     list_avatars as _list_avatars,
@@ -10,9 +10,20 @@ from api.models import (
     Avatar,
     VideoTemplateRead,
     GenerationConfigRead,
+    JobStatus,
+    PublicVideoRead,
+    Reel,
 )
 
 router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+@router.get("/videos/{share_token}", response_model=PublicVideoRead)
+async def get_shared_video(share_token: str, session: Session = Depends(get_session)):
+    reel = session.exec(select(Reel).where(Reel.share_token == share_token)).first()
+    if not reel or reel.status != JobStatus.DONE or not reel.cloudflare_r2_url:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return PublicVideoRead.model_validate(reel, from_attributes=True)
 
 
 @router.get("/avatars", response_model=list[Avatar])

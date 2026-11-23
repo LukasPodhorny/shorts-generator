@@ -5,7 +5,9 @@ from aishorts.modules.script.script import Reel
 import ast
 import asyncio
 import re
+import subprocess
 import textwrap
+from pathlib import Path
 from aishorts.modules.video_edit.video_edit import AssetType
 from aishorts.modules.provider import MediaFile
 
@@ -16,11 +18,17 @@ class ManimGenerator:
         provider: str = "modal_manim",
         llm_provider: str = "minimax",
         base_instructions: str = None,
+        failure_mode: str = "skip",
+        upload: bool = False,
+        min_duration_seconds: float = 0,
         **kwargs,
     ):
         self.provider_name = provider
         self.llm_provider = llm_provider
-        self.base_instructions = base_instructions
+        self.base_instructions = base_instructions or ""
+        self.failure_mode = failure_mode
+        self.upload = upload
+        self.min_duration_seconds = min_duration_seconds
 
         cls = ManimProvider.get(self.provider_name)
         self.manim_provider = cls(**kwargs)
@@ -66,7 +74,21 @@ class ManimGenerator:
                     ) from se
 
                 func = self.manim_provider.render
-                return await await_or_thread(func, code, **kwargs)
+                result = await await_or_thread(func, code, **kwargs)
+                if self.min_duration_seconds:
+                    probe = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                         "-of", "default=noprint_wrappers=1:nokey=1", result.media.path],
+                        capture_output=True, text=True, timeout=30, check=True,
+                    )
+                    duration = float(probe.stdout.strip())
+                    if duration < self.min_duration_seconds:
+                        Path(result.media.path).unlink(missing_ok=True)
+                        raise ValueError(
+                            f"Manim clip is too short ({duration:.1f}s); make it at least "
+                            f"{self.min_duration_seconds:.0f}s with meaningful intermediate steps"
+                        )
+                return result
             except Exception as e:
                 last_error = str(e)
                 print(
@@ -96,12 +118,20 @@ class ManimGenerator:
             try:
                 result = await self.generate(media_item.prompt, **kwargs)
             except Exception as e:
+                if self.failure_mode == "error":
+                    raise
                 print(
                     f"Manim generation failed for media {media_item.id}; skipping: {e}"
                 )
                 return
             block.assets.media_map[media_item.id] = result.media.path
-            if result.media.url:
+            if self.upload:
+                from aishorts.utils.r2_handler import CloudflareR2
+                url = await asyncio.to_thread(
+                    CloudflareR2().upload_file, result.media.path, f"manim/{media_item.id}.mp4"
+                )
+                block.assets.media_url_map[media_item.id] = url
+            elif result.media.url:
                 block.assets.media_url_map[media_item.id] = result.media.url
 
         tasks = [_render(block, media_item) for block, media_item in render_items]

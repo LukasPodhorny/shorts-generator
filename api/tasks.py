@@ -115,12 +115,22 @@ def _prepare_generation_config(
 
         config_kwargs = gen_config.to_config_kwargs() if gen_config else {}
 
-        return ShortsConfig(
+        config = ShortsConfig(
             avatars=selected_avatars,
             video_template=video_template,
             enabled_tags=request_data.get("enabled_tags"),
             **config_kwargs,
         )
+        if (
+            not os.getenv("REDIS_URL")
+            and os.getenv("PIXABAY_API_KEY")
+            and not os.getenv("PEXELS_API_KEY")
+            and config.stock_video_config.provider in {"auto", "pixabay"}
+        ):
+            from api.pixabay_cache import DatabasePixabayCache
+
+            config.stock_video_config.provider_config["cache"] = DatabasePixabayCache(engine)
+        return config
 
 
 def _save_generation_results(series_id: int, output):

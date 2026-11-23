@@ -183,17 +183,23 @@ def test_rate_limit_middleware_throttles_and_passes_through(monkeypatch):
     assert all(key.startswith("mcp:rl:/token:") for key in store.hits)
 
 
-def test_rate_limit_middleware_fails_open_without_redis(monkeypatch):
-    from api.mcp.ratelimit import RateLimitMiddleware, build_store
+def test_rate_limit_middleware_uses_memory_without_redis(monkeypatch):
+    from api.mcp.ratelimit import MemoryCounter, RateLimitMiddleware, build_store
 
     monkeypatch.delenv("REDIS_URL", raising=False)
-    assert build_store() is None
+    store = build_store()
+    assert isinstance(store, MemoryCounter)
+    monkeypatch.setenv("MCP_AUTH_RATE_LIMIT_PER_MINUTE", "2")
 
     async def downstream(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
 
-    assert _run_middleware(RateLimitMiddleware(downstream))[0]["status"] == 200
+    middleware = RateLimitMiddleware(downstream, store=store)
+    assert _run_middleware(middleware)[0]["status"] == 200
+    assert _run_middleware(middleware)[0]["status"] == 200
+    assert _run_middleware(middleware)[0]["status"] == 429
+    assert _run_middleware(middleware, ip="9.9.9.9")[0]["status"] == 200
 
     class _BrokenStore:
         def hit(self, key):
@@ -455,9 +461,9 @@ def test_create_generation_enforces_concurrency_cap(tmp_path, monkeypatch):
 
 # --- plan service ----------------------------------------------------------
 
-def test_resolve_plan_sources_extracts_and_filters_links():
+def test_resolve_plan_sources_extracts_links():
     plan = PlanRequest(
-        instruction="Explain https://example.com/paper and http://localhost:9/x",
+        instruction="Explain https://example.com/paper and youtube.com/watch?v=abc",
         attachments=[
             AttachedFile(type="file", name="a.pdf", key="k1"),
             AttachedLink(type="link", url="https://ui.example/z"),
@@ -465,7 +471,55 @@ def test_resolve_plan_sources_extracts_and_filters_links():
     )
     files, links = resolve_plan_sources(plan)
     assert files == ["k1"]
-    assert links == ["https://ui.example/z", "https://example.com/paper"]
+    assert links == [
+        "https://ui.example/z", "https://example.com/paper",
+        "https://youtube.com/watch?v=abc",
+    ]
+
+
+def test_resolve_plan_sources_rejects_unsafe_and_excess_links():
+    with pytest.raises(HTTPException) as exc:
+        resolve_plan_sources(PlanRequest(instruction="Read http://localhost:9/x"))
+    assert exc.value.status_code == 400
+
+    with pytest.raises(HTTPException) as exc:
+        resolve_plan_sources(PlanRequest(
+            instruction=" ".join(f"https://example.com/{i}" for i in range(11))
+        ))
+    assert exc.value.status_code == 422
+
+
+def test_plan_to_request_rejects_empty_input_before_parsing(tmp_path, monkeypatch):
+    async def _nope(*a, **k):
+        raise AssertionError("must not parse an empty request")
+
+    monkeypatch.setattr("api.plan_service.parse_intent", _nope)
+    engine = make_engine(tmp_path)
+    with Session(engine) as session:
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(plan_to_request(session, "u1", PlanRequest(instruction=" ")))
+    assert exc.value.status_code == 422
+
+
+def test_plan_to_request_reports_unreadable_link_before_parsing(tmp_path, monkeypatch):
+    from api.source_ingest import SourceIngestError
+
+    async def unreadable(*a, **k):
+        raise SourceIngestError("Could not read any source content")
+
+    async def _nope(*a, **k):
+        raise AssertionError("must not parse without source content")
+
+    monkeypatch.setattr("api.plan_service.ingest_sources", unreadable)
+    monkeypatch.setattr("api.plan_service.parse_intent", _nope)
+    engine = make_engine(tmp_path)
+    with Session(engine) as session:
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(plan_to_request(
+                session, "u1", PlanRequest(instruction="Use https://example.com/broken")
+            ))
+    assert exc.value.status_code == 422
+    assert "read" in exc.value.detail.lower()
 
 
 def test_build_generate_request_manual_choices_win():

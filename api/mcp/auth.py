@@ -8,6 +8,10 @@ uses, so tools can pass it straight into the shared services.
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
+from fastapi import HTTPException
+
+from api.invites import require_invite
+from api.mcp.db import session_scope
 
 
 def current_user_token() -> dict:
@@ -19,6 +23,14 @@ def current_user_token() -> dict:
     email = claims.get("email")
     if not isinstance(email, str):
         email = None
+    try:
+        with session_scope() as session:
+            require_invite(
+                session, access.subject, email,
+                email_verified=access.client_id != "firebase" or claims.get("email_verified") is True,
+            )
+    except HTTPException as exc:
+        raise ToolError(exc.detail) from exc
     return {"uid": access.subject, "email": email}
 
 

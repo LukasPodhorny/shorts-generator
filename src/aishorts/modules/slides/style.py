@@ -16,7 +16,7 @@ class PresentationStyle(BaseModel):
 class SlideRenderConfig(BaseModel):
     width: Literal[1080, 1920] = 1920
     height: Literal[1080, 1920] = 1080
-    mode: Literal["lecture", "documentary", "briefing"] = "lecture"
+    mode: Literal["lecture", "documentary", "briefing", "math"] = "lecture"
     style: PresentationStyle = Field(default_factory=PresentationStyle)
     has_visual: bool = False
     chapter: int = Field(default=1, ge=1, le=32)
@@ -43,6 +43,8 @@ def layout_regions(config: SlideRenderConfig, layout: str = "bullets"):
     height = 868 - y
     if config.mode == "documentary":
         return (1152, y, 680, height), (88, y, 1016, height)
+    if config.mode == "math":
+        return (88, y, 790, height), (938, y, 894, height)
     return (88, y, 808, height), (952, y, 880, height)
 
 

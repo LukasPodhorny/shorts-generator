@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 from typing import Optional
 
+from pydantic import BaseModel
+
 import boto3
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
@@ -14,11 +16,53 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.auth import get_current_admin_user
 from api.models import (
-    Avatar, VideoTemplate, User, AvatarCreate, VideoTemplateCreate,
+    Avatar, VideoTemplate, User, Invite, AvatarCreate, VideoTemplateCreate,
     GenerationConfig, GenerationConfigCreate,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+class InviteRequest(BaseModel):
+    email: str
+
+
+@router.get("/invites", response_model=list[Invite])
+def list_invites(
+    session: Session = Depends(get_session),
+    admin_user: User = Depends(get_current_admin_user),
+):
+    return session.exec(select(Invite).order_by(Invite.email)).all()
+
+
+@router.post("/invites", response_model=Invite)
+def approve_invite(
+    request: InviteRequest,
+    session: Session = Depends(get_session),
+    admin_user: User = Depends(get_current_admin_user),
+):
+    email = str(request.email).strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address")
+    invite = session.get(Invite, email)
+    if invite is None:
+        invite = Invite(email=email)
+        session.add(invite)
+        session.commit()
+    return invite
+
+
+@router.delete("/invites/{email}", status_code=204)
+def revoke_invite(
+    email: str,
+    session: Session = Depends(get_session),
+    admin_user: User = Depends(get_current_admin_user),
+):
+    invite = session.get(Invite, email.strip().lower())
+    if invite is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    session.delete(invite)
+    session.commit()
 
 
 @router.post("/avatars", response_model=Avatar)

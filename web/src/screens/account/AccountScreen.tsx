@@ -11,6 +11,71 @@ import { CreditIcon } from '@/components/ui/MaskIcon';
 import { PersonIcon } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/Spinner';
 import { Avatar } from '@/components/ui/Avatar';
+import { approveInvite, listInvites, revokeInvite } from '@/api/invites';
+import { useQuery } from '@tanstack/react-query';
+import { INVITE_ONLY } from '@/lib/accessMode';
+
+function InviteManager() {
+  const queryClient = useQueryClient();
+  const { data: invites = [], isLoading } = useQuery({ queryKey: ['adminInvites'], queryFn: listInvites });
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const approve = async () => {
+    if (!email.trim()) return;
+    setBusy(true);
+    try {
+      await approveInvite(email.trim());
+      setEmail('');
+      await queryClient.invalidateQueries({ queryKey: ['adminInvites'] });
+      toast('Email approved');
+    } catch (e) {
+      toast(apiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async (address: string) => {
+    setBusy(true);
+    try {
+      await revokeInvite(address);
+      await queryClient.invalidateQueries({ queryKey: ['adminInvites'] });
+      toast('Approval removed');
+    } catch (e) {
+      toast(apiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-16 max-w-xl">
+      <h2 className="text-[22px] font-semibold text-textPrimary">Invites</h2>
+      <p className="mt-3 text-sm text-textSecondary">Approve an email before sharing the app link. They can then use Google or create an email account.</p>
+      <form className="mt-5 flex gap-3" onSubmit={(event) => { event.preventDefault(); void approve(); }}>
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="person@example.com"
+          aria-label="Email to approve"
+          className="min-w-0 flex-1 rounded-xl border border-surface3 bg-surface1 px-4 py-3 text-textPrimary"
+        />
+        <button type="submit" disabled={busy} className="rounded-xl bg-neon px-5 font-semibold text-background disabled:opacity-50">Approve</button>
+      </form>
+      <div className="mt-5 flex flex-col gap-2">
+        {isLoading ? <Spinner size={24} /> : invites.map((address) => (
+          <div key={address} className="flex items-center justify-between gap-4 rounded-xl border border-surface3 bg-surface1 px-4 py-3 text-sm text-textPrimary">
+            <span className="min-w-0 truncate">{address}</span>
+            <button type="button" disabled={busy} onClick={() => void revoke(address)} className="text-textSecondary underline disabled:opacity-50">Remove</button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 // Port of desktop_account_screen: profile header (avatar, credits, tier, email)
 // and an "Upgrade your plan — Coming soon" section.
@@ -66,6 +131,8 @@ export default function AccountScreen() {
       <div className="h-16" />
       <h2 className="text-[22px] font-semibold text-textPrimary">Upgrade your plan</h2>
       <p className="mt-6 text-sm font-semibold text-textSecondary">Coming soon...</p>
+
+      {INVITE_ONLY && profile?.role === 'admin' && <InviteManager />}
 
       <div className="h-16" />
       <h2 className="text-[22px] font-semibold text-textPrimary">Connected apps</h2>

@@ -1,6 +1,7 @@
 """Stock footage providers. Search terms come from scripts; file URLs never do."""
 
 import asyncio
+import hashlib
 import json
 import math
 import os
@@ -15,6 +16,8 @@ from urllib.parse import urlparse
 
 import aiohttp
 from pydantic import BaseModel, Field, TypeAdapter
+from redis import Redis
+from redis.exceptions import RedisError
 
 from aishorts.modules.provider import Provider
 from aishorts.modules.script.script import MediaAttribution
@@ -45,7 +48,8 @@ class StockVideoProvider(Provider):
     available = True
 
     @abstractmethod
-    async def get_clip(self, keywords: str, orientation: str, output_dir: Path) -> StockClip | None:
+    async def get_clip(self, keywords: str, orientation: str, output_dir: Path,
+                       used_sources: set[str] | None = None) -> StockClip | None:
         pass
 
 
@@ -73,7 +77,7 @@ class LibraryStockVideo(StockVideoProvider):
             self.entries = TypeAdapter(list[LibraryEntry]).validate_json(manifest.read_text())
         self.available = bool(self.entries)
 
-    async def get_clip(self, keywords, orientation, output_dir):
+    async def get_clip(self, keywords, orientation, output_dir, used_sources=None):
         tokens = set(re.findall(r"\w+", keywords.casefold()))
         ranked = sorted(self.entries, key=lambda entry: len(
             tokens & set(re.findall(r"\w+", " ".join(entry.keywords).casefold()))
@@ -84,9 +88,17 @@ class LibraryStockVideo(StockVideoProvider):
             source = (self.root / entry.path).resolve()
             if not source.is_relative_to(self.root):
                 raise ValueError("Stock library paths must stay inside the manifest directory")
+            source_key = f"library:{source}"
+            if used_sources is not None and source_key in used_sources:
+                continue
             if source.suffix.lower() not in {".mp4", ".mov", ".webm"} or source.stat().st_size > self.max_bytes:
                 raise ValueError("Unsupported or oversized stock library file")
             await asyncio.to_thread(probe_clip, str(source))
+            # A concurrent scene may have selected this source during the probe.
+            if used_sources is not None:
+                if source_key in used_sources:
+                    continue
+                used_sources.add(source_key)
             output_dir.mkdir(parents=True, exist_ok=True)
             dest = output_dir / f"{uuid.uuid4().hex}{source.suffix.lower()}"
             await asyncio.to_thread(shutil.copyfile, source, dest)
@@ -130,11 +142,17 @@ class PexelsStockVideo(StockVideoProvider):
                 return await response.json()
 
     @staticmethod
-    def select_file(data, orientation):
+    def _source_key(video):
+        return f"pexels:{video.get('id') or video.get('url')}"
+
+    @classmethod
+    def select_file(cls, data, orientation, used_sources=None):
         candidates = []
         target = 16 / 9 if orientation == "landscape" else 9 / 16
         for video in data.get("videos", []):
             if not (1 <= float(video.get("duration") or 0) <= 180):
+                continue
+            if used_sources is not None and cls._source_key(video) in used_sources:
                 continue
             for file in video.get("video_files", []):
                 w, h = file.get("width") or 0, file.get("height") or 0
@@ -168,13 +186,15 @@ class PexelsStockVideo(StockVideoProvider):
                 return
         raise ValueError("Too many stock video download redirects")
 
-    async def get_clip(self, keywords, orientation, output_dir):
+    async def get_clip(self, keywords, orientation, output_dir, used_sources=None):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
             data = await self._search(session, keywords, orientation)
-            chosen = self.select_file(data, orientation)
+            chosen = self.select_file(data, orientation, used_sources)
             if chosen is None:
                 return None
             video, file = chosen
+            if used_sources is not None:
+                used_sources.add(self._source_key(video))
             output_dir.mkdir(parents=True, exist_ok=True)
             path = output_dir / f"{uuid.uuid4().hex}.mp4"
             try:
@@ -190,13 +210,138 @@ class PexelsStockVideo(StockVideoProvider):
                 raise
 
 
+class PixabayStockVideo(PexelsStockVideo):
+    """Search Pixabay for licensed clips and cache every search for 24 hours."""
+
+    provider_name = "pixabay"
+    SEARCH_URL = "https://pixabay.com/api/videos/"
+    CACHE_SECONDS = 24 * 60 * 60
+    SEARCH_PAGE_SIZE = 100
+
+    def __init__(self, api_key=None, redis_url=None, cache=None, timeout=45,
+                 max_bytes=120 * 1024 * 1024, **kwargs):
+        self.api_key = api_key or os.getenv("PIXABAY_API_KEY")
+        if not self.api_key:
+            raise ValueError("The pixabay stock provider requires PIXABAY_API_KEY")
+        if cache is None:
+            redis_url = redis_url or os.getenv("REDIS_URL")
+            if not redis_url:
+                raise ValueError("Pixabay requires REDIS_URL to cache API searches for 24 hours")
+            options = {"ssl_cert_reqs": "none"} if redis_url.startswith("rediss://") else {}
+            cache = Redis.from_url(redis_url, **options)
+        self.cache = cache
+        self.timeout = timeout
+        self.max_bytes = max_bytes
+
+    @classmethod
+    def _safe_download_url(cls, url):
+        parsed = urlparse(url)
+        if (parsed.scheme != "https" or parsed.hostname != "cdn.pixabay.com"
+                or parsed.username or parsed.password or parsed.port not in (None, 443)
+                or not parsed.path.startswith("/video/") or not parsed.path.endswith(".mp4")):
+            raise ValueError("Pixabay returned an unsupported download host")
+        return url
+
+    @staticmethod
+    def _source_key(video):
+        return f"pixabay:{video.get('id') or video.get('pageURL')}"
+
+    async def _search(self, session, keywords, orientation):
+        query = " ".join(keywords.split())[:100]
+        if not query:
+            return {"hits": []}
+        cache_key = "stock_video:pixabay:v2:" + hashlib.sha256(query.encode()).hexdigest()
+        try:
+            cached = await asyncio.to_thread(self.cache.get, cache_key)
+        except RedisError:
+            raise RuntimeError("Pixabay search cache is unavailable") from None
+        if cached is not None:
+            try:
+                return json.loads(cached)
+            except (TypeError, ValueError):
+                raise RuntimeError("Pixabay search cache contains invalid data") from None
+
+        for attempt in range(3):
+            try:
+                async with session.get(
+                    self.SEARCH_URL,
+                    params={"key": self.api_key, "q": query, "video_type": "film",
+                            "safesearch": "true", "per_page": self.SEARCH_PAGE_SIZE},
+                    allow_redirects=False,
+                ) as response:
+                    if (response.status == 429 or response.status >= 500) and attempt < 2:
+                        await asyncio.sleep(1 + attempt)
+                        continue
+                    if response.status != 200:
+                        raise RuntimeError(f"Pixabay search returned HTTP {response.status}")
+                    data = await response.json()
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                # aiohttp errors can include the search URL, which contains the API key.
+                raise RuntimeError("Pixabay search request failed") from None
+            try:
+                saved = await asyncio.to_thread(
+                    self.cache.setex, cache_key, self.CACHE_SECONDS, json.dumps(data)
+                )
+            except RedisError:
+                raise RuntimeError("Pixabay search cache is unavailable") from None
+            if not saved:
+                raise RuntimeError("Pixabay search cache could not save the response")
+            return data
+
+    def select_file(self, data, orientation, used_sources=None):
+        candidates = []
+        target = 16 / 9 if orientation == "landscape" else 9 / 16
+        for video in data.get("hits", []):
+            if not (1 <= float(video.get("duration") or 0) <= 180):
+                continue
+            if used_sources is not None and self._source_key(video) in used_sources:
+                continue
+            for file in (video.get("videos") or {}).values():
+                w, h = file.get("width") or 0, file.get("height") or 0
+                if (not file.get("url") or min(w, h) < 480 or max(w, h) > 1920
+                        or file.get("size", 0) > self.max_bytes):
+                    continue
+                if (w >= h) != (orientation == "landscape"):
+                    continue
+                score = abs(w / h - target) * 10 + abs(max(w, h) - 1280) / 1920
+                candidates.append((score, video, file))
+        return min(candidates, key=lambda c: c[0])[1:] if candidates else None
+
+    async def get_clip(self, keywords, orientation, output_dir, used_sources=None):
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            data = await self._search(session, keywords, orientation)
+            chosen = self.select_file(data, orientation, used_sources)
+            if chosen is None:
+                return None
+            video, file = chosen
+            if used_sources is not None:
+                used_sources.add(self._source_key(video))
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output_dir / f"{uuid.uuid4().hex}.mp4"
+            try:
+                await self._download(session, file["url"], path)
+                await asyncio.to_thread(probe_clip, str(path))
+                return StockClip(str(path), MediaAttribution(
+                    provider="Pixabay", creator=video.get("user") or "Pixabay contributor",
+                    source_url=video.get("pageURL") or f"https://pixabay.com/videos/id-{video['id']}/",
+                    license="Pixabay Content License: https://pixabay.com/service/terms/",
+                ))
+            except BaseException:
+                path.unlink(missing_ok=True)
+                raise
+
+
 class AutoStockVideo(StockVideoProvider):
     provider_name = "auto"
 
     def __init__(self, **kwargs):
-        self.provider = (PexelsStockVideo(**kwargs) if kwargs.get("api_key") or os.getenv("PEXELS_API_KEY")
-                         else LibraryStockVideo(**kwargs))
+        if kwargs.get("api_key") or os.getenv("PEXELS_API_KEY"):
+            self.provider = PexelsStockVideo(**kwargs)
+        elif os.getenv("PIXABAY_API_KEY"):
+            self.provider = PixabayStockVideo(**kwargs)
+        else:
+            self.provider = LibraryStockVideo(**kwargs)
         self.available = self.provider.available
 
-    async def get_clip(self, keywords, orientation, output_dir):
-        return await self.provider.get_clip(keywords, orientation, output_dir)
+    async def get_clip(self, keywords, orientation, output_dir, used_sources=None):
+        return await self.provider.get_clip(keywords, orientation, output_dir, used_sources)

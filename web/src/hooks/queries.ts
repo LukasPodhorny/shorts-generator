@@ -14,6 +14,7 @@ import {
 } from '@/api/videos';
 import { useAuth } from '@/auth/AuthProvider';
 import type { VideoSeries } from '@/types/models';
+import axios from 'axios';
 
 // Page size for the videos grid. Sized to comfortably fill the widest grid
 // (up to 6 columns) with a few rows so the first screen is full and we make
@@ -23,9 +24,12 @@ const SERIES_PAGE_SIZE = 20;
 export function useUserProfile() {
   const { user } = useAuth();
   return useQuery({
-    queryKey: queryKeys.userProfile,
+    queryKey: [...queryKeys.userProfile, user?.uid],
     queryFn: getMe,
-    enabled: !!user,
+    enabled: !!user?.emailVerified,
+    retry: (failureCount, error) => !(
+      axios.isAxiosError(error) && error.response?.status === 403
+    ) && failureCount < 2,
   });
 }
 

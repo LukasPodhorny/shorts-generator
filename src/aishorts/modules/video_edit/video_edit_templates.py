@@ -9,7 +9,7 @@ from aishorts.modules.script.script import Reel
 from aishorts.modules.script.script import AssetType
 from aishorts.modules.script.script import BlockType
 from aishorts.modules.video_edit.formal_templates import (  # register templates
-    LectureTemplate, DocumentaryTemplate, BriefingTemplate,
+    LectureTemplate, DocumentaryTemplate, BriefingTemplate, MathTemplate, StockStoryTemplate,
 )
 import os
 from pathlib import Path

@@ -7,11 +7,13 @@ export function Modal({
   onClose,
   children,
   width = 430,
+  flushBottom = false,
 }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   width?: number;
+  flushBottom?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -33,7 +35,7 @@ export function Modal({
     >
       <div
         className="w-full rounded-[30px] bg-surface1 p-5 border-1 border-surface2"
-        style={{ maxWidth: width }}
+        style={{ maxWidth: width, paddingBottom: flushBottom ? 0 : undefined }}
       >
         {children}
       </div>

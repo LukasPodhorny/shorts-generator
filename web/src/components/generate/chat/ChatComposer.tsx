@@ -105,13 +105,13 @@ export function ChatComposer({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();
             }
           }}
           maxLines={8}
-          placeholder="Describe the reels you want to make..."
+          placeholder="Describe your reels or paste a website or YouTube link..."
         />
 
         <div className="mt-3 flex flex-wrap items-center gap-2">

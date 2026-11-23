@@ -1,12 +1,13 @@
 """Per-IP rate limiting for the MCP OAuth endpoints (brute-force protection).
 
-Attached to the MCP sub-app via `http_app(middleware=[...])`. Redis-backed
-fixed windows; without `REDIS_URL` (local dev) it is a no-op, and a Redis
-outage fails open (availability over throttling) with a logged warning.
+Redis shares counters across dynos. Without Redis, a bounded in-memory store
+protects the single-web-dyno deployment; its counters reset on restart.
 """
 
 import logging
 import os
+import threading
+import time
 
 from fastapi.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
@@ -38,11 +39,31 @@ class RedisCounter:
         return int(count)
 
 
+class MemoryCounter:
+    """Fixed-window counter for a single web process, capped at 10,000 IPs."""
+
+    def __init__(self) -> None:
+        self._counts: dict[str, tuple[int, int]] = {}
+        self._lock = threading.Lock()
+
+    def hit(self, key: str) -> int:
+        window = int(time.monotonic() // WINDOW_SECONDS)
+        with self._lock:
+            previous_window, count = self._counts.get(key, (-1, 0))
+            if previous_window != window:
+                count = 0
+            if key not in self._counts and len(self._counts) >= 10_000:
+                self._counts.pop(next(iter(self._counts)))
+            count += 1
+            self._counts[key] = (window, count)
+            return count
+
+
 def build_store():
-    """Return a counter store, or None when Redis is not configured."""
+    """Return a shared Redis counter or a local counter for one web dyno."""
     url = os.getenv("REDIS_URL")
     if not url:
-        return None
+        return MemoryCounter()
     from api.redis_client import redis_client
 
     return RedisCounter(redis_client(url))
@@ -76,7 +97,7 @@ class RateLimitMiddleware:
         try:
             count = await run_in_threadpool(self.store.hit, key)
         except Exception:
-            logger.warning("Rate limiter Redis error; failing open", exc_info=True)
+            logger.warning("Rate limiter store error; failing open", exc_info=True)
             await self.app(scope, receive, send)
             return
         if count > limit_per_minute():

@@ -1,5 +1,7 @@
 import logging
 import os
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers import generate, upload, users, admin, public, plan, oauth
@@ -11,6 +13,7 @@ from api.mcp.server import (
     protected_resource_routes,
 )
 from dotenv import load_dotenv
+from api.db_jobs import run_db_worker
 
 load_dotenv()
 
@@ -19,7 +22,22 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-app = FastAPI(title="PDF-TO-REEL API", lifespan=mcp_http_app.lifespan)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mcp_http_app.lifespan(app):
+        worker = None
+        if os.getenv("GENERATION_QUEUE") == "postgres":
+            worker = asyncio.create_task(run_db_worker())
+        try:
+            yield
+        finally:
+            if worker is not None:
+                worker.cancel()
+                with suppress(asyncio.CancelledError):
+                    await worker
+
+
+app = FastAPI(title="PDF-TO-REEL API", lifespan=lifespan)
 
 # Allowed browser origins. Set CORS_ORIGINS as a comma-separated list in
 # production; falls back to FRONTEND_URL, then localhost for development.
@@ -49,8 +67,7 @@ app.include_router(oauth.router)
 # MCP server for agents (Streamable HTTP, same Firebase auth as REST).
 # The parent app runs the MCP app's lifespan: without it the streamable-HTTP
 # session manager is never initialized and every /mcp request fails.
-# If this app ever needs its own lifespan tasks, combine both context
-# managers into one @asynccontextmanager instead of replacing this.
+# The parent lifespan above starts the Postgres worker within the MCP lifespan.
 #
 # The exact /mcp route is registered before the mount so strict MCP clients
 # get a direct answer instead of a 307 they refuse to follow. The origin-root

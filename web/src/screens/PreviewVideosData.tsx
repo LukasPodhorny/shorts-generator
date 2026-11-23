@@ -34,6 +34,7 @@ function mock(): VideoSeries[] {
       reels: [
         {
           id: 100 + i,
+          shareToken: `preview-${i}`,
           sequenceNumber: 1,
           status: 'done' as JobStatus,
           cloudflareR2Url: 'https://example.com/v.mp4',

@@ -23,12 +23,16 @@ class StockVideoGenerator:
         self.semaphore = asyncio.Semaphore(max(1, max_concurrent))
 
     async def populate_reel(self, reel: Reel, **kwargs):
+        used_sources: set[str] = set()
+
         async def populate(block, media):
             async with self.semaphore:
                 try:
-                    result = await self.provider.get_clip(media.keywords, self.orientation, self.output_dir)
+                    result = await self.provider.get_clip(
+                        media.keywords, self.orientation, self.output_dir, used_sources
+                    )
                     if result is None:
-                        raise LookupError(f"No stock footage for {media.keywords!r}")
+                        raise LookupError(f"No unused stock footage for {media.keywords!r}")
                 except Exception as exc:
                     if self.failure_mode == "error":
                         raise

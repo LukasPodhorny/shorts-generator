@@ -23,9 +23,18 @@ export function AddLinkDialog({
   };
 
   const submit = () => {
-    const link = normalizeLink(value);
-    if (!link) {
-      setError('Enter a valid link, e.g. youtube.com/watch?v=…');
+    const raw = value.trim();
+    const link = normalizeLink(raw);
+    const parsed = link ? new URL(link) : null;
+    const host = parsed?.hostname.replace(/\.+$/, '').toLowerCase() ?? '';
+    if (
+      !link ||
+      (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:\/\//i.test(raw)) ||
+      parsed?.username || parsed?.password ||
+      !host || host === 'localhost' ||
+      host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')
+    ) {
+      setError('Enter a public website or YouTube link, e.g. youtube.com/watch?v=…');
       return;
     }
     onAdd(link);

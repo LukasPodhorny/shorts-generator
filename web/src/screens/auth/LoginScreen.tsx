@@ -6,6 +6,7 @@ import { toast } from '@/store/toastStore';
 import { AuthBackground } from '@/components/auth/AuthBackground';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { MaskIcon } from '@/components/ui/MaskIcon';
+import { INVITE_ONLY } from '@/lib/accessMode';
 
 const TERMS = 'By continuing you agree to our Terms & Privacy Policy';
 
@@ -57,7 +58,7 @@ export default function LoginScreen() {
         onClick={google}
       />
       <ActionButton
-        text="Sign up with email"
+        text={INVITE_ONLY ? 'Create account with invite' : 'Sign up with email'}
         backgroundColor="var(--color-surface2)"
         textColor="var(--color-textPrimary)"
         hoverBackground="var(--color-surface3)"
@@ -73,6 +74,15 @@ export default function LoginScreen() {
         hoverBackground="var(--color-surface2)"
         onClick={() => navigate('/login/email')}
       />
+      {INVITE_ONLY && (
+        <p className="pt-2 text-center text-sm leading-relaxed text-textSecondary">
+          PDF to Reel is invite only. To request access, email{' '}
+          <a className="font-semibold text-textPrimary underline" href="mailto:support@pdftoreel.com">
+            support@pdftoreel.com
+          </a>
+          .
+        </p>
+      )}
     </>
   );
 
@@ -100,7 +110,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
+    <div className="relative flex h-full w-full flex-col overflow-y-auto bg-background">
       <AuthBackground />
       <div className="relative flex flex-1 flex-col items-center justify-center px-7 text-center">
         <MaskIcon src="/icons/logo.svg" size={120} color="var(--color-neon)" />

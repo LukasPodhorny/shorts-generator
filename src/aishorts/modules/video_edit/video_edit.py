@@ -168,6 +168,7 @@ class EditTemplate(Provider):
     height: int = 1920
     description: str = "Fast-paced portrait video with avatars and gameplay."
     script_instructions_resource: Optional[str] = None
+    requires_stock_video: bool = False
 
     @classmethod
     def resolve_required_assets(

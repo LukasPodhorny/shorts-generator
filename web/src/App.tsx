@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { SplashLoading } from '@/components/SplashLoading';
 import { AppShell } from '@/components/AppShell';
@@ -12,21 +12,33 @@ import ChatGenerate from '@/screens/generate/ChatGenerate';
 import GenerateScreen from '@/screens/generate/GenerateScreen';
 import VideosScreen from '@/screens/videos/VideosScreen';
 import SeriesDetailScreen from '@/screens/videos/SeriesDetailScreen';
-import VideoPlayerScreen from '@/screens/videos/VideoPlayerScreen';
+import VideoPlayerScreen, { PublicVideoPlayerScreen } from '@/screens/videos/VideoPlayerScreen';
 import AccountScreen from '@/screens/account/AccountScreen';
 import ConsentScreen from '@/screens/oauth/ConsentScreen';
 import PreviewGenerate from '@/screens/PreviewGenerate';
 import SeedSeriesLayout from '@/screens/PreviewVideosData';
+import InvitePendingScreen from '@/screens/auth/InvitePendingScreen';
+import { useUserProfile } from '@/hooks/queries';
+import axios from 'axios';
 
 /**
- * Top-level auth gate, mirroring MyApp's authStateChanges StreamBuilder:
+ * Auth gate for account routes; public watch links bypass it.
  *   - initializing            -> splash
  *   - signed out              -> auth routes
  *   - signed in, unverified   -> verify-email gate (Google users are verified)
  *   - signed in, verified     -> the app shell
  */
 export default function App() {
+  const { pathname } = useLocation();
+  if (pathname.startsWith('/watch/')) {
+    return <Routes><Route path="/watch/:shareToken" element={<PublicVideoPlayerScreen />} /></Routes>;
+  }
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const { user, initializing } = useAuth();
+  const { data: profile, error: profileError, isPending: profilePending, refetch: refetchProfile } = useUserProfile();
 
   // Where to go after login/signup. Set by screens that link into auth
   // (e.g. the OAuth consent screen) via sessionStorage so it survives the
@@ -79,7 +91,6 @@ export default function App() {
   }
 
   if (!user.emailVerified) {
-    // Consent stays reachable mid-verification; approving needs no verified email.
     if (returnTo) {
       return <Navigate to={returnTo} replace />;
     }
@@ -89,6 +100,19 @@ export default function App() {
         <Route path="/oauth/consent" element={<ConsentScreen />} />
         <Route path="*" element={<Navigate to="/verify" replace />} />
       </Routes>
+    );
+  }
+
+  if (profilePending) return <SplashLoading />;
+  if (axios.isAxiosError(profileError) && profileError.response?.status === 403) {
+    return <InvitePendingScreen />;
+  }
+  if (!profile) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-background text-textPrimary">
+        <p>Could not check your access.</p>
+        <button className="underline" onClick={() => void refetchProfile()}>Try again</button>
+      </div>
     );
   }
 
@@ -103,7 +127,7 @@ export default function App() {
       <Route path="/oauth/consent" element={<ConsentScreen />} />
       <Route element={<AppShell />}>
         <Route index element={<ChatGenerate />} />
-        <Route path="studio" element={<GenerateScreen />} />
+        <Route path="studio" element={profile.role === 'admin' ? <GenerateScreen /> : <Navigate to="/" replace />} />
         <Route path="videos" element={<VideosScreen />} />
         <Route path="videos/:seriesId" element={<SeriesDetailScreen />} />
         <Route path="account" element={<AccountScreen />} />

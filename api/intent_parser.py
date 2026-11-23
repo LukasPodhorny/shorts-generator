@@ -24,17 +24,18 @@ import os
 from importlib.resources import read_text
 
 from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 from aishorts.modules.llm.llm_providers import LLMProvider
-from api.models import PlanRequest
+from api.database import engine
+from api.models import GenerationConfig, PlanRequest
 
 logger = logging.getLogger("ShortsGenerator.IntentParser")
 
 # Same pattern as the ingestor's env-driven model selection: an env override
-# with a sensible default. Structured extraction, not creative work, so this
-# uses the cheap/fast Gemini model; the strong model is reserved for scripts.
-DEFAULT_PARSER_PROVIDER = "gemini"
-DEFAULT_PARSER_MODEL = "gemini-3.1-flash-lite"
+# with a cheaper Fireworks model for structured extraction.
+DEFAULT_PARSER_PROVIDER = "fireworks"
+DEFAULT_PARSER_MODEL = "accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b"
 
 
 class IntentParseError(Exception):
@@ -85,10 +86,22 @@ def _parser_provider() -> LLMProvider:
     provider = os.getenv("INTENT_PARSER_PROVIDER", DEFAULT_PARSER_PROVIDER)
     model = os.getenv("INTENT_PARSER_MODEL", DEFAULT_PARSER_MODEL)
     cls = LLMProvider.get(provider)
-    # Provider resolves its own API key from the environment; nothing hardcoded.
+    kwargs = {}
+    if provider == "fireworks" and not os.getenv("FIREWORKS_API_KEY"):
+        # Production stores the script Fireworks credential in its default profile.
+        with Session(engine) as session:
+            config = session.exec(
+                select(GenerationConfig).where(GenerationConfig.is_default == True)
+            ).first()
+            if config:
+                key = (config.data.get("script_config") or {}).get(
+                    "provider_config", {}
+                ).get("api_key")
+                if key:
+                    kwargs["api_key"] = key
     # (pyright: ignore -- the registry only holds concrete providers; the
     # abstract base never sets provider_name so it can never come back here.)
-    return cls(model=model)  # pyright: ignore[reportAbstractUsage]
+    return cls(model=model, **kwargs)  # pyright: ignore[reportAbstractUsage]
 
 
 def _system_prompt() -> str:

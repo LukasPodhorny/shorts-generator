@@ -23,7 +23,8 @@ class SlideGenerator:
     async def populate_reel(self, reel: Reel, **kwargs):
         async def render(block, slide, index):
             async with self.semaphore:
-                visuals = [m for m in block.media if m.type != "slide" and (
+                visuals = [m for m in block.media if m.type != "slide" and
+                           not (self.render_config.mode == "math" and m.type == "manim") and (
                     block.assets.media_map.get(m.id) or block.assets.media_url_map.get(m.id)
                 )]
                 credits = list(dict.fromkeys(

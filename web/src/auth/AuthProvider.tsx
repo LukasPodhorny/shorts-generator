@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       reloadUser: async () => {
         await auth.currentUser?.reload();
+        if (auth.currentUser?.emailVerified) await auth.currentUser.getIdToken(true);
         // reload() mutates currentUser in place; re-set to trigger re-render.
         setUser(auth.currentUser ? { ...auth.currentUser } as User : null);
       },

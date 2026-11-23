@@ -20,6 +20,7 @@ export function parseJobStatus(status: string): JobStatus {
 
 export interface Reel {
   id: number;
+  shareToken: string;
   sequenceNumber: number;
   status: JobStatus;
   cloudflareR2Url: string | null;
@@ -33,6 +34,7 @@ export interface Reel {
 export function parseReel(json: Record<string, unknown>): Reel {
   return {
     id: json.id as number,
+    shareToken: json.share_token as string,
     sequenceNumber: json.sequence_number as number,
     status: parseJobStatus(json.status as string),
     cloudflareR2Url: (json.cloudflare_r2_url as string) ?? null,
@@ -43,6 +45,8 @@ export function parseReel(json: Record<string, unknown>): Reel {
     duration: (json.duration as string) ?? null,
   };
 }
+
+export type PlayableVideo = Pick<Reel, 'id' | 'cloudflareR2Url' | 'title' | 'description'>;
 
 export interface VideoSeries {
   id: number;
@@ -81,6 +85,7 @@ export interface UserProfile {
   id: string;
   email: string | null;
   credits: number;
+  role: 'user' | 'admin';
 }
 
 export function parseUserProfile(json: Record<string, unknown>): UserProfile {
@@ -88,6 +93,7 @@ export function parseUserProfile(json: Record<string, unknown>): UserProfile {
     id: json.id as string,
     email: (json.email as string) ?? null,
     credits: json.credits as number,
+    role: json.role === 'admin' ? 'admin' : 'user',
   };
 }
 
@@ -110,7 +116,7 @@ export interface VideoTemplate {
 
 export function parseVideoTemplate(json: Record<string, unknown>): VideoTemplate {
   const rawTags = (json.tags as Record<string, unknown>[]) ?? [];
-  const bundled = ['lecture', 'documentary', 'briefing'].includes(json.name as string)
+  const bundled = ['lecture', 'documentary', 'briefing', 'math', 'stock_story'].includes(json.name as string)
     ? `/template-previews/${json.name}` : null;
   return {
     id: json.id as number,

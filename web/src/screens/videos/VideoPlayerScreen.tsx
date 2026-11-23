@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useSeriesStatus } from '@/hooks/queries';
+import { getPublicVideo } from '@/api/videos';
 import { toast } from '@/store/toastStore';
 import { Spinner } from '@/components/ui/Spinner';
+import type { PlayableVideo } from '@/types/models';
 
 function fmt(seconds: number): string {
   if (!Number.isFinite(seconds)) return '00:00';
@@ -27,15 +30,54 @@ function CloseIcon() {
   );
 }
 
-// Port of VideoPlayerScreen: a full-screen player with auto-hiding controls,
-// scrubber, copy-link share, byte-blob download and fullscreen toggle.
 export default function VideoPlayerScreen() {
   const navigate = useNavigate();
   const { seriesId, reelId } = useParams();
   const id = Number(seriesId);
   const { data: series, isLoading } = useSeriesStatus(Number.isFinite(id) ? id : null);
   const reel = series?.reels.find((r) => r.id === Number(reelId));
-  const url = reel?.cloudflareR2Url ?? '';
+
+  if (isLoading) return <PlayerLoading />;
+  if (!reel?.cloudflareR2Url) return <PlayerUnavailable close={() => navigate(-1)} />;
+  return <VideoPlayer reel={reel} shareToken={reel.shareToken} close={() => navigate(-1)} />;
+}
+
+export function PublicVideoPlayerScreen() {
+  const navigate = useNavigate();
+  const { shareToken } = useParams();
+  const token = shareToken ?? '';
+  const { data: reel, isLoading } = useQuery({
+    queryKey: ['publicVideo', token],
+    queryFn: () => getPublicVideo(token),
+    enabled: !!token,
+    retry: false,
+  });
+
+  if (isLoading) return <PlayerLoading />;
+  if (!reel?.cloudflareR2Url) return <PlayerUnavailable close={() => navigate('/')} />;
+  return <VideoPlayer reel={reel} shareToken={token} close={() => navigate('/')} />;
+}
+
+function PlayerLoading() {
+  return <div className="flex h-full w-full items-center justify-center bg-black"><Spinner size={50} /></div>;
+}
+
+function PlayerUnavailable({ close }: { close: () => void }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-black text-white">
+      <p>Video unavailable</p>
+      <button type="button" onClick={close} className="rounded-full bg-white/10 px-4 py-2">Close</button>
+    </div>
+  );
+}
+
+// Full-screen player shared by the account and public video pages.
+function VideoPlayer({ reel, shareToken, close }: {
+  reel: PlayableVideo;
+  shareToken: string;
+  close: () => void;
+}) {
+  const url = reel.cloudflareR2Url ?? '';
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -51,8 +93,6 @@ export default function VideoPlayerScreen() {
   // stalls — drives the centered loading spinner.
   const [buffering, setBuffering] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
-
-  const close = useCallback(() => navigate(-1), [navigate]);
 
   const startHideTimer = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -100,8 +140,7 @@ export default function VideoPlayerScreen() {
   }, []);
 
   const share = async () => {
-    if (!url) return;
-    await navigator.clipboard.writeText(url);
+    await navigator.clipboard.writeText(`${window.location.origin}/watch/${shareToken}`);
     toast('Link copied to clipboard');
   };
 
@@ -131,25 +170,6 @@ export default function VideoPlayerScreen() {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void containerRef.current?.requestFullscreen();
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-black">
-        <Spinner size={50} />
-      </div>
-    );
-  }
-
-  if (!url) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-black text-white">
-        <p>No video available</p>
-        <button type="button" onClick={close} className="rounded-full bg-white/10 px-4 py-2">
-          Close
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -256,23 +276,23 @@ export default function VideoPlayerScreen() {
 
         {/* Center play/pause (hidden while the buffering spinner shows) */}
         {!buffering && (
-        <button
-          type="button"
-          onClick={togglePlay}
-          className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-black/30 text-white hover:bg-white/15"
-          aria-label={playing ? 'Pause' : 'Play'}
-        >
-          {playing ? (
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6.5" y="5" width="3.6" height="14" rx="1.8" />
-              <rect x="13.9" y="5" width="3.6" height="14" rx="1.8" />
-            </svg>
-          ) : (
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.15-5.18a1 1 0 0 0 0-1.69L9.54 5.98A1 1 0 0 0 8 6.82z" />
-            </svg>
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-black/30 text-white hover:bg-white/15"
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? (
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6.5" y="5" width="3.6" height="14" rx="1.8" />
+                <rect x="13.9" y="5" width="3.6" height="14" rx="1.8" />
+              </svg>
+            ) : (
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.15-5.18a1 1 0 0 0 0-1.69L9.54 5.98A1 1 0 0 0 8 6.82z" />
+              </svg>
+            )}
+          </button>
         )}
 
         {/* Bottom scrubber */}

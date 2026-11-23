@@ -1,6 +1,7 @@
 from typing import Optional, List, Union, Literal
 from datetime import datetime
 from enum import Enum
+from uuid import uuid4
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON, String
 from aishorts.modules.avatar import Avatar as PydanticAvatar
 from aishorts.modules.video_edit.video_edit import (
@@ -48,6 +49,10 @@ class User(UserBase, table=True):
 
     series: List["ReelSeries"] = Relationship(back_populates="user")
     uploads: List["UploadedFile"] = Relationship(back_populates="user")
+
+
+class Invite(SQLModel, table=True):
+    email: str = Field(primary_key=True)
 
 
 class SubscriptionPlan(SQLModel, table=True):
@@ -175,6 +180,15 @@ class ReelSeries(SQLModel, table=True):
     reels: List["Reel"] = Relationship(back_populates="series", cascade_delete=True, sa_relationship_kwargs={"order_by": "Reel.sequence_number"})
 
 
+class GenerationJob(SQLModel, table=True):
+    """Durable work for the single-dyno Postgres queue."""
+
+    series_id: int = Field(foreign_key="reelseries.id", ondelete="CASCADE", primary_key=True)
+    request_data: dict = Field(sa_column=Column(JSON))
+    total_cost: int
+    attempts: int = Field(default=0)
+
+
 class Reel(SQLModel, table=True):
     """
     Represents an individual video file within a series.
@@ -182,6 +196,10 @@ class Reel(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     series_id: int = Field(foreign_key="reelseries.id")
+    share_token: str = Field(
+        default_factory=lambda: uuid4().hex,
+        sa_column=Column(String(32), unique=True, index=True, nullable=False),
+    )
     sequence_number: int
     status: JobStatus = Field(default=JobStatus.QUEUED, sa_column=Column(String))
     cloudflare_r2_url: Optional[str] = None
@@ -212,6 +230,7 @@ class UploadedFile(UploadedFileBase, table=True):
 # Response Models
 class ReelRead(SQLModel):
     id: int
+    share_token: str
     sequence_number: int
     status: JobStatus
     cloudflare_r2_url: Optional[str] = None
@@ -220,6 +239,13 @@ class ReelRead(SQLModel):
     description: Optional[str] = None
     thumbnail_url: Optional[str] = None
     duration: Optional[str] = None
+
+
+class PublicVideoRead(SQLModel):
+    id: int
+    cloudflare_r2_url: str
+    title: Optional[str] = None
+    description: Optional[str] = None
 
 
 class ReelSeriesRead(SQLModel):

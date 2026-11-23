@@ -55,6 +55,10 @@ def resolve_dispatch(background_tasks: BackgroundTasks | None = None):
     dispatch otherwise. The fallback differs by caller: HTTP routes have
     request-scoped `BackgroundTasks`, MCP tools do not.
     """
+    if os.getenv("GENERATION_QUEUE") == "postgres":
+        from api.db_jobs import db_dispatch
+
+        return db_dispatch
     if redis_url():
         return rq_dispatch
     if background_tasks is not None:

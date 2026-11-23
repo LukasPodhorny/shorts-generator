@@ -3,6 +3,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { useUiStore } from '@/store/uiStore';
 import { ChatComposer } from '@/components/generate/chat/ChatComposer';
 import { SuggestionChips } from '@/components/generate/chat/SuggestionChips';
+import './ChatGenerate.css';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -43,8 +44,8 @@ export default function ChatGenerate() {
   };
 
   return (
-    <div className="h-full w-full overflow-y-auto bg-background">
-      <div className="mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-4 py-12">
+    <div className="generate-landing h-full w-full overflow-y-auto">
+      <div className="generate-landing__content mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-4 py-12">
         {/* Only the composer is in the centering flow. The greeting and the
             suggestion chips float above/below it (absolute), so showing or
             hiding the chips never moves the input out of the center. */}

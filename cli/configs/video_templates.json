@@ -7,6 +7,14 @@
         "edit_template": "documentary",
         "template_config": {}
     },
+    "math": {
+        "edit_template": "math",
+        "template_config": {}
+    },
+    "stock_story": {
+        "edit_template": "stock_story",
+        "template_config": {}
+    },
     "briefing": {
         "edit_template": "briefing",
         "template_config": {}

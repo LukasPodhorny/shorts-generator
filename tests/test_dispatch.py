@@ -23,6 +23,7 @@ from api.main import app  # noqa: E402
 from api.models import (  # noqa: E402
     Avatar,
     GenerateRequest,
+    GenerationJob,
     GenerationConfig,
     ReelSeries,
     User,
@@ -65,6 +66,68 @@ def test_resolve_falls_back_in_process(monkeypatch):
     adapter(1, {"a": 1}, 2)
     assert len(tasks.tasks) == 1
     assert resolve_dispatch() is mcp_dispatch.dispatch_task
+
+
+def test_resolve_uses_postgres_queue_when_selected(monkeypatch):
+    from api.db_jobs import db_dispatch
+
+    monkeypatch.setenv("GENERATION_QUEUE", "postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
+    assert resolve_dispatch(BackgroundTasks()) is db_dispatch
+    assert resolve_dispatch() is db_dispatch
+
+
+def test_postgres_job_survives_interruption(tmp_path, monkeypatch):
+    import api.db_jobs as db_jobs
+
+    engine = make_engine(tmp_path)
+    monkeypatch.setattr(db_jobs, "engine", engine)
+    with Session(engine) as session:
+        session.add(User(id="u1", credits=86))
+        session.add(ReelSeries(id=1, user_id="u1", status="Queued"))
+        session.commit()
+
+    db_jobs.db_dispatch(1, {"amount": 1}, 4)
+    assert db_jobs._claim_next_job() == (1, {"amount": 1}, 4, 1)
+
+    calls = []
+
+    async def finish(sid, data, cost):
+        calls.append((sid, data, cost))
+        with Session(engine) as session:
+            series = session.get(ReelSeries, sid)
+            series.status = "Done"
+            session.add(series)
+            session.commit()
+
+    monkeypatch.setattr(db_jobs, "process_reel_task", finish)
+    assert asyncio.run(db_jobs.process_next_job()) is True
+    assert calls == [(1, {"amount": 1}, 4)]
+    with Session(engine) as session:
+        assert session.get(GenerationJob, 1) is None
+        assert session.get(ReelSeries, 1).status == "Done"
+
+
+def test_postgres_job_refunds_after_repeated_interruptions(tmp_path, monkeypatch):
+    import api.db_jobs as db_jobs
+    import api.tasks as tasks_module
+
+    engine = make_engine(tmp_path)
+    monkeypatch.setattr(db_jobs, "engine", engine)
+    monkeypatch.setattr(tasks_module, "engine", engine)
+    with Session(engine) as session:
+        session.add(User(id="u1", credits=86))
+        session.add(ReelSeries(id=1, user_id="u1", status="Processing"))
+        session.commit()
+
+    db_jobs.db_dispatch(1, {"amount": 1}, 4)
+    db_jobs._claim_next_job()
+    db_jobs._claim_next_job()
+    assert asyncio.run(db_jobs.process_next_job()) is True
+    with Session(engine) as session:
+        assert session.get(GenerationJob, 1) is None
+        assert session.get(ReelSeries, 1).status == "Failed"
+        assert session.get(User, "u1").credits == 90
 
 
 def test_rq_dispatch_enqueues_job(monkeypatch):
@@ -220,6 +283,39 @@ def test_create_generation_unwinds_on_dispatch_failure(tmp_path, monkeypatch):
         assert session.get(User, "u1").credits == 90
         series = session.exec(select(ReelSeries)).all()
         assert len(series) == 1 and series[0].status == "Failed"
+
+
+def test_rest_generate_persists_postgres_job(tmp_path, monkeypatch):
+    import api.db_jobs as db_jobs
+
+    engine = make_engine(tmp_path)
+    monkeypatch.setattr(db_jobs, "engine", engine)
+    monkeypatch.setenv("GENERATION_QUEUE", "postgres")
+    with Session(engine) as session:
+        seed_catalog(session)
+
+    def _session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _session
+    app.dependency_overrides[get_current_user] = lambda: {
+        "uid": "u1",
+        "email": "u1@x.com",
+    }
+    try:
+        response = TestClient(app).post(
+            "/api/generate",
+            json={"template_name": "basic", "avatar_names": ["narrator"], "amount": 1},
+        )
+        assert response.status_code == 200, response.text
+        with Session(engine) as session:
+            job = session.get(GenerationJob, response.json()["series_id"])
+            assert job is not None
+            assert job.request_data["template_name"] == "basic"
+            assert job.total_cost == 2
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_rest_generate_enqueues_when_redis_set(tmp_path, monkeypatch):

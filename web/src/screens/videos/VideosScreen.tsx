@@ -75,7 +75,7 @@ export default function VideosScreen() {
   const series = data?.pages.flat() ?? [];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-black">
       {/* Spacer mirrors the back-button row in SeriesDetailScreen so the
           "All reels" title sits at the same Y as a series title. */}
       <div className="px-3 pt-3">

@@ -7,7 +7,7 @@ import { MaskIcon } from '@/components/ui/MaskIcon';
 import { Avatar } from '@/components/ui/Avatar';
 
 // Port of the mobile ProfileDrawer: a left drawer (2/3 width) with the user's
-// avatar, email and credits, and a Log out action pinned to the bottom.
+// avatar, email and credits, and account actions pinned to the bottom.
 export function ProfileDrawer({
   open,
   onClose,
@@ -56,14 +56,29 @@ export function ProfileDrawer({
           type="button"
           onClick={() => {
             onClose();
-            navigate('/studio');
+            navigate('/account');
           }}
           className="flex items-center gap-3 px-6 py-5 text-left text-textPrimary"
         >
-          <TuneIcon size={22} style={{ color: 'var(--color-textPrimary)' }} />
-          <span className="text-base font-medium">Studio</span>
+          <MaskIcon src="/icons/account_icon.svg" size={22} color="var(--color-textPrimary)" />
+          <span className="text-base font-medium">Account</span>
         </button>
-        <div className="h-px bg-surface1" />
+        {profile?.role === 'admin' && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                navigate('/studio');
+              }}
+              className="flex items-center gap-3 px-6 py-5 text-left text-textPrimary"
+            >
+              <TuneIcon size={22} style={{ color: 'var(--color-textPrimary)' }} />
+              <span className="text-base font-medium">Studio</span>
+            </button>
+            <div className="h-px bg-surface1" />
+          </>
+        )}
         <button
           type="button"
           onClick={() => {

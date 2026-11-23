@@ -1,13 +1,19 @@
 """Narration-led templates with a shared, bounded FFmpeg scene compositor."""
 
 import math
+import subprocess
 from pathlib import Path
 
 from openai.types.audio import TranscriptionVerbose, TranscriptionWord
 
-from aishorts.modules.script.script import AssetType, BlockType, SlideMedia
+from aishorts.modules.script.script import AssetType, BlockType, ManimMedia, SlideMedia, StockVideoMedia
 from aishorts.modules.slides.style import PALETTES, PresentationStyle, SlideRenderConfig, legacy_visual_region
 from aishorts.modules.video_edit.video_edit import EditTemplate, FilterGraph, SubtitleStyle, resolve_media_url
+
+
+MATH_SLIDE_REVIEW_SECONDS = 2.0
+MATH_ANIMATION_HOLD_SECONDS = 3.0
+MATH_RESULT_REVIEW_SECONDS = 3.0
 
 
 def asset_ref(path, url=None):
@@ -30,6 +36,23 @@ def visual_changeover(block, media, duration):
     return min(duration - 1 / 30, max(1 / 30, round(timestamp * 30) / 30))
 
 
+def timed_media_window(block, media, duration):
+    """Map a math animation's trigger words to its cue and spoken endpoint."""
+    count = max(1, len(block.text.split()))
+    start_index = min(max(media.trigger.start_word_index, 0), count - 1)
+    end_index = min(max(media.trigger.end_word_index, start_index), count - 1)
+    start = duration * start_index / count
+    end = duration * (end_index + 1) / count
+    words = block.assets.subtitles.words if block.assets.subtitles else []
+    if len(words) == count:
+        aligned_start, aligned_end = words[start_index].start, words[end_index].end
+        if math.isfinite(aligned_start) and math.isfinite(aligned_end) and aligned_end > aligned_start:
+            start, end = aligned_start, aligned_end
+    start = min(duration - 1 / 30, max(0, round(start * 30) / 30))
+    end = min(duration, max(start + 1 / 30, round(end * 30) / 30))
+    return start, end
+
+
 class FormalTemplate(EditTemplate):
     core_assets = [AssetType.SCRIPT, AssetType.VOICE, AssetType.SUBTITLES, AssetType.SLIDES, AssetType.IMAGES, AssetType.LATEX]
     tag_assets = {AssetType.MANIM: False, AssetType.STOCK_VIDEO: False}
@@ -38,6 +61,7 @@ class FormalTemplate(EditTemplate):
     mode = "lecture"
     script_instructions_resource = "formal_instructions.txt"
     default_style = PresentationStyle()
+    moving_background = False
 
     def __init__(self, template_config, **kwargs):
         self.style = template_config.presentation_style or self.default_style.model_copy()
@@ -62,6 +86,22 @@ class FormalTemplate(EditTemplate):
             block.assets.media_map.get(slide.id), block.assets.media_url_map.get(slide.id)
         )}
 
+    def _clip_duration(self, reference):
+        if isinstance(reference, str):
+            return self.get_video_duration(reference)
+        url = reference.get("url") if isinstance(reference, dict) else None
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ValueError("Math animation needs a readable local clip or HTTPS URL")
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", url],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+            return float(result.stdout.strip())
+        except (subprocess.SubprocessError, ValueError) as exc:
+            raise ValueError("Could not inspect remote Math animation duration") from exc
+
     def compose(self, reel, **kwargs):
         if not 1 <= len(reel.blocks) <= 32:
             raise ValueError("Formal videos require 1-32 narration scenes")
@@ -70,13 +110,21 @@ class FormalTemplate(EditTemplate):
         total = 0.0
         for index, block in enumerate(reel.blocks):
             seg = self._get_block_segment(block)
-            duration = seg["duration"]
-            canvas, _ = graph.add_input(seg["video"], f"slide_{index}")
-            canvas = (canvas.filter("loop", loop=-1, size=1, start=0)
-                      .filter("fps", fps=30)
-                      .filter("setpts", "PTS-STARTPTS").filter("setsar", 1)
-                      .filter("format", "yuv420p"))
-            visuals = sorted(
+            speech_duration = seg["duration"]
+            duration = speech_duration
+            canvas, _ = graph.add_input(seg["video"], f"footage_{index}" if self.moving_background else f"slide_{index}")
+            if self.moving_background:
+                canvas = (canvas.filter("setpts", "PTS-STARTPTS").filter("fps", fps=30)
+                          .filter("tpad", stop_mode="clone", stop_duration=duration)
+                          .filter("scale", f"{self.width}:{self.height}", force_original_aspect_ratio="increase")
+                          .filter("crop", f"{self.width}:{self.height}")
+                          .filter("setsar", 1).filter("format", "yuv420p"))
+            else:
+                canvas = (canvas.filter("loop", loop=-1, size=1, start=0)
+                          .filter("fps", fps=30)
+                          .filter("setpts", "PTS-STARTPTS").filter("setsar", 1)
+                          .filter("format", "yuv420p"))
+            visuals = [] if self.moving_background else sorted(
                 (m for m in block.media if m.type != "slide" and (
                     block.assets.media_map.get(m.id) or block.assets.media_url_map.get(m.id)
                 )),
@@ -86,22 +134,49 @@ class FormalTemplate(EditTemplate):
             # failed. With two visuals, switch on the same frame for both.
             if duration < 2 / 30:
                 visuals = visuals[:1]
-            boundaries = [0.0]
-            if len(visuals) == 2:
-                boundaries.append(visual_changeover(block, visuals[1], duration))
-            boundaries.append(duration)
+            animation_cue = 0.0
+            if self.mode == "math" and visuals and isinstance(visuals[0], ManimMedia):
+                animation = visuals[0]
+                animation_cue, spoken_end = timed_media_window(block, animation, speech_duration)
+                animation_ref = asset_ref(block.assets.media_map.get(animation.id),
+                                          block.assets.media_url_map.get(animation.id))
+                clip_duration = self._clip_duration(animation_ref)
+                if not math.isfinite(clip_duration) or clip_duration <= 0:
+                    raise ValueError("Math animation must have a positive duration")
+                reveal = math.ceil((max(spoken_end, animation_cue + clip_duration)
+                                    + MATH_ANIMATION_HOLD_SECONDS) * 30) / 30
+                duration = math.ceil(max(speech_duration + MATH_SLIDE_REVIEW_SECONDS,
+                                         reveal + MATH_RESULT_REVIEW_SECONDS) * 30) / 30
+                windows = [(animation, 0.0, reveal)]
+            else:
+                if self.mode == "math":
+                    duration = speech_duration + MATH_SLIDE_REVIEW_SECONDS
+                boundaries = [0.0]
+                if len(visuals) == 2:
+                    boundaries.append(visual_changeover(block, visuals[1], duration))
+                boundaries.append(duration)
+                windows = list(zip(visuals, boundaries, boundaries[1:]))
             viewport = block.assets.slide_viewport or legacy_visual_region(self.mode)
-            for media, start, end in zip(visuals, boundaries, boundaries[1:]):
+            for media, start, end in windows:
                 path = asset_ref(block.assets.media_map.get(media.id), block.assets.media_url_map.get(media.id))
                 visual, _ = graph.add_input(path, f"visual_{index}_{media.type}")
-                x, y, w, h = viewport
-                if media.type in {"stock_video", "manim"}:
+                fullscreen = self.mode == "math" and isinstance(media, ManimMedia)
+                x, y, w, h = (0, 0, self.width, self.height) if fullscreen else viewport
+                if fullscreen:
+                    visual = visual.filter("setpts", "PTS-STARTPTS").filter("fps", fps=30)
+                    visual = visual.filter("tpad", start_mode="clone", start_duration=animation_cue,
+                                           stop_mode="clone", stop_duration=end)
+                elif media.type in {"stock_video", "manim"}:
                     visual = visual.filter("setpts", "PTS-STARTPTS").filter("fps", fps=30)
                     visual = visual.filter("tpad", stop_mode="clone", stop_duration=end - start)
                 else:
                     visual = visual.filter("loop", loop=-1, size=1, start=0).filter("fps", fps=30)
                 visual = visual.filter("trim", duration=end - start)
-                if media.type in {"image", "stock_video"}:
+                if fullscreen:
+                    color = PALETTES[self.style.theme]["bg"].replace("#", "0x")
+                    visual = visual.filter("scale", f"{w}:{h}", force_original_aspect_ratio="decrease").filter(
+                        "pad", f"{w}:{h}:(ow-iw)/2:(oh-ih)/2:color={color}")
+                elif media.type in {"image", "stock_video"}:
                     visual = visual.filter("scale", f"{w}:{h}", force_original_aspect_ratio="increase").filter("crop", f"{w}:{h}")
                 else:
                     # Fit equations and teaching animations without cutting off labels.
@@ -112,7 +187,7 @@ class FormalTemplate(EditTemplate):
                 canvas = graph.add_raw([canvas, visual], f"overlay=x={x}:y={y}:enable='gte(t,{start})*lt(t,{end})':eof_action=pass")
             # Trim AFTER overlay framesync. Trimming both overlay inputs at the
             # same instant can stall FFmpeg waiting for a final frame at EOF.
-            # The infinite slide clock guarantees a frame that ends each scene.
+            # The slide loop or padded footage guarantees a frame that ends each scene.
             canvas = canvas.filter("trim", duration=duration)
             _, audio = graph.add_input(seg["audio"], f"narration_{index}")
             audio = (audio.filter("aresample", 48000).filter("aformat", channel_layouts="stereo")
@@ -130,11 +205,11 @@ class FormalTemplate(EditTemplate):
         audio = graph.add_raw(audio_nodes, f"concat=n={len(audio_nodes)}:v=0:a=1") if len(audio_nodes) > 1 else audio_nodes[0]
         audio = audio.filter("dynaudnorm", f=500, g=31, p=0.95, m=4, r=0.1).filter("aresample", 48000)
         if self.style.show_captions and captions:
-            style = SubtitleStyle(font="DejaVu Sans", font_size=38 if self.width > self.height else 44,
+            style = SubtitleStyle(font="DejaVu Sans", font_size=56 if self.moving_background else 38 if self.width > self.height else 44,
                                   color="&H00FFFFFF", boxed=True, stroke_color="&H38130F0B",
                                   stroke_width=12, shadow_offset=0, alignment=2,
-                                  offset_y=32 if self.width > self.height else 94,
-                                  max_chars_per_line=84 if self.width > self.height else 38, remove_chars="")
+                                  offset_y=70 if self.moving_background else 32 if self.width > self.height else 94,
+                                  max_chars_per_line=52 if self.moving_background else 84 if self.width > self.height else 38, remove_chars="")
             transcription = TranscriptionVerbose(duration=total, language="en", text="", words=captions)
             ass = self.transcription_to_ass(transcription, style, width=self.width, height=self.height)
             main = main.filter("ass", f"'{ass.download()}'")
@@ -168,3 +243,38 @@ class BriefingTemplate(FormalTemplate):
     width, height = 1080, 1920
     description = "9:16 formal mobile briefing with photos, diagrams and large readable notes. Best for revision, professional social videos and concise explainers. No visible avatar."
     default_style = PresentationStyle(theme="slate", accent_color="#B4DE8C")
+
+
+class MathTemplate(FormalTemplate):
+    provider_name = "math"
+    mode = "math"
+    description = "16:9 focused math lesson with concise teaching slides, equations and full-screen Manim animations timed to the narration. The selected avatar supplies the voice only."
+    core_assets = [AssetType.SCRIPT, AssetType.VOICE, AssetType.SUBTITLES, AssetType.SLIDES, AssetType.LATEX]
+    tag_assets = {AssetType.MANIM: True}
+    additional_script_instructions_resource = "math_instructions.txt"
+    default_style = PresentationStyle(theme="paper", accent_color="#087F8C")
+
+
+class StockStoryTemplate(FormalTemplate):
+    provider_name = "stock_story"
+    description = "16:9 stock footage filling the frame with a clear voiceover and optional captions. Best for YouTube-style explainers, travel, nature and real-world stories. The selected avatar supplies the voice only. Every scene requires footage."
+    script_instructions_resource = "stock_story_instructions.txt"
+    core_assets = [AssetType.SCRIPT, AssetType.VOICE, AssetType.SUBTITLES, AssetType.STOCK_VIDEO]
+    tag_assets = {}
+    requires_stock_video = True
+    moving_background = True
+
+    def _get_block_segment(self, block):
+        if block.type != BlockType.DIALOGUE:
+            raise ValueError("Stock Story accepts dialogue narration only")
+        clips = [m for m in block.media if isinstance(m, StockVideoMedia)]
+        if len(block.media) != 1 or len(clips) != 1:
+            raise ValueError("Each Stock Story scene requires exactly one stock clip")
+        clip = clips[0]
+        audio = asset_ref(block.assets.voice_filepath, block.assets.voice_url)
+        duration = (self.get_video_duration(audio) if isinstance(audio, str)
+                    else block.assets.subtitles.duration if block.assets.subtitles else 0)
+        if not math.isfinite(duration) or not 0 < duration <= 180:
+            raise ValueError("Each Stock Story scene must have 0-180 seconds of audio")
+        return {"audio": audio, "duration": math.ceil(duration * 30) / 30,
+                "video": asset_ref(block.assets.media_map.get(clip.id), block.assets.media_url_map.get(clip.id))}

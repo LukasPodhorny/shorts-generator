@@ -56,6 +56,8 @@ Auth is **Firebase Admin SDK** verifying a bearer JWT minted by the frontend.
 
 **JIT provisioning**: there is no signup endpoint. The first time a valid token hits `/api/users/me`, `/api/upload`, or `/api/generate` and no `User` row exists, one is created with `credits = 90` and `role = user`. Admin is granted out-of-band (DB edit).
 
+**Invite-only access**: `INVITE_ONLY` defaults to `true`. Before JIT provisioning or any authenticated REST, SSE, or MCP operation, the API requires an approved email in the `invite` table. Existing admin accounts bypass the invite check. Apply `alembic upgrade head` before starting this version. An admin can approve or remove emails in the app's Account > Invites section, or through `POST /api/admin/invites` (`{"email":"person@example.com"}`) and `DELETE /api/admin/invites/{email}` with their Firebase bearer token. Approval does not send email; the admin shares the app link. An approved person can use Google or create an email account with that address. To reopen public access, set `INVITE_ONLY=false` on the API, build the web app with `VITE_INVITE_ONLY=false`, and restore the public landing-page copy.
+
 ---
 
 ## 3. Database schema (`models.py`)
@@ -70,7 +72,7 @@ SQLModel (SQLAlchemy + Pydantic). Tables and the read/create models served over 
 | `VideoTemplate` | `name` (unique), `data` (JSON), `credits` (cost per reel, default 1), `preview_url`, `thumbnail_url` | `data` is an `aishorts.VideoTemplate`. |
 | `GenerationConfig` | `name` (unique), `data` (JSON), `is_default` | Per-stage provider/model settings; `to_config_kwargs()` splats into `ShortsConfig`. |
 | `ReelSeries` | `id`, `user_id`, `created_at`, `status`, `topic`, `thumbnail_url` | One generation **job**. Cascades to its reels, ordered by `sequence_number`. |
-| `Reel` | `id`, `series_id`, `sequence_number`, `status`, `cloudflare_r2_url`, `local_path`, `title`, `description`, `thumbnail_url`, `duration` | One output video. |
+| `Reel` | `id`, `series_id`, `share_token`, `sequence_number`, `status`, `cloudflare_r2_url`, `local_path`, `title`, `description`, `thumbnail_url`, `duration` | One output video. The random `share_token` identifies its public player link. |
 | `UploadedFile` | `id`, `user_id`, `filename`, `url`, `key`, `content_type`, `created_at` | A user's uploaded source document in R2. |
 
 `JobStatus` ∈ `Queued | Processing | Done | Failed` (on both `ReelSeries` and `Reel`).
@@ -83,12 +85,13 @@ SQLModel (SQLAlchemy + Pydantic). Tables and the read/create models served over 
 
 All paths are prefixed `/api`. **Auth** column: 🌐 public, 🔑 any authenticated user, 🛡️ admin only.
 
-### 🌐 Public catalog — `routers/public.py`
+### 🌐 Public endpoints — `routers/public.py`
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/api/public/avatars` | All avatars. |
 | GET | `/api/public/video-templates` | Templates as `VideoTemplateRead`: `credits`, `preview_url`, `thumbnail_url`, and the user-toggleable **tags** (resolved live from the edit template's `tag_assets` with their default state). |
 | GET | `/api/public/generation-configs` | Configs (names/`is_default` only — no `data`). |
+| GET | `/api/public/videos/{share_token}` | One completed reel's playback URL, title, and description; no login required. |
 
 ### 🔑 Users & billing — `routers/users.py`
 | Method | Path | Action |
@@ -271,4 +274,4 @@ bounds). Production rollout is documented in `docs/MCP_ROLLOUT.md`.
 
 ## 10. Formal educational video formats
 
-`lecture`, `documentary`, and `briefing` are installed with `python -m api.install_formal_templates --apply`. This preserves existing catalog rows and prices. Public template responses include `description`, `width`, and `height`; the planner sees the same format descriptions. Generation profiles now accept `slides_config` and `stock_video_config`. See [installation, provider configuration and samples](../docs/FORMAL_VIDEO_TEMPLATES.md).
+`lecture`, `documentary`, `briefing`, `math`, and `stock_story` are installed with `python -m api.install_formal_templates --apply`. This preserves existing catalog prices and migrates a previous `field_guide` row if present. Public template responses include `description`, `width`, and `height`; the planner sees the same format descriptions. Generation profiles accept `slides_config`, `manim_config`, and `stock_video_config`. See [installation, provider configuration and samples](../docs/FORMAL_VIDEO_TEMPLATES.md).

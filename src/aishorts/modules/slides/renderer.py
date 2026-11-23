@@ -3,6 +3,7 @@
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
+import math
 
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
@@ -188,6 +189,139 @@ def _chart(draw, slide, box, palette, accent):
     draw.text((zero_x, y + plot_h + 8), "0", font=_font(20), fill=palette["muted"], anchor="mt")
 
 
+def _line_chart(draw, slide, box, palette, accent):
+    x, y, w, h = box
+    left, right = x + 94, x + w - 94
+    top, bottom = y + 44, y + h - 104
+    if right - left < 240 or bottom - top < 170:
+        raise SlideOverflowError("Line chart needs more room; remove the supporting visual")
+    points = slide.chart
+    xmin, xmax = points[0].x, points[-1].x
+    values = [point.value for point in points]
+    ymin, ymax = min(values), max(values)
+    padding = max((ymax - ymin) * 0.12, abs(ymax) * 0.05, 1e-6)
+    ymin, ymax = ymin - padding, ymax + padding
+
+    def px(value):
+        return left + (value - xmin) / (xmax - xmin) * (right - left)
+
+    def py(value):
+        return bottom - (value - ymin) / (ymax - ymin) * (bottom - top)
+
+    target = (ymax - ymin) / 4
+    magnitude = 10 ** math.floor(math.log10(target))
+    step = max(candidate * magnitude for candidate in (1, 2, 2.5, 5, 10)
+               if candidate * magnitude <= target)
+    first = math.ceil(ymin / step)
+    last = math.floor(ymax / step)
+    for index in range(first, last + 1):
+        value = index * step
+        level = py(value)
+        draw.line((left, level, right, level), fill=palette["line"], width=3 if index == 0 else 2)
+        draw.text((left - 16, level), f"{value:,.6g}", fill=palette["muted"], font=_font(25), anchor="rm")
+    draw.line((left, bottom, right, bottom), fill=palette["muted"], width=2)
+    coords = [(px(point.x), py(point.value)) for point in points]
+    draw.line(coords, fill=accent, width=5, joint="curve")
+    for cx, cy in coords:
+        draw.ellipse((cx - 8, cy - 8, cx + 8, cy + 8), fill=accent,
+                     outline=palette["bg"], width=3)
+    # Avoid overlapping dates/categories. The validator can ask the writer to
+    # select fewer points instead of silently hiding labels.
+    label_width = min(138, max(74, (right - left) // len(points) - 10))
+    prior_right = float("-inf")
+    for point, (cx, _) in zip(points, coords):
+        label = _fit(draw, point.label, label_width, 70, 27, 21)
+        widest = max((draw.textlength(line, font=label[0]) for line in label[1]), default=0)
+        label_left = cx - widest / 2
+        if label_left < prior_right + 8 or label_left < x or label_left + widest > x + w:
+            raise SlideOverflowError("Line chart labels overlap; use fewer or shorter labels")
+        for line_index, line in enumerate(label[1]):
+            draw.text((cx, bottom + 16 + line_index * label[2]), line,
+                      fill=palette["muted"], font=label[0], anchor="mt")
+        prior_right = label_left + widest
+    if slide.unit:
+        draw.text((left, y), slide.unit, fill=palette["muted"], font=_font(22), anchor="lt")
+    if slide.x_unit:
+        draw.text((right, y + h - 15), slide.x_unit, fill=palette["muted"], font=_font(22), anchor="rb")
+
+
+def _proportion(draw, slide, box, palette, accent):
+    x, y, w, h = box
+    count = len(slide.chart)
+    total = sum(point.value for point in slide.chart)
+    base = ImageColor.getrgb(palette["bg"])
+    highlight = ImageColor.getrgb(accent)
+    colors = [tuple(round(base[j] * (1 - mix) + highlight[j] * mix) for j in range(3))
+              for mix in (1.0, 0.78, 0.60, 0.43, 0.29)]
+    bar_h = min(112, max(70, int(h * 0.20)))
+    columns = 1 if w < 850 else 3 if count == 3 and w >= 1200 else 2
+    rows = (count + columns - 1) // columns
+    gap = 52 if columns > 1 else 0
+    row_h = min(110, (h - bar_h - 30) // rows)
+    if row_h < 58:
+        raise SlideOverflowError("Proportion labels need more room")
+    group_h = bar_h + 30 + row_h * rows
+    bar_y = y + int((h - group_h) * 0.48)
+    left = x
+    for index, point in enumerate(slide.chart):
+        right = x + w if index == count - 1 else left + w * point.value / total
+        draw.rectangle((left, bar_y, right, bar_y + bar_h), fill=colors[index])
+        left = right
+    legend_y = bar_y + bar_h + 30
+    col_w = (w - gap * (columns - 1)) // columns
+    for index, point in enumerate(slide.chart):
+        col, row = index % columns, index // columns
+        lx = x + col * (col_w + gap)
+        ly = legend_y + row * row_h
+        draw.ellipse((lx, ly + 16, lx + 23, ly + 39), fill=colors[index])
+        percent = f"{point.value / total * 100:.1f}".rstrip("0").rstrip(".") + "%"
+        value_width = draw.textlength(percent, font=_font(36, True))
+        label = _fit(draw, point.label, col_w - value_width - 68, row_h - 4, 40, 25)
+        _paint(draw, label, lx + 38, ly, palette["ink"])
+        draw.text((lx + col_w - 8, ly + 2), percent, fill=palette["ink"],
+                  font=_font(36, True), anchor="rt")
+
+
+def _cycle(draw, slide, box, palette, accent):
+    x, y, w, h = box
+    count = len(slide.items)
+    node_w = min(470, int(w * 0.43))
+    node_h = min(220, int(h * 0.36))
+    if node_w < 180 or node_h < 118:
+        raise SlideOverflowError("Cycle diagram needs more room")
+    if count == 3:
+        centers = [(x + w / 2, y + node_h / 2 + 12),
+                   (x + w - node_w / 2 - 8, y + h - node_h / 2 - 12),
+                   (x + node_w / 2 + 8, y + h - node_h / 2 - 12)]
+    else:
+        centers = [(x + node_w / 2 + 8, y + node_h / 2 + 8),
+                   (x + w - node_w / 2 - 8, y + node_h / 2 + 8),
+                   (x + w - node_w / 2 - 8, y + h - node_h / 2 - 8),
+                   (x + node_w / 2 + 8, y + h - node_h / 2 - 8)]
+    for first, second in zip(centers, centers[1:] + centers[:1]):
+        ax, ay = first
+        bx, by = second
+        dx, dy = bx - ax, by - ay
+        length = (dx * dx + dy * dy) ** 0.5
+        ux, uy = dx / length, dy / length
+        inset = max(node_w if abs(ux) > abs(uy) else node_h, 1) * 0.52
+        start = (ax + ux * inset, ay + uy * inset)
+        end = (bx - ux * inset, by - uy * inset)
+        draw.line((start, end), fill=accent, width=3)
+        draw.polygon((end, (end[0] - ux * 13 - uy * 7, end[1] - uy * 13 + ux * 7),
+                      (end[0] - ux * 13 + uy * 7, end[1] - uy * 13 - ux * 7)), fill=accent)
+    for item, (cx, cy) in zip(slide.items, centers):
+        left, top = cx - node_w / 2, cy - node_h / 2
+        draw.rounded_rectangle((left, top, left + node_w, top + node_h), radius=18,
+                               fill=palette["panel"])
+        title = _fit(draw, item.heading, node_w - 42, 86, 42, 26, True)
+        body = _fit(draw, item.body, node_w - 42, node_h - _height(title) - 38, 30, 21)
+        total_height = _height(title) + (8 if body[1] else 0) + _height(body)
+        text_y = top + (node_h - total_height) / 2
+        _paint(draw, title, left + 21, text_y, palette["ink"])
+        _paint(draw, body, left + 21, text_y + _height(title) + 8, palette["muted"])
+
+
 @lru_cache(maxsize=6)
 def _background(width, height, theme, mode):
     palette = PALETTES[theme]
@@ -370,6 +504,12 @@ def render_slide(slide: SlideMedia, config: SlideRenderConfig, output: str | Pat
             y, bh = y + used + 22, bh - used - 22
         if slide.layout == "chart":
             _chart(draw, slide, (x, y, bw, bh), palette, accent)
+        elif slide.layout == "line_chart":
+            _line_chart(draw, slide, (x, y, bw, bh), palette, accent)
+        elif slide.layout == "proportion":
+            _proportion(draw, slide, (x, y, bw, bh), palette, accent)
+        elif slide.layout == "cycle":
+            _cycle(draw, slide, (x, y, bw, bh), palette, accent)
         elif slide.layout == "metrics":
             _metrics(draw, slide, (x, y, bw, bh), palette, accent)
         elif slide.layout == "donut":

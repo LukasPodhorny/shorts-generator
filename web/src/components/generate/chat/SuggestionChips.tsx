@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { QuizIcon, GlobeIcon, AttachFileIcon, SparkleIcon } from '@/components/ui/icons';
+import { QuizIcon, TemplateIcon, SparkleIcon } from '@/components/ui/icons';
 
 interface Suggestion {
   icon: ReactNode;
@@ -14,19 +14,14 @@ const SUGGESTIONS: Suggestion[] = [
     prompt: 'Make a reel explaining how black holes work, for a curious beginner.',
   },
   {
-    icon: <GlobeIcon size={16} />,
-    label: 'From a video',
-    prompt: 'Turn this YouTube video into 3 reels for a gen z audience: https://youtu.be/aoag03mSuXQ?si=MpSq4rvImiSfUW4b',
-  },
-  {
-    icon: <AttachFileIcon size={16} />,
-    label: 'From my notes',
-    prompt: 'Distill my attached files into a short series of educational reels.',
-  },
-  {
     icon: <QuizIcon size={16} />,
     label: 'With quiz',
     prompt: 'Make one reel about photosynthesis and end it with a short quiz.',
+  },
+  {
+    icon: <TemplateIcon size={16} />,
+    label: 'Math lesson',
+    prompt: 'Explain the slope of a curve with a worked example and full-screen animation.',
   },
 ];
 

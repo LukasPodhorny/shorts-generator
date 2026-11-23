@@ -4,6 +4,7 @@ import { useAuthFlowStore } from '@/store/authFlowStore';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { InputField } from '@/components/auth/InputField';
 import { ActionButton } from '@/components/ui/ActionButton';
+import { INVITE_ONLY } from '@/lib/accessMode';
 
 export default function CreateAccountScreen() {
   const navigate = useNavigate();
@@ -23,7 +24,10 @@ export default function CreateAccountScreen() {
   };
 
   return (
-    <AuthLayout title="Create account" subtitle="Sign up with your email to start creating.">
+    <AuthLayout
+      title="Create account"
+      subtitle={INVITE_ONLY ? 'Use the email address approved for your invite. Request access at support@pdftoreel.com.' : 'Sign up with your email to start creating.'}
+    >
       <InputField
         label="Email"
         hint="you@example.com"

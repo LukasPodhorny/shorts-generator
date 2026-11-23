@@ -1,0 +1,16 @@
+.generate-landing {
+  position: relative;
+  isolation: isolate;
+  background: #000;
+}
+
+.generate-landing__content {
+  position: relative;
+  z-index: 1;
+}
+
+@media (min-width: 900px) {
+  .generate-landing {
+    background: transparent;
+  }
+}

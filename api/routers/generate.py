@@ -3,7 +3,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import update
 from sqlmodel import Session, select
 import asyncio
-import ipaddress
 import logging
 import os
 from typing import Callable, Optional
@@ -11,6 +10,7 @@ from urllib.parse import urlparse
 from api.accounts import get_or_create_user
 from api.database import get_session, engine
 from api.auth import get_current_user, verify_token
+from api.invites import require_invite
 from api.dispatch import resolve_dispatch
 from api.series import (
     count_active_user_series,
@@ -18,6 +18,7 @@ from api.series import (
     get_user_series as _get_user_series,
     list_user_series as _list_user_series,
 )
+from api.source_ingest import is_public_http_url
 from api.models import (
     User,
     ReelSeries,
@@ -40,23 +41,20 @@ router = APIRouter(prefix="/api", tags=["generate"])
 def _validate_links(links: list[str]) -> None:
     """Reject non-http(s) links and obvious internal targets.
 
-    Links are fetched server-side by the ingest layer, so without this a user
-    could point the server at localhost or the internal network (SSRF). This
-    is a basic guard, not a complete one (it does not resolve DNS).
+    Links are fetched server-side by the ingest layer. Keep the safety check
+    aligned with the free-text /api/plan path.
     """
     for link in links:
-        parsed = urlparse(link)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        try:
+            parsed = urlparse(link)
+        except ValueError:
+            parsed = None
+        if parsed is None or parsed.scheme not in ("http", "https") or not parsed.hostname:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Links must be http(s) URLs: {link}",
             )
-        host = parsed.hostname
-        try:
-            blocked = not ipaddress.ip_address(host).is_global
-        except ValueError:
-            blocked = host == "localhost" or host.endswith((".local", ".internal"))
-        if blocked:
+        if not is_public_http_url(link):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Link target not allowed: {link}",
@@ -253,6 +251,10 @@ async def stream_check_status(
     uid = decoded["uid"]
 
     with Session(engine) as session:
+        require_invite(
+            session, uid, decoded.get("email"),
+            email_verified=decoded.get("email_verified") is True,
+        )
         series = session.get(ReelSeries, series_id)
         if not series or series.user_id != uid:
             raise HTTPException(status_code=404, detail="Series not found")

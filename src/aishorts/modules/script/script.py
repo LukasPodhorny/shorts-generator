@@ -63,18 +63,20 @@ class SlideItem(BaseModel):
 class ChartPoint(BaseModel):
     label: str = Field(min_length=1, max_length=36)
     value: float = Field(allow_inf_nan=False, ge=-1e12, le=1e12)
+    x: Optional[float] = Field(default=None, allow_inf_nan=False, ge=-1e12, le=1e12)
 
 
 class SlideMedia(MediaBase):
     """Declarative teaching graphic. No executable code or HTML from the LLM."""
 
     type: Literal["slide"]
-    layout: Literal["title", "bullets", "process", "comparison", "chart", "quote", "metrics", "donut", "timeline", "spotlight"]
+    layout: Literal["title", "bullets", "process", "comparison", "chart", "quote", "metrics", "donut", "timeline", "spotlight", "line_chart", "proportion", "cycle"]
     title: str = Field(min_length=1, max_length=100)
     subtitle: str = Field(default="", max_length=180)
     items: List[SlideItem] = Field(default_factory=list, max_length=5)
     chart: List[ChartPoint] = Field(default_factory=list, max_length=6)
     unit: str = Field(default="", max_length=24)
+    x_unit: str = Field(default="", max_length=24)
     source: str = Field(default="", max_length=220,
                         description="Short source citation; required for charts. Use 'Illustrative example' for invented teaching data.")
 
@@ -86,14 +88,25 @@ class SlideMedia(MediaBase):
             raise ValueError("comparison slides require exactly two items")
         if self.layout == "chart" and (len(self.chart) < 2 or not self.source.strip()):
             raise ValueError("chart slides require at least two data points and a source")
+        if self.layout == "line_chart" and (
+            len(self.chart) < 2 or not self.source.strip()
+            or any(point.x is None for point in self.chart)
+            or any(a.x >= b.x for a, b in zip(self.chart, self.chart[1:]))
+        ):
+            raise ValueError("line charts need ordered numeric x values and a source")
         if self.layout == "metrics" and (not 1 <= len(self.items) <= 3 or not self.source.strip()
                                          or any(len(item.heading) > 16 or not item.body.strip() for item in self.items)):
             raise ValueError("metrics slides need 1-3 short values, labels, and a source")
         if self.layout == "donut" and (not 2 <= len(self.chart) <= 5 or not self.source.strip()
                                        or any(point.value <= 0 for point in self.chart)):
             raise ValueError("donut slides need 2-5 positive shares of one whole and a source")
+        if self.layout == "proportion" and (not 2 <= len(self.chart) <= 5 or not self.source.strip()
+                                            or any(point.value <= 0 for point in self.chart)):
+            raise ValueError("proportion slides need 2-5 positive shares of one whole and a source")
         if self.layout == "timeline" and not 2 <= len(self.items) <= 4:
             raise ValueError("timeline slides need 2-4 chronological milestones")
+        if self.layout == "cycle" and not 3 <= len(self.items) <= 4:
+            raise ValueError("cycle slides need 3-4 connected stages")
         if self.layout == "quote" and not self.subtitle.strip():
             raise ValueError("quote slides require the quotation in subtitle")
         return self
